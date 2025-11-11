@@ -92,7 +92,7 @@ You can do this by scrolling up and clicking the Star button at the top of the p
 
 <a href="https://github.com/NatroTeam/NatroMacro/stargazers">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="http://reporoster.com/stars/NatroTeam/NatroMacro"> <!-- light theme -->
+    <source media="(prefers-color-scheme: light)" srcset="http://reporoster.com/stars/Cursed-Hive-Community/NatroMacroCursed"> <!-- light theme -->
     <img alt="stargazer-widget" src="http://reporoster.com/stars/dark/NatroTeam/NatroMacro"> <!-- dark theme -->
   </picture>
 </a>
