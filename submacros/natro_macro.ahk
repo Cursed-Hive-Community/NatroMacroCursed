@@ -31,6 +31,7 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "nowUnix.ahk"
 #Include "ErrorHandling.ahk"
 #Include "HashFile.ahk"
+#Include "Colors.ahk"
 
 #Warn VarUnset, Off
 
@@ -11056,6 +11057,7 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 	nm_openMenu()
 	ActivateRoblox()
 	GetRobloxClientPos()
+	offsetY := GetYOffset()
 
 	; High prio interrupts + Field boost + Did i get killed by mondo or crab
 	if youDied && currentField = "coconut" || currentField = "mountain top"
@@ -11073,17 +11075,17 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 	if Force = 1
 		HiveConfirmed := 0
 
-	; Check for perf stats here. I thought of a better way to do this than what nate tried which was detecting it directly which ultimately didn't work
-	; Instead, we check for the absence of polar power and the prescence of polar power with a vignette.
+	; Check if perfstats coverijnjg polar power here
 	pBMBuffs := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+30 "|" windowWidth "|50")
 	if (!Gdip_ImageSearch(pBMBuffs, bitmaps["Polar"]) && Gdip_ImageSearch(pBMBuffs, bitmaps["PolarVignette"]))
 	{
 		Gdip_DisposeImage(pBMBuffs)
 		Send("^{F7}"), Sleep(500)
-		pBMBuffs := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+30 "|" windowWidth "|50")  // retake screenshot
+		pBMBuffs := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+30 "|" windowWidth "|50")  ;  retake screenshot
 		if (!Gdip_ImageSearch(pBMBuffs, bitmaps["Polar"]) && Gdip_ImageSearch(pBMBuffs, bitmaps["PolarVignette"]))
 			Send("^{F7}") ; revert changes, perf stats arent the issue
 	}
+	
 	Gdip_DisposeImage(pBMBuffs)
 
 	while !HiveConfirmed
@@ -11113,13 +11115,18 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 		{
 			if !Gdip_ImageSearch(pBMScreen, bitmaps[v.pBM])
 				continue
+
 			if Gdip_ImageSearch(pBMScreen, bitmaps[v.ToClose], &Pos)
 			{
-				pos := StrSplit(pos, ","), MouseMove(windowX + pos[1], windowY + pos[2])
-				Sleep(100)
-				if v.SpamClick = True
-					loop 50
-						MouseMove(windowX + pos[1], windowY + pos[2]), Click()				
+				pos := StrSplit(Pos, ",")
+				MouseMove(windowX + pos[1], windowY + pos[2])
+				Sleep(30)
+
+				if v.SpamClick
+					Loop 50
+						Click()
+				else
+					Click()
 			}
 		}
 
@@ -11135,26 +11142,17 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 		send "{" SC_Esc "}{" SC_R "}{" SC_Enter "}"
 
 		n := 0
-		loop 80
+		loop 1000
 		{
 			pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|50")
-
-			dead := Gdip_ImageSearch(pBMScreen, bitmaps["emptyhealth"], , , , , , 10) || nm_HealthBar()
-
-			ToolTip(
-				"emptyhealth/nm_HealthBar = " dead "`n"
-				"n = " n
-			)
-
-			n += (dead = (n = 0))
-
+			dead := nm_HealthBar()
+			;0=alive
+			dead ? n := 0 : n++
 			Gdip_DisposeImage(pBMScreen)
 
-			if (n >= 4)
+			if n >= 50
 				break
 		}
-
-		Sleep(2000)
 
 		if nm_ConfirmAtHive() && nm_SetHiveCameraDirection() > 0
 		{
@@ -11180,63 +11178,6 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 	}
 
 	return hiveconfirmed
-}
-AverageColorFromImage(pBM)
-{
-    Gdip_GetImageDimensions(pBM,&W,&H)
-    Gdip_LockBits(pBM,0,0,W,H,&Stride,&Scan,&BD)
-
-    r:=g:=b:=0,p:=Scan
-
-    Loop H
-	{
-        x:=p
-        Loop W 
-		{
-            c:=NumGet(x,"UInt")
-            r+=(c>>16)&255,g+=(c>>8)&255,b+=c&255
-            x+=4
-        }
-        p+=Stride
-    }
-
-    Gdip_UnlockBits(pBM,BD)
-
-    n:=W*H
-    return 0xFF000000 | (Round(r/n)<<16) | (Round(g/n)<<8) | Round(b/n)
-}
-; igore this he is my failed creeation
-ARGBToHSV(c)
-{
-    r := ((c>>16)&255)/255
-    g := ((c>>8)&255)/255
-    b := (c&255)/255
-
-    mx := Max(r,g,b)
-    mn := Min(r,g,b)
-    d := mx - mn
-
-    h := d ? (mx=r ? 60*Mod((g-b)/d,6) : mx=g ? 60*((b-r)/d+2) : 60*((r-g)/d+4)) : 0
-
-    if (h < 0)
-        h += 360
-
-    s := mx ? d/mx*100 : 0
-    v := mx*100
-
-    return {h:h, s:s, v:v}
-}
-isBrown(h, s, v)
-{
-    ; h = 0-360
-    ; s = 0-100
-    ; v = 0-100
-
-    return (
-        h >= 20 && h <= 55    ; orange/yellowbrown hue
-        && s >= 50            ;  saturated
-        && v >= 20 && v <= 85 ; not too bright
-    )
 }
 
 nm_HealthBar() { 
@@ -11349,13 +11290,10 @@ nm_SetHiveCameraDirection(){
 		Avg := AverageColorFromImage(Region)
 		HSV := ARGBToHSV(Avg)
 		rez := IsBrown(HSV.h, HSV.s, HSV.v)
-
-        Gdip_SetBitmapToClipboard(Region)
+		
         Gdip_DisposeImage(Region)
 
-        ToolTip rez " this is the rez of isbrown"
-
-        if (rez > 0)
+        if rez > 0
         {
             HiveConfirmed := 1
 
