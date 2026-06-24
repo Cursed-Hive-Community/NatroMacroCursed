@@ -113,7 +113,7 @@ OnMessage(0x5560, nm_copyDebugLog)
 OnMessage(0x0020, nm_WM_SETCURSOR)
 
 ; set version identifier
-VersionID := "1.1.1"
+VersionID := "1.1.2"
 
 ;initial load warnings
 if (A_ScreenDPI != 96)
@@ -169,7 +169,6 @@ SC_Space:="sc039" ; Space
 SC_1:="sc002" ; 1
 SC_Slash  := "sc035" ; /
 
-#include "../lib/data/patternHashes.ahk" 
 ; import patterns and syntax check
 nm_importPatterns()
 {
@@ -177,10 +176,19 @@ nm_importPatterns()
 	patterns.CaseSense := 0
 	global patternlist := []
 
+	installedPatternHashes := []
+
+
+
 	if FileExist("settings\imported\patterns.ahk")
 		file := FileOpen("settings\imported\patterns.ahk", "r"), imported := file.Read(), file.Close()
 	else
 		imported := "", hashDefaults()
+
+	if FileExist("settings\imported\patternHashes.ahk")
+		getHashes()
+	else
+		hashDefaults()
 
 	import := ""
 	Loop Files A_WorkingDir "\patterns\*.ahk"
@@ -277,21 +285,22 @@ nm_importPatterns()
 	if (import != imported)
 		file := FileOpen(A_WorkingDir "\settings\imported\patterns.ahk", "w-d"), file.Write(import), file.Close()
 
+
 	hashDefaults(){
-		outputPath := "lib\data\patternHashes.ahk"
 		hashes := []
 
-		output := FileOpen(outputPath, "w")
+		output := FileOpen(A_WorkingDir "\settings\imported\patternHashes.ahk", "w-d")
 
 		loop files "patterns/*.ahk" {
 			fileHash := HashFile(A_LoopFileFullPath, 6)
 			hashes.push(fileHash)
 		}
 
-		output.Write("installedPatternHashes := " JSON.stringify(hashes))
+		output.Write(JSON.stringify(hashes))
 		output.Close()
 		installedPatternHashes := hashes
 	}
+	getHashes() => (installedPatternHashes := JSON.parse(FileRead("settings\imported\patternHashes.ahk")))
 }
 nm_importPatterns()
 
@@ -13563,7 +13572,7 @@ nm_toBooster(location){
 	static blueBoosterFields:=["Pine Tree", "Bamboo", "Blue Flower", "Stump"], redBoosterFields:=["Rose", "Strawberry", "Mushroom", "Pepper"], mountainBoosterfields:=["Cactus", "Pumpkin", "Pineapple", "Spider", "Clover", "Dandelion", "Sunflower"], coconutBoosterfields:=["Coconut"]
 	
 	Loop 2 {
-		nm_Reset(AFBuseBooster ? 1 : 0)
+		nm_Reset(0)
 		nm_setStatus("Traveling", ((location="Mountain") ? "Mountain Top Booster" : StrTitle(location) " Field Booster") . ((A_Index=2) ? " (Attempt 2)" : ""))
 		(location="coconut") ? (nm_gotoCollect("coconutdis")) : (nm_gotoBooster(location))
 		if (nm_imgSearch("e_button.png",30,"high")[1] = 0) {
@@ -13690,6 +13699,7 @@ nm_fieldBoostBooster(){
 	global CurrentField, FieldBooster, AFBuseBooster, FieldLastBoosted, FieldBoostStacks, FieldLastBoostedBy, FieldNextBoostedBy, AFBFieldEnable, AFBDiceEnable, AFBGlitterEnable, FieldBoostStacks
 	if (!AFBuseBooster)
 		return
+	AFBuseBooster:=0
 	nm_setStatus(0, "Boosting Field: Booster")
 	booster := FieldBooster[StrLower(CurrentField)].booster
 	if(booster="blue") {
@@ -13704,7 +13714,6 @@ nm_fieldBoostBooster(){
 		boosterName:="mbooster"
 		nm_toBooster("mountain")
 	}
-	AFBuseBooster:=0
 	Sleep 5000
 	;check if gathering field was boosted
 	if(nm_fieldBoostCheck(CurrentField)) {
