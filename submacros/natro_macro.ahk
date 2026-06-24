@@ -31,7 +31,6 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "nowUnix.ahk"
 #Include "ErrorHandling.ahk"
 #Include "HashFile.ahk"
-#Include "Colors.ahk"
 
 #Warn VarUnset, Off
 
@@ -11041,7 +11040,7 @@ PostSubmacroMessage(submacro, args*){
 		try PostMessage(args*)
 	DetectHiddenWindows 0
 }
-nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
+nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 {
 	global resetTime, youDied, KeyDelay, SC_E, SC_Esc, SC_R, SC_Enter, RotRight, RotLeft, RotUp, RotDown, ZoomOut, objective, AFBrollingDice, AFBuseGlitter, AFBuseBooster, currentField, HiveConfirmed, GameFrozenCounter, bitmaps
 	static hivedown := 0
@@ -11084,7 +11083,7 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 	if Force = 1
 		HiveConfirmed := 0
 
-	; Check if perfstats coverijnjg polar power here
+	; Check if perfstats covering polar power here
 	pBMBuffs := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+30 "|" windowWidth "|50")
 	if (!Gdip_ImageSearch(pBMBuffs, bitmaps["Polar"]) && Gdip_ImageSearch(pBMBuffs, bitmaps["PolarVignette"]))
 	{
@@ -11115,7 +11114,7 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 		offsetY := GetYOffset(hwnd)
 		GetRobloxClientPos(hwnd)
 
-		; We'll perform most of our searches on this bitmap to keep this versatile.
+
 		; Here we check for all UI elements which can still be here from other tasks/lag.
 
 		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
@@ -11146,7 +11145,6 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 		resetTime := nowUnix()
 		PostSubmacroMessage("background", 0x5554, 1, resetTime)
 
-		; Finally, we can reset character.
 		SetKeyDelay(KeyDelay+50)
 		send "{" SC_Esc "}{" SC_R "}{" SC_Enter "}"
 
@@ -11188,7 +11186,18 @@ nm_Reset(checkAll := 1, convert := 1, wait:=2000, force := 0)
 
 	return hiveconfirmed
 }
+isHoneycomb(h, s, v)
+{
+    ; h = 0-360
+    ; s = 0-100
+    ; v = 0-100
 
+    return (
+        h >= 20 && h <= 55    ; orange/yellowbrown hue
+        && s >= 50            ;  saturated
+        && v >= 20 && v <= 85 ; not too bright
+    )
+}
 nm_HealthBar() { 
 	local detection := 0
 	static isDead(c) =>   ((((c) & 0x00FF0000 >= 0x004D0000) && ((c) & 0x00FF0000 <= 0x00830000)) ; 4D4D4D-blackBG|838383-whiteBG
@@ -11205,11 +11214,9 @@ nm_ConfirmAtHive(){
 	pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY "|400|125")
 	if ((Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , , , 2, , 2) = 1) || (Gdip_ImageSearch(pBMScreen, bitmaps["colhey"], , , , , , 2, , 2) = 1)){
 		Gdip_DisposeImage(pBMScreen)
-		tooltip "hi im at hive"
 		return 1
 	}
 	Gdip_DisposeImage(pBMScreen)
-	tooltip "nit at giuve"
 	return 0
 }
 nm_DetectSpawn() { ; some of the code was from hive check, repurposing it here since it seems to reliably detect hive slots even when the stuff is really bad
@@ -11219,7 +11226,8 @@ nm_DetectSpawn() { ; some of the code was from hive check, repurposing it here s
 	loop 5
 		send("{" ZoomIn "}"), Sleep(50)
 
-	sconf := windowWidth**2//3200    spawnConfirmed := 0
+	sconf := windowWidth**2//3200
+	spawnConfirmed := 0
 
 	loop 4 {
 		sleep 250
@@ -11288,8 +11296,6 @@ nm_SetHiveCameraDirection(){
     if hivedown
         SendInput "{" RotDown "}"
 
-    ToolTip "HiveIsDown: " hivedown
-
     loop 16 ; allow 2 full rots before exit
     {
         GetRobloxClientPos()
@@ -11298,7 +11304,7 @@ nm_SetHiveCameraDirection(){
 
 		Avg := AverageColorFromImage(Region)
 		HSV := ARGBToHSV(Avg)
-		rez := IsBrown(HSV.h, HSV.s, HSV.v)
+		rez := isHoneycomb(HSV.h, HSV.s, HSV.v)
 		
         Gdip_DisposeImage(Region)
 
@@ -11308,7 +11314,7 @@ nm_SetHiveCameraDirection(){
 
             SendInput "{" RotRight " 4}"
 
-            if (hivedown)
+            if hivedown
                 SendInput "{" RotUp "}"
 
             Send "{" ZoomOut " 5}"
