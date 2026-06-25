@@ -11145,19 +11145,20 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		resetTime := nowUnix()
 		PostSubmacroMessage("background", 0x5554, 1, resetTime)
 
-		SetKeyDelay(KeyDelay+50)
+		PrevKeyDelay := A_KeyDelay
+		SetKeyDelay(A_KeyDelay+200)
+
 		send "{" SC_Esc "}{" SC_R "}{" SC_Enter "}"
 
 		n := 0
-		loop 1000
+		loop 200
 		{
 			pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|50")
 			dead := nm_HealthBar()
-			;0=alive
-			dead ? n := 0 : n++
+			;0=alive 10 ALIVE FRAMES
+			dead ? n := 0 : n++  
 			Gdip_DisposeImage(pBMScreen)
-
-			if n >= 50
+			if n >= 10
 				break
 		}
 
@@ -11167,21 +11168,22 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 			break
 		}
 
-		; Dully's Hivecheck for if we spawn at baseplate
-		if !nm_ConfirmAtHive() && nm_DetectSpawn()
-		{
-			Sleep 500
-			GetRobloxClientPos(hwnd)
-			MouseMove windowX+350, windowY+offsetY+100
-			send "{" ZoomOut " 8}"
-			movement := nm_spawnMoveTo(slotMove[HiveSlot])
-			nm_createWalk(movement)
-			KeyWait "F14", "D T5 L"
-			KeyWait "F14", "T20 L"
-			nm_endWalk()
-			sleep 500
-			break
-		} 
+		; ; Dully's Hivecheck for if we spawn at baseplate
+		; Temporarily removed in lieu of recent changes.
+		; if !nm_ConfirmAtHive() && nm_DetectSpawn()
+		; {
+		; 	Sleep 500
+		; 	GetRobloxClientPos(hwnd)
+		; 	MouseMove windowX+350, windowY+offsetY+100
+		; 	send "{" ZoomOut " 8}"
+		; 	movement := nm_spawnMoveTo(slotMove[HiveSlot])
+		; 	nm_createWalk(movement)
+		; 	KeyWait "F14", "D T5 L"
+		; 	KeyWait "F14", "T20 L"
+		; 	nm_endWalk()
+		; 	sleep 500
+		; 	break
+		; } 
 	}
 
 	return hiveconfirmed
@@ -11198,17 +11200,15 @@ isHoneycomb(h, s, v)
         && v >= 20 && v <= 85 ; not too bright
     )
 }
-nm_HealthBar() { 
-	local detection := 0
-	static isDead(c) =>   ((((c) & 0x00FF0000 >= 0x004D0000) && ((c) & 0x00FF0000 <= 0x00830000)) ; 4D4D4D-blackBG|838383-whiteBG
-						&& (((c) & 0x0000FF00 >= 0x00004D00) && ((c) & 0x0000FF00 <= 0x00008300))
-						&& (((c) & 0x000000FF >= 0x0000004D) && ((c) & 0x000000FF <= 0x00000083)))
-	GetRobloxClientPos()
-	pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth-100 "|" windowY+24 "|50|20")
-	if isDead(Gdip_GetPixel(pBMScreen, 25, 12))
-		detection:=1
-	Gdip_DisposeImage(pBMScreen)
-	return detection
+nm_HealthBar()
+{
+    local detection := 0
+    GetRobloxClientPos()
+    pBM := Gdip_BitmapFromScreen(windowX+windowWidth-100 "|" windowY+24 "|50|20")
+    detection := (ARGBToHSV(Gdip_GetPixel(pBM, 15, 15)).s < 40) ; adjust threshold as we finetune
+	Gdip_SetBitmapToClipboard(pbm)
+    Gdip_DisposeImage(pBM)
+    return detection
 }
 nm_ConfirmAtHive(){
 	pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY "|400|125")
