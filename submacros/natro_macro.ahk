@@ -11169,22 +11169,22 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 			break
 		}
 
-		; ; Dully's Hivecheck for if we spawn at baseplate
-		; Temporarily removed in lieu of recent changes.
-		; if !nm_ConfirmAtHive() && nm_DetectSpawn()
-		; {
-		; 	Sleep 500
-		; 	GetRobloxClientPos(hwnd)
-		; 	MouseMove windowX+350, windowY+offsetY+100
-		; 	send "{" ZoomOut " 8}"
-		; 	movement := nm_spawnMoveTo(slotMove[HiveSlot])
-		; 	nm_createWalk(movement)
-		; 	KeyWait "F14", "D T5 L"
-		; 	KeyWait "F14", "T20 L"
-		; 	nm_endWalk()
-		; 	sleep 500
-		; 	break
-		; } 
+		; Dully's Hivecheck for if we spawn at baseplate
+
+		if !nm_ConfirmAtHive() && nm_DetectSpawn()
+		{
+			Sleep 500
+			GetRobloxClientPos(hwnd)
+			MouseMove windowX+350, windowY+offsetY+100
+			send "{" ZoomOut " 8}"
+			movement := nm_spawnMoveTo(slotMove[HiveSlot])
+			nm_createWalk(movement)
+			KeyWait "F14", "D T5 L"
+			KeyWait "F14", "T20 L"
+			nm_endWalk()
+			sleep 500
+			break
+		} 
 	}
 	return hiveconfirmed
 }
