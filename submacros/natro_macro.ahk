@@ -11149,7 +11149,7 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		SetKeyDelay(PrevKeyDelay+200)
 		send "{" SC_Esc "}{" SC_R "}{" SC_Enter "}"
 		SetKeyDelay(KeyDelay)
-		Sleep 5000 * (a_index) ; Any reset spamming caused by a break in nm_healthdetection will eventually fix itself
+		Sleep 3500 * (a_index) ; Any reset spamming caused by a break in nm_healthdetection will eventually fix itself
 
 		; Temporarily removed
 		; n := 0
@@ -11172,7 +11172,7 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 
 		; Dully's Hivecheck for if we spawn at baseplate
 
-		if nm_DetectSpawn() != 1
+		if nm_DetectSpawn() 
 		{
 			Sleep 500
 			GetRobloxClientPos(hwnd)
