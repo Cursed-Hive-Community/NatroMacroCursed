@@ -11098,7 +11098,6 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 
 	While !HiveConfirmed
 	{
-		Sleep 1000 * A_Index ; Any reset spamming caused by a break in nm_healthdetection will eventually fix itself
 		if (Mod(A_Index, 10) = 0)
 		{
 			nm_setStatus("Closing", "and Re-Open Roblox")
@@ -11150,18 +11149,20 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		SetKeyDelay(PrevKeyDelay+200)
 		send "{" SC_Esc "}{" SC_R "}{" SC_Enter "}"
 		SetKeyDelay(KeyDelay)
+		Sleep 5000 * (a_index) ; Any reset spamming caused by a break in nm_healthdetection will eventually fix itself
 
-		n := 0
-		loop 80
-		{
-			pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|50")
-			dead := nm_HealthBar()
-			;0=alive 8 ALIVE FRAMES
-			dead ? n++ : n := 0
-			Gdip_DisposeImage(pBMScreen)
-			if n >= 4
-				break
-		}
+		; Temporarily removed
+		; n := 0
+		; loop 80
+		; {
+		; 	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|50")
+		; 	dead := nm_HealthBar()
+		; 	;0=alive 8 ALIVE FRAMES
+		; 	dead ? n++ : n := 0
+		; 	Gdip_DisposeImage(pBMScreen)
+		; 	if n >= 4
+		; 		break
+		; }
 		
 		if nm_ConfirmAtHive() && nm_SetHiveCameraDirection() > 0
 		{
@@ -11171,7 +11172,7 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 
 		; Dully's Hivecheck for if we spawn at baseplate
 
-		if !nm_ConfirmAtHive() && nm_DetectSpawn()
+		if nm_DetectSpawn() != 1
 		{
 			Sleep 500
 			GetRobloxClientPos(hwnd)
