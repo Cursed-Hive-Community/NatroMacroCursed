@@ -11184,6 +11184,24 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		} 
 	}
 
+	if convert = 1 
+		nm_convert()
+
+	; add back wait here my fault
+	if ((nowUnix() - resetTime) < wait)
+	{
+		remaining := Floor((wait-(nowUnix()-resetTime))/1000) ;seconds
+		if remaining>5
+		{
+			Sleep 1000
+			nm_setStatus("Waiting", remaining . " Seconds")
+			Sleep((remaining-1)*1000)
+		}
+		else
+			Sleep(remaining*1000)
+	}
+
+
 	return hiveconfirmed
 }
 isHoneycomb(h, s, v)
