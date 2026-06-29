@@ -11338,7 +11338,7 @@ nm_SetHiveCameraDirection(){
 	GetRobloxClientPos()
 
 	Send "{" RotRight " 4}"
-	Sleep 50
+	Sleep 150 
 	if CheckHoneycomb() > 0 
 	{
 		ResetCampos()
@@ -11348,7 +11348,7 @@ nm_SetHiveCameraDirection(){
     loop 16 ; allow 2 full rots before exit
     {
 		Send "{" RotRight "}"
-		Sleep 50
+		Sleep 125
         GetRobloxClientPos()
 		if CheckHoneyComb() > 0
 		{
