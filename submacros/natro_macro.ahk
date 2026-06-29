@@ -11096,7 +11096,7 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 	
 	Gdip_DisposeImage(pBMBuffs)
 
-	while !HiveConfirmed
+	While !HiveConfirmed
 	{
 		if (Mod(A_Index, 10) = 0)
 		{
@@ -11145,22 +11145,25 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		resetTime := nowUnix()
 		PostSubmacroMessage("background", 0x5554, 1, resetTime)
 
-		SetKeyDelay(KeyDelay+50)
+		PrevKeyDelay := A_KeyDelay
+		SetKeyDelay(PrevKeyDelay+200)
 		send "{" SC_Esc "}{" SC_R "}{" SC_Enter "}"
+		SetKeyDelay(KeyDelay)
+		Sleep 3500 * (a_index) ; Any reset spamming caused by a break in nm_healthdetection will eventually fix itself
 
-		n := 0
-		loop 1000
-		{
-			pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|50")
-			dead := nm_HealthBar()
-			;0=alive
-			dead ? n := 0 : n++
-			Gdip_DisposeImage(pBMScreen)
-
-			if n >= 50
-				break
-		}
-
+		; Temporarily removed
+		; n := 0
+		; loop 80
+		; {
+		; 	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|50")
+		; 	dead := nm_HealthBar()
+		; 	;0=alive 8 ALIVE FRAMES
+		; 	dead ? n++ : n := 0
+		; 	Gdip_DisposeImage(pBMScreen)
+		; 	if n >= 4
+		; 		break
+		; }
+		
 		if nm_ConfirmAtHive() && nm_SetHiveCameraDirection() > 0
 		{
 			HiveConfirmed := 1
@@ -11168,7 +11171,8 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		}
 
 		; Dully's Hivecheck for if we spawn at baseplate
-		if !nm_ConfirmAtHive() && nm_DetectSpawn()
+
+		if nm_DetectSpawn() 
 		{
 			Sleep 500
 			GetRobloxClientPos(hwnd)
@@ -11216,17 +11220,34 @@ isHoneycomb(h, s, v)
         && v >= 20 && v <= 85 ; not too bright
     )
 }
-nm_HealthBar() { 
-	local detection := 0
-	static isDead(c) =>   ((((c) & 0x00FF0000 >= 0x004D0000) && ((c) & 0x00FF0000 <= 0x00830000)) ; 4D4D4D-blackBG|838383-whiteBG
-						&& (((c) & 0x0000FF00 >= 0x00004D00) && ((c) & 0x0000FF00 <= 0x00008300))
-						&& (((c) & 0x000000FF >= 0x0000004D) && ((c) & 0x000000FF <= 0x00000083)))
-	GetRobloxClientPos()
-	pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth-100 "|" windowY+24 "|50|20")
-	if isDead(Gdip_GetPixel(pBMScreen, 25, 12))
-		detection:=1
-	Gdip_DisposeImage(pBMScreen)
-	return detection
+nm_HealthBar()
+{
+    GetRobloxClientPos()
+
+    pBM := Gdip_BitmapFromScreen(windowX+windowWidth-100 "|" windowY+24 "|50|20")
+
+    Gdip_LockBits(pBM, 0, 0, 50, 20, &Stride, &Scan0, &BitmapData, 1)
+
+    grey := 0
+    y := 15
+
+    Loop 20
+    {
+        x := 2 + (A_Index-1)*2
+
+        c := NumGet(Scan0 + y*Stride + x*4, "UInt")
+
+        b := c & 255
+        g := (c >> 8) & 255
+        r := (c >> 16) & 255
+
+        grey += Abs(r-g) < 20 && Abs(r-b) < 20 && Abs(g-b) < 20
+    }
+
+    Gdip_UnlockBits(pBM, BitmapData)
+    Gdip_DisposeImage(pBM)
+
+    return grey > 20
 }
 nm_ConfirmAtHive(){
 	pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY "|400|125")
@@ -11309,42 +11330,43 @@ nm_spawnMoveTo(moves) {
 }
 nm_SetHiveCameraDirection(){
     global HiveConfirmed
-    static hivedown := 0
 
-    if hivedown
-        SendInput "{" RotDown "}"
+	; HiveDown = Js needing to rotate down iirc
+	; Check expected pos first
+	; note: this will be redone, i am pushing this out to provide a suitable mackeral however i am aware it is bad code
+
+	GetRobloxClientPos()
+
+	Send "{" RotRight " 4}"
+	Sleep 50
+	if CheckHoneycomb() > 0 
+	{
+		ResetCampos()
+		return 1
+	}
 
     loop 16 ; allow 2 full rots before exit
     {
+		Send "{" RotRight "}"
+		Sleep 50
         GetRobloxClientPos()
-
-        Region := Gdip_BitmapFromScreen((windowX + (windowWidth - windowHeight//4)//2) "|" (windowY + windowHeight*5//8) "|" (windowHeight//4) "|" (windowHeight//4))
-
-		Avg := AverageColorFromImage(Region)
-		HSV := ARGBToHSV(Avg)
-		rez := isHoneycomb(HSV.h, HSV.s, HSV.v)
-		
-        Gdip_DisposeImage(Region)
-
-        if rez > 0
-        {
-            HiveConfirmed := 1
-
-            SendInput "{" RotRight " 4}"
-
-            if hivedown
-                SendInput "{" RotUp "}"
-
-            Send "{" ZoomOut " 5}"
-
-            return 1
-        }
-
-        Send "{" RotLeft "}"
-        Sleep 20
+		if CheckHoneyComb() > 0
+		{
+			ResetCampos()
+			HiveConfirmed := 1
+			return 1
+		}
     }
 
-    return 0
+	ResetCampos() => (SendInput("{" RotRight " 4}"), SendInput("{" ZoomOut " 5}"))
+    CheckHoneycomb()
+	{
+		pBM := Gdip_BitmapFromScreen((windowX + (windowWidth - windowHeight//4)//2) "|" (windowY + windowHeight*5//8) "|" (windowHeight//4) "|" (windowHeight//4))
+		
+		Avg := AverageColorFromImage(pBM)
+		HSV := ARGBToHSV(Avg)
+		return isHoneycomb(HSV.h, HSV.s, HSV.v)
+	}
 }
 
 nm_setShiftLock(state, *){
