@@ -11044,15 +11044,8 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 {
 	global resetTime, youDied, KeyDelay, SC_E, SC_Esc, SC_R, SC_Enter, RotRight, RotLeft, RotUp, RotDown, ZoomOut, objective, AFBrollingDice, AFBuseGlitter, AFBuseBooster, currentField, HiveConfirmed, GameFrozenCounter, bitmaps
 	static hivedown := 0
-	static UIElements := Map("YesNoPrompt", {pBM: "yes",  ToClose: "no", SpamClick: False}
-		, "FeedWindow", {pBM: "feed", ToClose: "CancelFeed", SpamClick: False}
-		, "BlenderGUI", {pBM: "CloseGUI", ToClose: "CloseGUI", SpamClick: False}
-		, "ShopWindow", {pBM: "ShopArrowR", ToClose: "e_button", SpamClick: False}
-		, "QuestDialog", {pBM: "dialog", ToClose: "dialog", SpamClick: True}
-		, "Blender", {pBM: "CloseGUI", ToClose: "CloseGUI", SpamClick: False}
-		, "Close", {pBM: "close", ToClose: "close", SpamClick: False})
 
-	; Game frozen conditions - 3 strikes
+	; Game frozen conditions - 3 strikes	
 	if GameFrozenCounter >= 3
 	{
 		nm_setStatus("Detected", "Roblox Game Frozen, Restarting")
@@ -11074,6 +11067,7 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 	youDied := 0
 	nm_AutoFieldBoost(currentField)
 
+	; Will interrupt any reset not marked with the checkAll flag. Added to avoid infinite recursion
 	if CheckAll = 1
 	{
 		nm_fieldBoostBooster()
@@ -11114,31 +11108,8 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		offsetY := GetYOffset(hwnd)
 		GetRobloxClientPos(hwnd)
 
+		ClearResidualPrompts()
 
-		; Here we check for all UI elements which can still be here from other tasks/lag.
-
-		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
-
-		for k, v in UIElements
-		{
-			if !Gdip_ImageSearch(pBMScreen, bitmaps[v.pBM])
-				continue
-
-			if Gdip_ImageSearch(pBMScreen, bitmaps[v.ToClose], &Pos)
-			{
-				pos := StrSplit(Pos, ",")
-				MouseMove(windowX + pos[1], windowY + pos[2])
-				Sleep(30)
-
-				if v.SpamClick
-					Loop 50
-						Click()
-				else
-					Click()
-			}
-		}
-
-		Gdip_DisposeImage(pBMScreen)
 		nm_SolveMemoryMatch() ; if theres a mem match open solve it before continuing
 
 		nm_setStatus("Resetting", "Character " A_Index)
@@ -11191,7 +11162,6 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 	if convert = 1 
 		nm_convert()
 
-	; add back wait here my fault
 	if ((nowUnix() - resetTime) < wait)
 	{
 		remaining := Floor((wait-(nowUnix()-resetTime))/1000) ;seconds
@@ -11208,6 +11178,43 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 
 	return hiveconfirmed
 }
+
+ClearResidualPrompts()
+{
+	; Function to check for all UI elements which can still be here from other tasks/lag 
+	; when they can impede the regular macro operations.
+	static UIElements := [
+		{checkBitmap: bitmaps["yes"], closeBitmap: bitmaps["no"], spamClick: false},
+		{checkBitmap: bitmaps["feed"], closeBitmap: bitmaps["CancelFeed"], spamClick: false},
+		{checkBitmap: bitmaps["CloseGUI"], closeBitmap: bitmaps["CloseGUI"], spamClick: false},
+		{checkBitmap: bitmaps["ShopArrowR"], closeBitmap: bitmaps["e_button"], spamClick: false},
+		{checkBitmap: bitmaps["dialog"], closeBitmap: bitmaps["dialog"], spamClick: true},
+		{checkBitmap: bitmaps["CloseGUI"], closeBitmap: bitmaps["CloseGUI"], spamClick: false},
+		{checkBitmap: bitmaps["close"], closeBitmap: bitmaps["close"], spamClick: false}
+	]
+
+	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
+	for k in UIElements
+	{
+		if !Gdip_ImageSearch(pBMScreen, k.checkBitmap)
+			continue
+
+		if Gdip_ImageSearch(pBMScreen, k.closeBitmap, &Pos)
+		{
+			pos := StrSplit(Pos, ",")
+			MouseMove(windowX + pos[1], windowY + pos[2])
+			Sleep(30)
+
+			if k.spamClick
+				Loop 50
+					Click()
+			else
+				Click()
+		}
+	}
+	Gdip_DisposeImage(pBMScreen)
+}
+
 isHoneycomb(h, s, v)
 {
     ; h = 0-360
@@ -11328,47 +11335,43 @@ nm_spawnMoveTo(moves) {
     }
     return script
 }
-nm_SetHiveCameraDirection(){
-    global HiveConfirmed
+nm_SetHiveCameraDirection() {
+    global HiveConfirmed, RotRight, ZoomOut
 
-	; HiveDown = Js needing to rotate down iirc
-	; Check expected pos first
-	; note: this will be redone, i am pushing this out to provide a suitable mackeral however i am aware it is bad code
-
-	GetRobloxClientPos()
-
-	Send "{" RotRight " 4}"
-	Sleep 150 
-	if CheckHoneycomb() > 0 
+    ; Check current direction, expected direction, then 16 rotations.
+    loop 18
 	{
-		ResetCampos()
-		return 1
-	}
-
-    loop 16 ; allow 2 full rots before exit
-    {
-		Send "{" RotRight "}"
-		Sleep 125
-        GetRobloxClientPos()
-		if CheckHoneyComb() > 0
+        if A_Index = 2
 		{
-			ResetCampos()
-			HiveConfirmed := 1
-			return 1
-		}
+            Send "{" RotRight " 4}"
+            Sleep 150
+        }
+		else if A_Index > 2
+		{
+            Send "{" RotRight "}"
+            Sleep 125
+        }
+
+        if CheckHoneycomb() > 0
+		{
+            HiveConfirmed := 1
+            break
+        }
     }
 
-	ResetCampos() => (SendInput("{" RotRight " 4}"), SendInput("{" ZoomOut " 5}"))
-    CheckHoneycomb()
-	{
-		pBM := Gdip_BitmapFromScreen((windowX + (windowWidth - windowHeight//4)//2) "|" (windowY + windowHeight*5//8) "|" (windowHeight//4) "|" (windowHeight//4))
-		
-		Avg := AverageColorFromImage(pBM)
-		HSV := ARGBToHSV(Avg)
-		return isHoneycomb(HSV.h, HSV.s, HSV.v)
-	}
-}
+    SendInput "{" RotRight " 4}"
+    SendInput "{" ZoomOut " 5}"
 
+    return HiveConfirmed
+}
+CheckHoneycomb()
+{
+	pBM := Gdip_BitmapFromScreen((windowX + (windowWidth - windowHeight//4)//2) "|" (windowY + windowHeight*5//8) "|" (windowHeight//4) "|" (windowHeight//4))
+	Avg := AverageColorFromImage(pBM)
+	Gdip_DisposeImage(pBM)
+	HSV := ARGBToHSV(Avg)
+	return isHoneycomb(HSV.h, HSV.s, HSV.v)
+}
 nm_setShiftLock(state, *){
 	global bitmaps, SC_LShift, ShiftLockEnabled
 
