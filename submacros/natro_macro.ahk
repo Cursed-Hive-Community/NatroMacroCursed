@@ -405,6 +405,8 @@ nm_importConfig()
 		, "HideErrors", 1
 		, "DebugHotkey", "F6"
 		, "ReleaseChannel", "Stable"
+		, "GitRepoUrl", "https://github.com/Cursed-Hive-Community/NatroMacroCursed.git"
+		, "GitBranch", "main"
 	)
 
 	config["Status"] := Map("StatusLogReverse", 0
@@ -2553,6 +2555,80 @@ nm_MajorUpdateHelp(*)
 	. "For more information, you can review the convention at https://semver.org/", "Major Update", 0x1040
 }
 
+; Git sync: in-place updates, see UPDATE-GIT.md.
+; Unlike nm_UpdateButton above, which runs submacros\update.bat and extracts a
+; release into a brand new folder, this path keeps the folder, its name and
+; settings\ untouched, and only rewrites the files that actually changed.
+nm_GitSyncGUI(*)
+{
+	global
+	local UpdateCtrl
+
+	GitSyncClose(*){
+		if (IsSet(GitSyncGui) && IsObject(GitSyncGui))
+			GitSyncGui.Destroy(), GitSyncGui := ""
+	}
+	GitSyncClose()
+
+	GitSyncGui := Gui("+AlwaysOnTop -MinimizeBox +Owner" MainGui.Hwnd, "Git Sync")
+	GitSyncGui.OnEvent("Close", GitSyncClose), GitSyncGui.OnEvent("Escape", GitSyncClose)
+	GitSyncGui.SetFont("s9 cDefault Norm", "Tahoma")
+	GitSyncGui.Add("Text", "x10 y10 w360 +BackgroundTrans", "Updates in place: this folder keeps its name, and your settings are never touched.")
+
+	GitSyncGui.SetFont("w700")
+	GitSyncGui.Add("Text", "x10 y+10 +BackgroundTrans", "Repository")
+	GitSyncGui.SetFont("Norm")
+	GitSyncGui.Add("Edit", "x10 y+2 w360 vGitRepoUrlEdit", GitRepoUrl)
+
+	GitSyncGui.SetFont("w700")
+	GitSyncGui.Add("Text", "x10 y+8 +BackgroundTrans", "Branch")
+	GitSyncGui.SetFont("Norm")
+	GitSyncGui.Add("Edit", "x10 y+2 w150 vGitBranchEdit", GitBranch)
+
+	GitSyncGui.Add("Text", "x10 y+12 w360 +BackgroundTrans", "Installed: v" VersionID "`nFolder: " A_WorkingDir)
+
+	GitSyncGui.Add("Button", "x10 y+14 w110 h26", "Save").OnEvent("Click", nm_GitSyncSaveButton)
+	GitSyncGui.Add("Button", "xp+125 yp wp hp", "Cancel").OnEvent("Click", GitSyncClose)
+	GitSyncGui.SetFont("Bold")
+	(UpdateCtrl := GitSyncGui.Add("Button", "xp+125 yp wp hp", "Update")).OnEvent("Click", nm_GitSyncUpdateButton)
+
+	GitSyncGui.Show("w380 h250")
+	UpdateCtrl.Focus()
+}
+nm_GitSyncStore()
+{
+	global GitSyncGui, GitRepoUrl, GitBranch
+	GitRepoUrl := Trim(GitSyncGui["GitRepoUrlEdit"].Value)
+	GitBranch := Trim(GitSyncGui["GitBranchEdit"].Value)
+	IniWrite GitRepoUrl, "settings\nm_config.ini", "Settings", "GitRepoUrl"
+	IniWrite GitBranch, "settings\nm_config.ini", "Settings", "GitBranch"
+}
+nm_GitSyncSaveButton(*)
+{
+	global GitSyncGui
+	nm_GitSyncStore()
+	MsgBox "Repository and branch saved.", "Git Sync", 0x1040 " T5 Owner" GitSyncGui.Hwnd
+}
+nm_GitSyncUpdateButton(*)
+{
+	global GitSyncGui, GitRepoUrl, GitBranch
+	if (MsgBox("The macro will close, update in place, then start again.`n`nYour settings are kept.`n`nContinue?", "Git Sync", 0x1044 " Owner" GitSyncGui.Hwnd) != "Yes")
+		return
+
+	nm_GitSyncStore()
+	args := ""
+	if (GitRepoUrl != "")
+		args .= ' -RepoUrl "' GitRepoUrl '"'
+	if (GitBranch != "")
+		args .= ' -Branch "' GitBranch '"'
+
+	GitSyncGui.Destroy(), GitSyncGui := ""
+	; nm-update.bat stops every macro process of this folder, applies the
+	; update and restarts through START.bat, so exiting here is enough.
+	Run '"' A_WorkingDir '\nm-update.bat"' args
+	ExitApp
+}
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; CREATE GUI
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2589,6 +2665,7 @@ MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 MainGui.Add("Button", "x5 y260 w65 h20 -Wrap Disabled vStartButton", " Start (" StartHotkey ")").OnEvent("Click", nm_StartButton)
 MainGui.Add("Button", "x75 y260 w65 h20 -Wrap Disabled vPauseButton", " Pause (" PauseHotkey ")").OnEvent("Click", nm_PauseButton)
 MainGui.Add("Button", "x145 y260 w65 h20 -Wrap Disabled vStopButton", " Stop (" StopHotkey ")").OnEvent("Click", nm_StopButton)
+MainGui.Add("Button", "x215 y260 w60 h20 -Wrap vGitSyncButton", "Git Sync").OnEvent("Click", nm_GitSyncGUI)
 for k,v in ["PMondoGuid","PMondoGuidComplete","PFieldBoosted","PFieldGuidExtend","PFieldGuidExtendMins","PFieldBoostExtend","PPopStarExtend"]
 	%v%:=0
 #include "*i %A_ScriptDir%\..\settings\personal.ahk"

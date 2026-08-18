@@ -15,12 +15,17 @@
       nm-update.bat -NoRestart      do not restart the macro
       nm-update.bat -Clean          also drop untracked files (settings\ kept)
       nm-update.bat -Branch main    force a specific branch
+      nm-update.bat -RepoUrl <url>  repoint origin before updating
+
+  The Git Sync window in the macro GUI drives this script with -RepoUrl and
+  -Branch taken from settings\nm_config.ini.
 
   See UPDATE-GIT.md for the whole workflow.
 #>
 [CmdletBinding()]
 param(
   [string] $Branch,
+  [string] $RepoUrl,
   [switch] $KeepLocal,
   [switch] $NoRestart,
   [switch] $Clean,
@@ -71,8 +76,22 @@ To convert it in place (nothing re-downloaded, settings\ kept):
 }
 
 # ---------------------------------------------------------------------------
-# 2. Work out which remote ref to follow
+# 2. Work out which repository and ref to follow
 # ---------------------------------------------------------------------------
+if ($RepoUrl) {
+  $currentUrl = Get-NmText (Invoke-NmGitSafe remote get-url origin)
+  if ($currentUrl -ne $RepoUrl) {
+    Write-NmStep 'Repointing the origin remote'
+    $setUrl = Invoke-NmGitRaw remote set-url origin $RepoUrl
+    # A repository with no origin yet needs 'remote add' rather than 'set-url'.
+    if ($setUrl.Code -ne 0) { $setUrl = Invoke-NmGitRaw remote add origin $RepoUrl }
+    if ($setUrl.Code -ne 0) {
+      Stop-NmWithError ("Could not point origin at $RepoUrl.`n" + (Get-NmText $setUrl.Output))
+    }
+    Write-NmInfo "origin -> $RepoUrl"
+  }
+}
+
 Write-NmStep 'Resolving the branch to track'
 $detached = (Get-NmText (Invoke-NmGitSafe rev-parse --abbrev-ref HEAD)) -eq 'HEAD'
 

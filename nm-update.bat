@@ -7,6 +7,7 @@
 ::   nm-update.bat -NoRestart    do not restart the macro
 ::   nm-update.bat -Clean        also drop untracked files (settings\ is kept)
 ::   nm-update.bat -Branch main  force a specific branch
+::   nm-update.bat -RepoUrl <url>  repoint origin before updating
 ::
 :: See UPDATE-GIT.md for the whole workflow.
 setlocal
