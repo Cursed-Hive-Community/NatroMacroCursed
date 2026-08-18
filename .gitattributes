@@ -5,6 +5,9 @@
 # batch files
 *.bat text eol=crlf
 
+# powershell files
+*.ps1 text eol=crlf
+
 # config and data files
 *.ini text eol=crlf
 *.txt text eol=lf
