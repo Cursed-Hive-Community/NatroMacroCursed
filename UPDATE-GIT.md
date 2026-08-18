@@ -87,6 +87,29 @@ instance: Roblox account, hotkeys, Discord webhook.
 
 ## Daily use
 
+### From the macro interface
+
+The bottom bar of the macro window carries a **Git Sync** button, just to the
+right of Stop. It opens a small window holding:
+
+- the **repository** the instance synchronises with,
+- the **branch** to follow,
+- a **Save** button, which stores both in `settings/nm_config.ini`,
+- an **Update** button, which applies them straight away.
+
+Update closes the macro, runs the in-place update and starts the macro again
+through `START.bat`. Settings are kept, as with every other route described
+here.
+
+Changing the repository field is enough to move an instance to another fork:
+the updater repoints `origin` before fetching. That makes it easy to run, say,
+one instance on a stable branch and another on a test branch, from the same
+interface.
+
+Both values live in the `[Settings]` section of `settings/nm_config.ini` as
+`GitRepoUrl` and `GitBranch`, so they can also be edited by hand or copied
+between instances.
+
 ### Updating one instance
 
 Double-click **`nm-update.bat`** in the macro folder.
