@@ -313,7 +313,7 @@ nm_importPaths()
 				"honeylb", "honeystorm", "stickerstack", "stickerprinter", "normalmm", "megamm", "nightmm", "extrememm", "wintermm"], ; other
 		"gtf", ["bamboo", "blueflower", "cactus", "clover", "coconut", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
 				"rose", "spider", "strawberry", "stump", "sunflower"], ; go to field
-		"gtp", ["bamboo", "blueflower", "cactus", "clover", "coconut", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
+		"gtp", ["bamboo", "blueflower", "cactus", "clover", "coconut", "coconutpaper", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
 				"rose", "spider", "strawberry", "stump", "sunflower"], ; go to planter
 		"gtq", ["black", "brown", "bucko", "honey", "polar", "riley"], ; go to questgiver
 		"wf",  ["bamboo", "blueflower", "cactus", "clover", "coconut", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
@@ -888,6 +888,10 @@ nm_importConfig()
 		, "CactusFieldCheck", 1
 		, "CloverFieldCheck", 1
 		, "CoconutFieldCheck", 0
+		, "CoconutPaperCheck", 0
+		, "CoconutPaperHotbar", 7
+		, "CoconutPaperTokenLink", 1
+		, "CoconutPaperTokenField", "Sunflower"
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -2065,6 +2069,10 @@ for x in StrSplit(priorityListNumeric)
 	priorityList.push(defaultPriorityList[x])
 
 CheckNight:=0
+; planter slot reserved for the Coconut (Paper) planter when CoconutPaperCheck
+; is enabled: the automatic algorithm skips it and it always holds a Paper
+; planter placed at the coconut paper spot (paths\gtp-coconutpaper.ahk)
+CoconutPaperSlot:=3
 LostPlanters:=""
 QuestFields:=""
 youDied:=0
@@ -3530,11 +3538,13 @@ MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "xp y114 vRoseFieldCheck Disabled Checked" RoseFieldCheck hidden, "Rose (MOT)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
 (GuiCtrl := MainGui.Add("CheckBox", "xp y139 vMountainTopFieldCheck Disabled Checked" MountainTopFieldCheck hidden, "Mountain Top (INV)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
 (GuiCtrl := MainGui.Add("CheckBox", "xp y164 vCoconutFieldCheck Disabled Checked" CoconutFieldCheck hidden, "Coconut (REF)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp y178 vPepperFieldCheck Disabled Checked" PepperFieldCheck hidden, "Pepper (INV)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "xp y178 vCoconutPaperCheck Disabled Checked" CoconutPaperCheck hidden, "Coconut (Paper)")).Section := "Planters", GuiCtrl.OnEvent("Click", ba_coconutPaperSwitch_)
+(GuiCtrl := MainGui.Add("CheckBox", "xp y192 vPepperFieldCheck Disabled Checked" PepperFieldCheck hidden, "Pepper (INV)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x478 y177 w11 h14 vCoconutPaperSettings Disabled" hidden, "?").OnEvent("Click", nm_CoconutPaperSettingsGui)
 
-MainGui.Add("Text", "x354 y196 w144 h36 0x7 vTextBox1" hidden)
-(GuiCtrl := MainGui.Add("CheckBox", "x358 y200 w138 h13 vConvertFullBagHarvest Disabled Checked" ConvertFullBagHarvest hidden, "Convert Full Bag Harvest")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x358 y216 w138 h13 vGatherPlanterLoot Disabled Checked" GatherPlanterLoot hidden, "Gather Planter Loot")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Text", "x354 y206 w144 h32 0x7 vTextBox1" hidden)
+(GuiCtrl := MainGui.Add("CheckBox", "x358 y209 w138 h13 vConvertFullBagHarvest Disabled Checked" ConvertFullBagHarvest hidden, "Convert Full Bag Harvest")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x358 y223 w138 h13 vGatherPlanterLoot Disabled Checked" GatherPlanterLoot hidden, "Gather Planter Loot")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
 SetLoadingProgress(38)
 
 ;Manual Planters
@@ -4251,6 +4261,8 @@ nm_TabPlantersLock(){
 	MainGui["RoseFieldCheck"].Enabled := 0
 	MainGui["MountainTopFieldCheck"].Enabled := 0
 	MainGui["CoconutFieldCheck"].Enabled := 0
+	MainGui["CoconutPaperCheck"].Enabled := 0
+	MainGui["CoconutPaperSettings"].Enabled := 0
 	MainGui["PepperFieldCheck"].Enabled := 0
 	;manual
 	MainGui["MHILeft"].Enabled := 0
@@ -4323,6 +4335,8 @@ nm_TabPlantersUnLock(){
 	MainGui["RoseFieldCheck"].Enabled := 1
 	MainGui["MountainTopFieldCheck"].Enabled := 1
 	MainGui["CoconutFieldCheck"].Enabled := 1
+	MainGui["CoconutPaperCheck"].Enabled := 1
+	MainGui["CoconutPaperSettings"].Enabled := 1
 	MainGui["PepperFieldCheck"].Enabled := 1
 	;manual
 	MainGui["MHILeft"].Enabled := 1
@@ -6366,7 +6380,7 @@ ba_planterSwitch(*){
 		,"N1MinPercent","N2MinPercent","N3MinPercent","N4MinPercent","N5MinPercent"
 		,"N1MinPercentUpDown","N2MinPercentUpDown","N3MinPercentUpDown","N4MinPercentUpDown","N5MinPercentUpDown"
 		,"DandelionFieldCheck","SunflowerFieldCheck","MushroomFieldCheck","BlueFlowerFieldCheck","CloverFieldCheck","SpiderFieldCheck","StrawberryFieldCheck","BambooFieldCheck"
-		,"PineappleFieldCheck","StumpFieldCheck","PumpkinFieldCheck","PineTreeFieldCheck","RoseFieldCheck","MountainTopFieldCheck","CactusFieldCheck","CoconutFieldCheck","PepperFieldCheck"
+		,"PineappleFieldCheck","StumpFieldCheck","PumpkinFieldCheck","PineTreeFieldCheck","RoseFieldCheck","MountainTopFieldCheck","CactusFieldCheck","CoconutFieldCheck","CoconutPaperCheck","CoconutPaperSettings","PepperFieldCheck"
 		,"Text1","Text2","Text3","Text4","Text5"
 		,"TextLine1","TextLine2","TextLine3","TextLine4","TextLine5","TextLine6","TextLine7"
 		,"TextZone1","TextZone2","TextZone3","TextZone4","TextZone5","TextZone6"
@@ -7035,6 +7049,59 @@ ba_gotoPlanterFieldSwitch_(*){
 	}
 	ba_saveConfig_()
 }
+;The planter cannot be placed from the inventory at the coconut paper spot:
+;it has to be thrown while jumping, by spamming its hotbar key, so the macro
+;has to be told which key holds it.
+nm_CoconutPaperSettingsGui(*){
+	global CoconutPaperGui, CoconutPaperHotbar, CoconutPaperTokenLink, CoconutPaperTokenField, fieldnamelist, MainGui
+	local GuiCtrl
+	if (IsSet(CoconutPaperGui) && IsObject(CoconutPaperGui))
+		CoconutPaperGui.Destroy(), CoconutPaperGui := ""
+	CoconutPaperGui := Gui("+AlwaysOnTop -MinimizeBox +Owner" MainGui.Hwnd, "Coconut (Paper) Settings")
+	CoconutPaperGui.SetFont("s8 cDefault Norm", "Tahoma")
+	CoconutPaperGui.Add("Text", "x10 y10 w300", "Planter slot 3 is reserved for a Paper planter placed at the coconut paper spot, and harvested as soon as it is fully grown.")
+	CoconutPaperGui.Add("Text", "x10 y48 w300", "That spot is out of reach of the ordinary placement routine, so the macro jumps and spams the planter's hotbar key instead. Tell it which slot holds your Paper planters.")
+	CoconutPaperGui.Add("Text", "x10 y105 +BackgroundTrans", "Paper planter hotbar slot:")
+	(GuiCtrl := CoconutPaperGui.Add("DropDownList", "x150 y102 w50 h120 vCoconutPaperHotbar", [1,2,3,4,5,6,7])).Text := CoconutPaperHotbar
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x10 y130 w300 h1 0x7")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y140 w300 vCoconutPaperTokenLink Checked" CoconutPaperTokenLink, "Farm the token link left behind, after each harvest"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x10 y165 +BackgroundTrans", "Token link field:")
+	(GuiCtrl := CoconutPaperGui.Add("DropDownList", "x150 y162 w100 h200 vCoconutPaperTokenField", fieldnamelist)).Text := CoconutPaperTokenField
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
+	CoconutPaperGui.Show("w320 h200")
+}
+;Toggling the reserved slot hands it over: whatever is growing there now is
+;flagged for immediate harvest, rather than being abandoned in the field.
+ba_coconutPaperSwitch_(*){
+	global
+	CoconutPaperCheck := MainGui["CoconutPaperCheck"].Value
+	if (CoconutPaperCheck) {
+		if (MsgBox("
+		(
+		You have selected "Coconut (Paper)".
+
+		Planter slot 3 is now reserved. It will always hold a Paper planter placed at the coconut paper spot, harvested as soon as it is fully grown.
+
+		Planters+ will only manage slots 1 and 2, so you will run one fewer planter of your own choosing.
+
+		Any planter currently in slot 3 will be harvested first, even if it is not fully grown.
+		)", "WARNING!!", 1) != "Ok") {
+			CoconutPaperCheck := 0
+			MainGui["CoconutPaperCheck"].Value := 0
+			ba_saveConfig_()
+			return
+		}
+	}
+	if (PlanterName%CoconutPaperSlot% != "None") {
+		PlanterHarvestNow%CoconutPaperSlot% := 1
+		PlanterHarvestTime%CoconutPaperSlot% := nowUnix() - 1
+		IniWrite 1, "settings\nm_config.ini", "Planters", "PlanterHarvestNow" CoconutPaperSlot
+		IniWrite PlanterHarvestTime%CoconutPaperSlot%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
+	}
+	ba_saveConfig_()
+}
 ba_gatherFieldSippingSwitch_(*){
 	global GatherFieldSipping
 	GatherFieldSipping := MainGui["GatherFieldSipping"].Value
@@ -7104,6 +7171,7 @@ ba_saveConfig_(*){ ;//todo: needs replacing!
 	CactusFieldCheck := MainGui["CactusFieldCheck"].Value
 	CloverFieldCheck := MainGui["CloverFieldCheck"].Value
 	CoconutFieldCheck := MainGui["CoconutFieldCheck"].Value
+	CoconutPaperCheck := MainGui["CoconutPaperCheck"].Value
 	DandelionFieldCheck := MainGui["DandelionFieldCheck"].Value
 	MountainTopFieldCheck := MainGui["MountainTopFieldCheck"].Value
 	MushroomFieldCheck := MainGui["MushroomFieldCheck"].Value
@@ -7146,6 +7214,7 @@ ba_saveConfig_(*){ ;//todo: needs replacing!
 	IniWrite CactusFieldCheck, "settings\nm_config.ini", "Planters", "CactusFieldCheck"
 	IniWrite CloverFieldCheck, "settings\nm_config.ini", "Planters", "CloverFieldCheck"
 	IniWrite CoconutFieldCheck, "settings\nm_config.ini", "Planters", "CoconutFieldCheck"
+	IniWrite CoconutPaperCheck, "settings\nm_config.ini", "Planters", "CoconutPaperCheck"
 	IniWrite DandelionFieldCheck, "settings\nm_config.ini", "Planters", "DandelionFieldCheck"
 	IniWrite MountainTopFieldCheck, "settings\nm_config.ini", "Planters", "MountainTopFieldCheck"
 	IniWrite MushroomFieldCheck, "settings\nm_config.ini", "Planters", "MushroomFieldCheck"
@@ -10858,7 +10927,7 @@ nm_PlanterDetection()
 	else
 		return 0
 }
-nm_PlanterTimeUpdate(FieldName, SetStatus := 1)
+nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 {
 	global
 	local i, field, k, v, r:=0, PlanterGrowTime, PlanterBarProgress, CurrentPlanterBarProgress, NewPlanterBarProgress, VerifiedPlanterBarProgress
@@ -10866,7 +10935,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1)
 	Loop 3
 	{
 		i := A_Index
-		if ((((PlanterMode = 2) && HarvestFullGrown) || ((PlanterMode = 1) && (PlanterHarvestFull%i% = "Full"))) && (PlanterField%i% = FieldName))
+		if ((((PlanterMode = 2) && (ba_isReservedSlot(i) ? atPlanter : HarvestFullGrown)) || ((PlanterMode = 1) && (PlanterHarvestFull%i% = "Full"))) && (PlanterField%i% = FieldName))
 		{
 			field := StrReplace(FieldName, " ")
 			for k,v in %field%Planters
@@ -20734,6 +20803,9 @@ ba_planter(){
 	global PlanterEstPercent1
 	global PlanterEstPercent2
 	global PlanterEstPercent3
+	global PlanterHarvestNow1
+	global PlanterHarvestNow2
+	global PlanterHarvestNow3
 	global ComfortingFields, MotivatingFields, SatisfyingFields, RefreshingFields, InvigoratingFields
 	global LastComfortingField, LastMotivatingField, LastSatisfyingField, LastRefreshingField, LastInvigoratingField
 	global MaxAllowedPlanters
@@ -20771,6 +20843,8 @@ ba_planter(){
 	global CactusFieldCheck
 	global CloverFieldCheck
 	global CoconutFieldCheck
+	global CoconutPaperCheck
+	global CoconutPaperSlot
 	global DandelionFieldCheck
 	global MountainTopFieldCheck
 	global MushroomFieldCheck
@@ -20886,6 +20960,19 @@ ba_planter(){
 			}
 		}
 	}
+	;the hand-over harvest is over once the slot is empty, so drop its override:
+	;whatever lands there next is only taken when fully grown
+	if(PlanterHarvestNow%CoconutPaperSlot% && (PlanterName%CoconutPaperSlot%="none")) {
+		PlanterHarvestNow%CoconutPaperSlot%:=0
+		IniWrite 0, "settings\nm_config.ini", "Planters", "PlanterHarvestNow" CoconutPaperSlot
+	}
+	;refill the reserved Coconut (Paper) slot first, so its one hour cycle is
+	;not held up behind the nectar optimisation below
+	if(CoconutPaperCheck && (PlanterName%CoconutPaperSlot%="none")) {
+		coconutPaperPlanter:=ba_coconutPaperPlanter()
+		if((coconutPaperPlanter[1]!="none") && (ba_placeCoconutPaper()=1))
+			ba_SavePlacedPlanter("Coconut", coconutPaperPlanter, CoconutPaperSlot, "Refreshing", 1)
+	}
 	;re-place planters here
 	;--- determine max number of planters ---
 	maxplanters:=0
@@ -20897,12 +20984,11 @@ ba_planter(){
 		return
 	;determine number of placed planters
 	plantersplaced:=0
-	planterSlots:=[]
+	planterSlots:=ba_freePlanterSlots()
 	Loop 3 {
-		if(PlanterName%A_Index%="none")
-			planterSlots.push(A_Index)
+		if(PlanterName%A_Index%!="none")
+			plantersplaced++
 	}
-	plantersplaced:=3-planterSlots.Length
 	;temp1:=planterSlots[1]
 	;temp2:=planterSlots[2]
 	;temp3:=planterSlots[3]
@@ -20943,11 +21029,7 @@ ba_planter(){
 				nectarPlantersPlaced:=nectarPlantersPlaced+1
 		}
 		if (currentNectar!="none") {
-			planterSlots:=[]
-			Loop 3 {
-				if(PlanterName%A_Index%="none")
-					planterSlots.push(A_Index)
-			}
+			planterSlots:=ba_freePlanterSlots()
 			for i, planterNum in planterSlots {
 			;Loop 3 { ;3 max planters
 			;temp1:=planterSlots[1]
@@ -21110,10 +21192,7 @@ ba_planter(){
 			if(PlanterNectar%A_Index%=currentNectar)
 				nectarPlantersPlaced:=nectarPlantersPlaced+1
 		}
-		Loop 3 {
-			if(PlanterName%A_Index%="none")
-				planterSlots.push(A_Index)
-		}
+		planterSlots:=ba_freePlanterSlots()
 		for i, planterNum in planterSlots {
 		;Loop 3 {
 			;--- determine max number of planters ---
@@ -21279,11 +21358,7 @@ ba_planter(){
 				nectarPlantersPlaced:=nectarPlantersPlaced+1
 		}
 		if (currentNectar!="none") {
-			planterSlots:=[]
-			Loop 3 {
-				if(PlanterName%A_Index%="none")
-					planterSlots.push(A_Index)
-			}
+			planterSlots:=ba_freePlanterSlots()
 					for i, planterNum in planterSlots {
 			;Loop 3 {
 				;--- determine max number of planters ---
@@ -21428,7 +21503,7 @@ ba_getLastField(currentnectar){
 	;determine allowed fields
 	for key, value in %currentnectar%Fields {
 		tempfieldname := StrReplace(value, " ", "")
-		if(%tempfieldname%FieldCheck && value!=PlanterField1 && value!=PlanterField2 && value!=PlanterField3)
+		if(%tempfieldname%FieldCheck && value!=PlanterField1 && value!=PlanterField2 && value!=PlanterField3 && !ba_fieldTakenByPaper(value))
 			availablefields.Push(value)
 	}
 	arraylen:=availablefields.Length
@@ -21480,6 +21555,116 @@ ba_getNextPlanter(nextfield){
 	}
 	return [nextPlanterName, nextPlanterNectarBonus, nextPlanterGrowBonus, nextPlanterGrowTime]
 }
+;the Coconut (Paper) slot is reserved: the automatic algorithm leaves it
+;alone and it always holds a Paper planter placed at the coconut paper spot
+ba_isReservedSlot(planterNum){
+	global CoconutPaperCheck, CoconutPaperSlot, PlanterMode
+	return ((PlanterMode = 2) && CoconutPaperCheck && (planterNum = CoconutPaperSlot))
+}
+;with the reservation active the coconut field belongs to the paper planter,
+;so the algorithm must not send a second planter there
+ba_fieldTakenByPaper(fieldName){
+	global CoconutPaperSlot
+	return (ba_isReservedSlot(CoconutPaperSlot) && (fieldName = "Coconut"))
+}
+;Placing at the coconut paper spot, after jln7_'s CHC script: the planter is
+;thrown mid-jump by spamming its hotbar key. The E prompt only flashes there
+;for a fraction of a second, far too briefly to confirm the throw, so the macro
+;keeps throwing until the game answers with the "already a planter in this
+;field" alert instead - which can only mean one of the throws landed.
+;Returns 1 on success.
+ba_placeCoconutPaper(){
+	global CoconutPaperHotbar, SC_Space
+	nm_updateAction("Planters")
+	nm_setShiftLock(0)
+	nm_Reset()
+	nm_setStatus("Traveling", "Paper Planter (Coconut)")
+	nm_gotoPlanter("coconutpaper")
+	nm_setStatus("Placing", "Paper Planter (Coconut)")
+	Loop 8 {
+		sendinput "{" SC_Space " up}"
+		Sleep 800
+		sendinput "{" SC_Space " down}"
+		Sleep 100
+		sendinput "{" SC_Space " up}"
+		Sleep 200
+		Loop 4 {
+			sendinput "{" CoconutPaperHotbar " 3}"
+			Sleep 50
+		}
+		Loop 10 {
+			Sleep 100
+			if (nm_imgSearch("planteralready.png", 30, "lowright")[1] = 0) {
+				nm_setStatus("Placed", "Paper Planter (Coconut)")
+				return 1
+			}
+			if (nm_imgSearch("3Planters.png", 30, "lowright")[1] = 0) {
+				nm_setStatus("Error", "3 Planters already placed!")
+				return 0
+			}
+		}
+	}
+	nm_setStatus("Error: Unable to place", "Paper Planter (Coconut)")
+	return 0
+}
+;Farming the token link the harvest leaves behind, after jln7_'s CHC script:
+;walk a small square in an open field so the linked tokens are picked up one
+;after the other.
+ba_coconutPaperTokenLink(){
+	global CoconutPaperTokenField, FwdKey, BackKey, LeftKey, RightKey
+	nm_updateAction("Planters")
+	nm_setShiftLock(0)
+	nm_Reset()
+	nm_setStatus("Traveling", "Token Link")
+	nm_gotoField(CoconutPaperTokenField)
+	Sleep 500
+	nm_setStatus("Collecting", "Token Link")
+	Loop 25 {
+		sendinput "{" RightKey " down}"
+		Sleep 350
+		sendinput "{" RightKey " up}{" BackKey " down}"
+		Sleep 700
+		sendinput "{" BackKey " up}{" LeftKey " down}"
+		Sleep 350
+		sendinput "{" LeftKey " up}{" FwdKey " down}"
+		Sleep 700
+		sendinput "{" FwdKey " up}{" LeftKey " down}"
+		Sleep 350
+		sendinput "{" LeftKey " up}{" BackKey " down}"
+		Sleep 700
+		sendinput "{" BackKey " up}{" RightKey " down}"
+		Sleep 350
+		sendinput "{" RightKey " up}{" FwdKey " down}"
+		Sleep 700
+		sendinput "{" FwdKey " up}"
+	}
+	Sleep 500
+}
+;that spot is reached by its own path rather than the coconut field one
+ba_planterPath(fieldName, planterNum){
+	return ba_isReservedSlot(planterNum) ? "coconutpaper" : fieldName
+}
+;slots the automatic algorithm is allowed to fill
+ba_freePlanterSlots(){
+	global
+	local slots:=[], i:=0
+	Loop 3 {
+		i:=A_Index
+		if((PlanterName%i%="none") && !ba_isReservedSlot(i))
+			slots.push(i)
+	}
+	return slots
+}
+;read the Paper entry out of the coconut table so grow time and nectar bonus
+;stay in step with CoconutPlanters
+ba_coconutPaperPlanter(){
+	global CoconutPlanters
+	local k, v
+	for k, v in CoconutPlanters
+		if (v[1] = "PaperPlanter")
+			return v
+	return ["none"]
+}
 ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 	global BambooFieldCheck, BlueFlowerFieldCheck, CactusFieldCheck, CloverFieldCheck, CoconutFieldCheck, DandelionFieldCheck, MountainTopFieldCheck, MushroomFieldCheck, PepperFieldCheck, PineTreeFieldCheck, PineappleFieldCheck, PumpkinFieldCheck, RoseFieldCheck, SpiderFieldCheck, StrawberryFieldCheck, StumpFieldCheck, SunflowerFieldCheck, MaxAllowedPlanters, LostPlanters, bitmaps
 
@@ -21493,7 +21678,7 @@ ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 		nm_Reset()
 		nm_OpenMenu("itemmenu")
 		nm_setStatus("Traveling", (planterName . " (" . fieldName . ")"))
-		nm_gotoPlanter(fieldName, 0)
+		nm_gotoPlanter(ba_planterPath(fieldName, planterNum), 0)
 	}
 
 	planterPos := nm_InventorySearch(planterName, "up", 4)
@@ -21610,7 +21795,7 @@ ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 	return 1
 }
 ba_harvestPlanter(planterNum){
-	global PlanterName1, PlanterName2, PlanterName3, PlanterField1, PlanterField2, PlanterField3, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3, PlanterNectar1, PlanterNectar2, PlanterNectar3, PlanterEstPercent1, PlanterEstPercent2, PlanterEstPercent3, PlanterGlitterC1, PlanterGlitterC2, PlanterGlitterC3, PlanterGlitter1, PlanterGlitter2, PlanterGlitter3, BackKey, RightKey, objective, TotalPlantersCollected, SessionPlantersCollected, HarvestFullGrown, ConvertFullBagHarvest, GatherPlanterLoot, BackpackPercent, bitmaps, SC_E, HiveBees, PlanterHarvestNow1, PlanterHarvestNow2, PlanterHarvestNow3
+	global PlanterName1, PlanterName2, PlanterName3, PlanterField1, PlanterField2, PlanterField3, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3, PlanterNectar1, PlanterNectar2, PlanterNectar3, PlanterEstPercent1, PlanterEstPercent2, PlanterEstPercent3, PlanterGlitterC1, PlanterGlitterC2, PlanterGlitterC3, PlanterGlitter1, PlanterGlitter2, PlanterGlitter3, BackKey, RightKey, objective, TotalPlantersCollected, SessionPlantersCollected, HarvestFullGrown, ConvertFullBagHarvest, GatherPlanterLoot, BackpackPercent, bitmaps, SC_E, SC_Space, CoconutPaperTokenLink, HiveBees, PlanterHarvestNow1, PlanterHarvestNow2, PlanterHarvestNow3
 
 	nm_updateAction("Planters")
 
@@ -21619,13 +21804,27 @@ ba_harvestPlanter(planterNum){
 	nm_setShiftLock(0)
 	nm_Reset(1, ((GatherPlanterLoot = 1) && ((fieldname = "Rose") || (fieldname = "Pine Tree") || (fieldname = "Pumpkin") || (fieldname = "Cactus") || (fieldname = "Spider"))) ? min(20000, (60-HiveBees)*1000) : 0)
 	nm_setStatus("Traveling", planterName . " (" . fieldName . ")")
-	nm_gotoPlanter(fieldName)
+	nm_gotoPlanter(ba_planterPath(fieldName, planterNum))
 	nm_setStatus("Collecting", (planterName . " (" . fieldName . ")"))
-	while ((A_Index <= 5) && !(findPlanter := (nm_imgSearch("e_button.png",10)[1] = 0)))
-		Sleep 200
-	if (findPlanter = 0) {
-		nm_setStatus("Searching", (planterName . " (" . fieldName . ")"))
-		findPlanter := nm_searchForE()
+	if (ba_isReservedSlot(planterNum)) {
+		findPlanter := 0
+		sendinput "{" SC_Space " down}"
+		Loop 30 {
+			Sleep 100
+			if (nm_imgSearch("e_button.png", 30, "high")[1] = 0) {
+				findPlanter := 1
+				break
+			}
+		}
+		if (!findPlanter)
+			sendinput "{" SC_Space " up}"
+	} else {
+		while ((A_Index <= 5) && !(findPlanter := (nm_imgSearch("e_button.png",10)[1] = 0)))
+			Sleep 200
+		if (findPlanter = 0) {
+			nm_setStatus("Searching", (planterName . " (" . fieldName . ")"))
+			findPlanter := nm_searchForE()
+		}
 	}
 	if (findPlanter = 0) {
 		;check for phantom planter
@@ -21661,6 +21860,8 @@ ba_harvestPlanter(planterNum){
 	}
 	else {
 		SendInput "{" SC_E " down}"
+		if (ba_isReservedSlot(planterNum))
+			SendInput "{" SC_Space " up}"
 		Sleep 100
 		SendInput "{" SC_E " up}"
 
@@ -21684,7 +21885,7 @@ ba_harvestPlanter(planterNum){
 
 		Sleep 50 ; wait for game to update frame
 		GetRobloxClientPos(hwnd)
-		if ((HarvestFullGrown = 1) && !PlanterHarvestNow%planterNum%) {
+		if (((HarvestFullGrown = 1) || ba_isReservedSlot(planterNum)) && !PlanterHarvestNow%planterNum%) {
 			loop 3 {
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
 				if (Gdip_ImageSearch(pBMScreen, bitmaps["no"], &pos, , , , , 2, , 3) = 1) {
@@ -21694,7 +21895,7 @@ ba_harvestPlanter(planterNum){
 					sleep 100
 					MouseMove windowX+350, windowY+offsetY+100
 					Gdip_DisposeImage(pBMScreen)
-					nm_PlanterTimeUpdate(FieldName)
+					nm_PlanterTimeUpdate(FieldName, 1, 1)
 					return 1
 				}
 				Gdip_DisposeImage(pBMScreen)
@@ -21763,14 +21964,21 @@ ba_harvestPlanter(planterNum){
 					sleep 200
 				}
 			}
-			nm_walkFrom(fieldName)
+			;no walk-back path exists for the coconut paper spot
+			if (ba_isReservedSlot(planterNum))
+				nm_Reset()
+			else
+				nm_walkFrom(fieldName)
 			DisconnectCheck()
 			nm_findHiveSlot()
 		}
+		;the harvest leaves a token link behind: farm it before moving on
+		if (ba_isReservedSlot(planterNum) && CoconutPaperTokenLink)
+			ba_coconutPaperTokenLink()
 		return 1
 	}
 }
-ba_SavePlacedPlanter(fieldName, planter, planterNum, nectar){
+ba_SavePlacedPlanter(fieldName, planter, planterNum, nectar, fullGrown:=0){
 	global PlanterName1, PlanterName2, PlanterName3
 		, PlanterField1, PlanterField2, PlanterField3
 		, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3
@@ -21827,7 +22035,10 @@ ba_SavePlacedPlanter(fieldName, planter, planterNum, nectar){
 	}
 	;nec=planter[2]
 	;gro=planter[3]
-	if(AutomaticHarvestInterval) {
+	if(fullGrown) { ;the reserved slot is harvested as soon as it is grown
+		planterHarvestInterval:=floor(planter[4]*60*60)
+		PlanterHarvestTime%planterNum%:=nowUnix()+planterHarvestInterval
+	} else if(AutomaticHarvestInterval) {
 		planterHarvestInterval:=floor(min(planter[4], (autoInterval+autoInterval/(planter[2]*planter[3])), (timeToCap+timeToCap/(planter[2]*planter[3])))*60*60)
 		PlanterHarvestTime%planterNum%:=nowUnix()+planterHarvestInterval
 	} else if(HarvestFullGrown) {
@@ -21858,7 +22069,7 @@ ba_SavePlacedPlanter(fieldName, planter, planterNum, nectar){
 
 	;make all harvest times equal
 	Loop 3 {
-		if(not HarvestFullGrown && PlanterHarvestTime%A_Index% > PlanterHarvestTimeN && PlanterHarvestTime%A_Index% < PlanterHarvestTimeN + 600)
+		if(not (HarvestFullGrown || fullGrown) && PlanterHarvestTime%A_Index% > PlanterHarvestTimeN && PlanterHarvestTime%A_Index% < PlanterHarvestTimeN + 600)
 			IniWrite PlanterHarvestTimeN, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" A_Index
 		else if(A_Index=planterNum)
 			IniWrite PlanterHarvestTimeN, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" planterNum
@@ -21928,7 +22139,7 @@ nm_planterSS(){
 			nm_setShiftLock(0)
 			nm_Reset(nm_Reset(1, ((PlanterField%A_Index% = "Rose") || (PlanterField%A_Index% = "Pine Tree") || (PlanterField%A_Index% = "Pumpkin") || (PlanterField%A_Index% = "Cactus") || (PlanterField%A_Index% = "Spider")) ? min(20000, (60-HiveBees)*1000) : 0))
 			nm_setStatus("Traveling", PlanterName%A_Index% " (" PlanterField%A_Index% ")")
-			nm_gotoPlanter(PlanterField%A_Index%, 1)
+			nm_gotoPlanter(ba_planterPath(PlanterField%A_Index%, A_Index), 1)
 
 			sendinput "{" ZoomIn " 2}"
 

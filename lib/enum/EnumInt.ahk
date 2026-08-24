@@ -366,4 +366,8 @@
 	, "prioritylistnumeric"
 	, "dayOrNight"
 	, "CheckNight"
+	, "CoconutPaperCheck"
+	, "CoconutPaperHotbar"
+	, "CoconutPaperTokenLink"
+	, "CoconutPaperTokenField"
 ]
