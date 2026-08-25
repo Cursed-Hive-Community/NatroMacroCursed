@@ -21668,21 +21668,27 @@ ba_coconutPaperDetection(){
 	;vivid green, 1fe744, which is a hundred away from the growing colours in
 	;red alone. There is no remainder left to measure against, so it is
 	;recognised for what it is rather than divided.
-	if (Gdip_ImageSearch(pBMScreen, pBMFull, &PStart, , , , , 20, , 5) = 1)
+	;Only the top half is searched. The label hangs above the planter, while the
+	;hotbar and its icons sit along the bottom - and one of those icons is close
+	;enough to the finished green to be mistaken for it. Restricted this way, the
+	;only run of the growing green anywhere on screen is the label itself.
+	if (Gdip_ImageSearch(pBMScreen, pBMFull, &PStart, 0, 0, windowWidth, windowHeight//2, 20, , 5) = 1)
 	{
 		Gdip_DisposeImage(pBMScreen)
 		return 1
 	}
 	;20 covers the shading measured on this planter, and is nowhere near the 86
 	;that separates the filled part of the bar from the empty one
-	if (Gdip_ImageSearch(pBMScreen, pBMLight, &PStart, , , , , 20, , 5) != 1)
+	if (Gdip_ImageSearch(pBMScreen, pBMLight, &PStart, 0, 0, windowWidth, windowHeight//2, 20, , 5) != 1)
 	{
 		Gdip_DisposeImage(pBMScreen)
 		return 0
 	}
 	x := SubStr(PStart, 1, InStr(PStart, ",")-1), y := SubStr(PStart, InStr(PStart, ",")+1)
-	if ((Gdip_ImageSearch(pBMScreen, pBMLight, &PLightEnd, x, y, , y+4, 20, , 8) != 1)
-		|| (Gdip_ImageSearch(pBMScreen, pBMDark, &PDarkEnd, x, y, , y+4, 20, , 8) != 1))
+	;and the ends are looked for within the label's own width of the start, so
+	;scenery further along the same rows cannot stretch the bar
+	if ((Gdip_ImageSearch(pBMScreen, pBMLight, &PLightEnd, x, y, x+400, y+4, 20, , 8) != 1)
+		|| (Gdip_ImageSearch(pBMScreen, pBMDark, &PDarkEnd, x, y, x+400, y+4, 20, , 8) != 1))
 	{
 		Gdip_DisposeImage(pBMScreen)
 		return 0
