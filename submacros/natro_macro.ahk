@@ -21669,9 +21669,19 @@ ba_restockPaperPlanters(){
 	nm_updateAction("Planters")
 	ba_gotoProShop()
 
-	if (nm_imgSearch("proshop_openshop.png", 30, "high", "0xFF00FF")[1] != 0) {
-		nm_setStatus("Error", "Pro Shop door not found")
-		return 0
+	;the prompt only shows once the character has come to rest, so give it a
+	;moment rather than looking exactly as the walk ends. If it never shows, say
+	;whether any E prompt is up at all: that separates standing in the wrong
+	;place from standing in the right one and failing to read the banner.
+	Loop 30 {
+		if (nm_imgSearch("proshop_openshop.png", 30, "high", "0xFF00FF")[1] = 0)
+			break
+		if (A_Index = 30) {
+			nm_setStatus("Error", "Pro Shop door not found"
+				. ((nm_imgSearch("e_button.png", 30, "high")[1] = 0) ? " - an E prompt is showing" : " - no E prompt at all"))
+			return 0
+		}
+		Sleep 100
 	}
 	nm_setStatus("Entering", "Pro Shop")
 	Loop 3 {
