@@ -21761,7 +21761,7 @@ ba_restockPaperPlanters(){
 		if (searchRet[1] != 0) ;button no longer green: capacity reached
 			break
 		GetRobloxClientPos()
-		MouseMove windowX+searchRet[2]+65, windowY+searchRet[3]+14
+		MouseMove windowX+searchRet[2]+95, windowY+searchRet[3]+16
 		Sleep 100
 		Click
 		crafted++
