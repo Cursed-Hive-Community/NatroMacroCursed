@@ -375,4 +375,5 @@
 	, "CoconutPaperPlaced"
 	, "CoconutPaperRestockOnly"
 	, "CoconutPaperPlantedAt"
+	, "CoconutPaperReadOnly"
 ]

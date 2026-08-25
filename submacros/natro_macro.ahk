@@ -898,6 +898,7 @@ nm_importConfig()
 		, "CoconutPaperPlaced", 0
 		, "CoconutPaperRestockOnly", 0
 		, "CoconutPaperPlantedAt", 0
+		, "CoconutPaperReadOnly", 0
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -7060,7 +7061,8 @@ ba_gotoPlanterFieldSwitch_(*){
 ;has to be told which key holds it.
 nm_CoconutPaperSettingsGui(*){
 	global CoconutPaperGui, CoconutPaperHotbar, CoconutPaperTokenLink, CoconutPaperTokenField
-	global CoconutPaperRestock, CoconutPaperRestockEvery, CoconutPaperRestockOnly, fieldnamelist, MainGui
+	global CoconutPaperRestock, CoconutPaperRestockEvery, CoconutPaperRestockOnly, CoconutPaperReadOnly
+	global fieldnamelist, MainGui
 	local GuiCtrl
 	if (IsSet(CoconutPaperGui) && IsObject(CoconutPaperGui))
 		CoconutPaperGui.Destroy(), CoconutPaperGui := ""
@@ -7086,7 +7088,9 @@ nm_CoconutPaperSettingsGui(*){
 	CoconutPaperGui.Add("Text", "x196 y225 +BackgroundTrans", "planters placed")
 	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y248 w300 cRed vCoconutPaperRestockOnly Checked" CoconutPaperRestockOnly, "Testing: run the Pro Shop trip and nothing else"))
 	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
-	CoconutPaperGui.Show("w320 h285")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y268 w300 cRed vCoconutPaperReadOnly Checked" CoconutPaperReadOnly, "Testing: only read the planter's growth, nothing else"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Show("w320 h305")
 }
 ;Toggling the reserved slot hands it over: whatever is growing there now is
 ;flagged for immediate harvest, rather than being abandoned in the field.
@@ -10726,7 +10730,7 @@ robloxFPSGui(*) {
 ; MAIN LOOP
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 nm_Start(){
-	global CoconutPaperRestockOnly
+	global CoconutPaperRestockOnly, CoconutPaperReadOnly
 	ActivateRoblox()
 	global serverStart := nowUnix()
 	;a testing setting: run the Pro Shop trip and nothing else, so it can be
@@ -10734,6 +10738,11 @@ nm_Start(){
 	if CoconutPaperRestockOnly
 		Loop {
 			ba_restockPaperPlanters()
+			Sleep 5000
+		}
+	if CoconutPaperReadOnly
+		Loop {
+			ba_readCoconutPaperProgress()
 			Sleep 5000
 		}
 	Loop 
@@ -10914,7 +10923,7 @@ nm_updateAction(action){
 		CurrentAction:=action
 	}
 }
-nm_PlanterDetection()
+nm_PlanterDetection(variation := 0)
 {
 	static pBMProgressStart, pBMProgressEnd, pBMRemain
 
@@ -10933,10 +10942,10 @@ nm_PlanterDetection()
 	GetRobloxClientPos()
 	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
 
-	if ((sPlanterStart := Gdip_ImageSearch(pBMScreen, pBMProgressStart, &PStart, , , , , , , 5)) = 1) {
+	if ((sPlanterStart := Gdip_ImageSearch(pBMScreen, pBMProgressStart, &PStart, , , , , variation, , 5)) = 1) {
 		x := SubStr(PStart, 1, InStr(PStart, ",")-1), y := SubStr(PStart, InStr(PStart, ",")+1)
-		sPlanterEnd := Gdip_ImageSearch(pBMScreen, pBMProgressEnd, &PEnd, x, y, , y+2, , , 8)
-		sPBarEnd := Gdip_ImageSearch(pBMScreen, pBMRemain, &PBarEnd, x, y, , y+8, , , 8)
+		sPlanterEnd := Gdip_ImageSearch(pBMScreen, pBMProgressEnd, &PEnd, x, y, , y+2, variation, , 8)
+		sPBarEnd := Gdip_ImageSearch(pBMScreen, pBMRemain, &PBarEnd, x, y, , y+8, variation, , 8)
 	}
 
 	Gdip_DisposeImage(pBMScreen)
@@ -10971,7 +10980,9 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 				}
 			}
 
-			sendinput "{" RotUp " 4}"
+			;the reserved planter sits under cover, where its bar only comes into
+			;view looking down rather than up
+			sendinput "{" (ba_isReservedSlot(i) ? RotDown : RotUp) " 4}"
 			Sleep 200
 
 			; get prior PlanterBarProgress bounds for comparison
@@ -10979,7 +10990,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 
 			Loop 20
 			{
-				if (((PlanterBarProgress := nm_PlanterDetection()) > 0) && PlanterBarProgress <= 1)
+				if (((PlanterBarProgress := nm_PlanterDetection(ba_isReservedSlot(i) ? 25 : 0)) > 0) && PlanterBarProgress <= 1)
 				{
 					; if new estimate within +/-10%, update
 					;for the reserved slot that expectation is the undegraded one, so it
@@ -11000,7 +11011,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 
 						sendinput "{" RotRight " 2}"
 						sleep 100
-						PlanterBarProgress := nm_PlanterDetection()
+						PlanterBarProgress := nm_PlanterDetection(ba_isReservedSlot(i) ? 25 : 0)
 						sendinput "{" RotLeft " 2}"
 						sleep 100
 
@@ -11026,7 +11037,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 					r := 1
 				}
 			}
-			sendinput "{" RotDown " 4}" ((r = 1) ? "{" RotRight " 2}" : "")
+			sendinput "{" (ba_isReservedSlot(i) ? RotUp : RotDown) " 4}" ((r = 1) ? "{" RotRight " 2}" : "")
 			Sleep 500
 		}
 	}
@@ -21598,6 +21609,34 @@ ba_getNextPlanter(nextfield){
 		}
 	}
 	return [nextPlanterName, nextPlanterNectarBonus, nextPlanterGrowBonus, nextPlanterGrowTime]
+}
+;Development aid: walk to the reserved planter, read its bar and report what
+;it says, without harvesting or replanting anything.
+ba_readCoconutPaperProgress(){
+	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
+	local p := 0
+	nm_updateAction("Planters")
+	nm_setShiftLock(0)
+	nm_Reset()
+	nm_setStatus("Traveling", "Paper Planter (Coconut)")
+	nm_gotoPlanter("coconutpaper")
+	sendinput "{" RotDown " 4}"
+	Sleep 500
+	Loop 20 {
+		if ((p := nm_PlanterDetection(25)) > 0)
+			break
+		Sleep 200
+		sendinput "{" ZoomOut "}"
+	}
+	if (p > 0)
+		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
+			. " - planted " Round((nowUnix() - CoconutPaperPlantedAt)/60) " min ago"
+			. " - full grow time " Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 2) " h")
+	else {
+		ba_dumpProShopScreen("planterbar")
+		nm_setStatus("Error", "Growth bar not read - saved settings\proshop_debug_planterbar.png")
+	}
+	sendinput "{" RotUp " 4}"
 }
 ;A degraded field grows planters more slowly than the planter tables say, by
 ;an amount the game never shows and the wiki only describes in words: every
