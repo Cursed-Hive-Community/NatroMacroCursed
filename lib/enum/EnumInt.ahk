@@ -377,4 +377,5 @@
 	, "CoconutPaperPlantedAt"
 	, "CoconutPaperReadOnly"
 	, "CoconutPaperCycle"
+	, "CoconutPaperDebugShots"
 ]
