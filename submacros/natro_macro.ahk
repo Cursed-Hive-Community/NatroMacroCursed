@@ -21649,7 +21649,7 @@ ba_readCoconutPaperProgress(){
 ;and a four pixel needle rather than eight, since the planter's own label cuts
 ;across the middle of the bar. Returns a fraction, or 0 if the bar is not seen.
 ba_coconutPaperDetection(){
-	static pBMLight, pBMDark
+	static pBMLight, pBMDark, pBMFull
 	global windowX, windowY, windowWidth, windowHeight
 	local pBMScreen, pG, PStart, PLightEnd, PDarkEnd, x, y, cx2, dx2
 	if !(IsSet(pBMLight) && IsSet(pBMDark))
@@ -21658,10 +21658,21 @@ ba_coconutPaperDetection(){
 		pG := Gdip_GraphicsFromImage(pBMLight), Gdip_GraphicsClear(pG, 0xff86d570), Gdip_DeleteGraphics(pG)
 		pBMDark := Gdip_CreateBitmap(1,4)
 		pG := Gdip_GraphicsFromImage(pBMDark), Gdip_GraphicsClear(pG, 0xff567848), Gdip_DeleteGraphics(pG)
+		pBMFull := Gdip_CreateBitmap(1,4)
+		pG := Gdip_GraphicsFromImage(pBMFull), Gdip_GraphicsClear(pG, 0xff1fe744), Gdip_DeleteGraphics(pG)
 	}
 	ActivateRoblox()
 	GetRobloxClientPos()
 	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
+	;A finished planter is not a two tone bar at all: the whole label turns a
+	;vivid green, 1fe744, which is a hundred away from the growing colours in
+	;red alone. There is no remainder left to measure against, so it is
+	;recognised for what it is rather than divided.
+	if (Gdip_ImageSearch(pBMScreen, pBMFull, &PStart, , , , , 20, , 5) = 1)
+	{
+		Gdip_DisposeImage(pBMScreen)
+		return 1
+	}
 	;20 covers the shading measured on this planter, and is nowhere near the 86
 	;that separates the filled part of the bar from the empty one
 	if (Gdip_ImageSearch(pBMScreen, pBMLight, &PStart, , , , , 20, , 5) != 1)
