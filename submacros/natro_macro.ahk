@@ -21731,7 +21731,7 @@ ba_restockPaperPlanters(){
 		return 0
 	}
 	GetRobloxClientPos()
-	MouseMove windowX+searchRet[2]+14, windowY+searchRet[3]+21
+	MouseMove windowX+searchRet[2]+18, windowY+searchRet[3]+26
 	Sleep 200
 	Click
 	Sleep 800
