@@ -21608,10 +21608,14 @@ ba_getNextPlanter(nextfield){
 ;Every other slot keeps the table value it has always used.
 ba_effectiveGrowTime(planterNum, tableHours, progress){
 	global CoconutPaperPlantedAt
-	local measured
-	if (!ba_isReservedSlot(planterNum) || !CoconutPaperPlantedAt || (progress <= 0.05))
+	local inGround, measured
+	if (!ba_isReservedSlot(planterNum) || !CoconutPaperPlantedAt)
 		return tableHours
-	measured := (nowUnix() - CoconutPaperPlantedAt) / 3600 / progress
+	inGround := (nowUnix() - CoconutPaperPlantedAt) / 3600
+	;below a couple of percent the bar is too short to divide by - a pixel of
+	;misreading would swing the answer by days - so come back after twice as long
+	;instead, which walks up to even the 48 hour cap in a handful of visits
+	measured := (progress > 0.02) ? (inGround / progress) : (2 * inGround)
 	;it can only ever be slower than natural, and never by more than the cap
 	return Min(tableHours + 48, Max(tableHours, measured))
 }
