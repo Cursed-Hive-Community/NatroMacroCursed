@@ -21767,10 +21767,11 @@ ba_restockPaperPlanters(){
 		crafted++
 		Sleep 250
 	}
-	if (crafted = 0)
-		ba_dumpProShopScreen("craft")
-	nm_setStatus((crafted = 0) ? "Error" : "Crafted", (crafted = 0)
-		? "Crafted nothing - saved settings\proshop_debug_craft.png"
+	;the item title matched, so this is its page; a button that is not the green
+	;one therefore reads "Capacity Exceeded". Crafting nothing here means the
+	;hundred cap was already met - a wasted walk, not a fault to be reported.
+	nm_setStatus((crafted = 0) ? "Full" : "Crafted", (crafted = 0)
+		? "Paper Planters already at capacity"
 		: crafted " Paper Planter" ((crafted = 1) ? "" : "s"))
 	ba_leaveProShop()
 	return crafted
