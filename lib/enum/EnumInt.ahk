@@ -374,4 +374,5 @@
 	, "CoconutPaperRestockEvery"
 	, "CoconutPaperPlaced"
 	, "CoconutPaperRestockOnly"
+	, "CoconutPaperPlantedAt"
 ]
