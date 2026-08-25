@@ -21642,6 +21642,17 @@ ba_gotoProShop(){
 	nm_gotoCollect("normalmm")
 	nm_gotoCollect("normalmmtoproshop")
 }
+;When the shop is not recognised, save what the macro is looking at: the
+;templates are cut from screenshots taken by hand, and only a picture from a
+;real run can show how the two differ.
+ba_dumpProShopScreen(){
+	global
+	local pBM
+	GetRobloxClientPos()
+	pBM := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
+	Gdip_SaveBitmapToFile(pBM, A_WorkingDir "\settings\proshop_debug.png")
+	Gdip_DisposeImage(pBM)
+}
 ;Leaving is the same E prompt: it is done once the shop controls are gone.
 ba_leaveProShop(){
 	global SC_E
@@ -21655,6 +21666,9 @@ ba_leaveProShop(){
 		SendInput "{" SC_E " up}"
 		Sleep 1000
 	}
+	;still showing shop controls after three presses: reset out of it rather
+	;than leave the macro standing in a menu
+	nm_Reset()
 }
 ;Crafting Paper Planters at the Pro Shop. The shop always reopens on the same
 ;item, so a single click on the left arrow lands on the Paper Planter - the
@@ -21701,17 +21715,18 @@ ba_restockPaperPlanters(){
 		}
 	}
 	if (!inside) {
-		nm_setStatus("Error", "Could not enter the Pro Shop"
-			. ((nm_imgSearch("proshop_arrowleft.png", 120, "low")[1] = 0) ? " - controls seen only at tolerance 120"
-			: (nm_imgSearch("proshop_arrowleft.png", 200, "low")[1] = 0) ? " - controls seen only at tolerance 200"
-			: " - no shop controls on screen"))
-		ba_leaveProShop()
+		ba_dumpProShopScreen()
+		nm_setStatus("Error", "Could not enter the Pro Shop - saved settings\proshop_debug.png")
+		;the shop may well be open with its controls simply unrecognised, and E is
+		;a toggle, so do not gamble on another press: resetting always gets out
+		nm_Reset()
 		return 0
 	}
 
 	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low")
 	if (searchRet[1] != 0) {
-		nm_setStatus("Error", "Pro Shop arrow not found")
+		ba_dumpProShopScreen()
+		nm_setStatus("Error", "Pro Shop arrow not found - saved settings\proshop_debug.png")
 		ba_leaveProShop()
 		return 0
 	}
@@ -21722,7 +21737,8 @@ ba_restockPaperPlanters(){
 	Sleep 800
 
 	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright")[1] != 0) {
-		nm_setStatus("Error", "Paper Planter not found in the Pro Shop")
+		ba_dumpProShopScreen()
+		nm_setStatus("Error", "Paper Planter not found in the Pro Shop - saved settings\proshop_debug.png")
 		ba_leaveProShop()
 		return 0
 	}
