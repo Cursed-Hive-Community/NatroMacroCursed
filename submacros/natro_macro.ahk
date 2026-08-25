@@ -10923,7 +10923,7 @@ nm_updateAction(action){
 		CurrentAction:=action
 	}
 }
-nm_PlanterDetection(variation := 0)
+nm_PlanterDetection()
 {
 	static pBMProgressStart, pBMProgressEnd, pBMRemain
 
@@ -10942,10 +10942,10 @@ nm_PlanterDetection(variation := 0)
 	GetRobloxClientPos()
 	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
 
-	if ((sPlanterStart := Gdip_ImageSearch(pBMScreen, pBMProgressStart, &PStart, , , , , variation, , 5)) = 1) {
+	if ((sPlanterStart := Gdip_ImageSearch(pBMScreen, pBMProgressStart, &PStart, , , , , , , 5)) = 1) {
 		x := SubStr(PStart, 1, InStr(PStart, ",")-1), y := SubStr(PStart, InStr(PStart, ",")+1)
-		sPlanterEnd := Gdip_ImageSearch(pBMScreen, pBMProgressEnd, &PEnd, x, y, , y+2, variation, , 8)
-		sPBarEnd := Gdip_ImageSearch(pBMScreen, pBMRemain, &PBarEnd, x, y, , y+8, variation, , 8)
+		sPlanterEnd := Gdip_ImageSearch(pBMScreen, pBMProgressEnd, &PEnd, x, y, , y+2, , , 8)
+		sPBarEnd := Gdip_ImageSearch(pBMScreen, pBMRemain, &PBarEnd, x, y, , y+8, , , 8)
 	}
 
 	Gdip_DisposeImage(pBMScreen)
@@ -10960,7 +10960,7 @@ nm_PlanterDetection(variation := 0)
 	else
 		return 0
 }
-nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
+nm_PlanterTimeUpdate(FieldName, SetStatus := 1)
 {
 	global
 	local i, field, k, v, r:=0, PlanterGrowTime, PlanterBarProgress, CurrentPlanterBarProgress, NewPlanterBarProgress, VerifiedPlanterBarProgress
@@ -10968,7 +10968,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 	Loop 3
 	{
 		i := A_Index
-		if ((((PlanterMode = 2) && (ba_isReservedSlot(i) ? atPlanter : HarvestFullGrown)) || ((PlanterMode = 1) && (PlanterHarvestFull%i% = "Full"))) && (PlanterField%i% = FieldName))
+		if ((((PlanterMode = 2) && HarvestFullGrown) || ((PlanterMode = 1) && (PlanterHarvestFull%i% = "Full"))) && (PlanterField%i% = FieldName))
 		{
 			field := StrReplace(FieldName, " ")
 			for k,v in %field%Planters
@@ -10980,10 +10980,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 				}
 			}
 
-			;RotUp raises the camera, which points the view at the ground - right for
-			;planters sitting on it. The reserved one is overhead, so it needs the
-			;opposite: RotDown drops the camera and the view swings up to it.
-			sendinput "{" (ba_isReservedSlot(i) ? RotDown : RotUp) " 4}"
+			sendinput "{" RotUp " 4}"
 			Sleep 200
 
 			; get prior PlanterBarProgress bounds for comparison
@@ -10991,14 +10988,12 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 
 			Loop 20
 			{
-				if (((PlanterBarProgress := nm_PlanterDetection(ba_isReservedSlot(i) ? 15 : 0)) > 0) && PlanterBarProgress <= 1)
+				if (((PlanterBarProgress := nm_PlanterDetection()) > 0) && PlanterBarProgress <= 1)
 				{
 					; if new estimate within +/-10%, update
-					;for the reserved slot that expectation is the undegraded one, so it
-					;disagrees by design: rely on two readings agreeing instead
-					if (!ba_isReservedSlot(i) && (Abs(PlanterBarProgress - CurrentPlanterBarProgress) <= 0.10))
+					if (Abs(PlanterBarProgress - CurrentPlanterBarProgress) <= 0.10)
 					{
-						PlanterHarvestTime%i% := nowUnix() + Round((1 - PlanterBarProgress) * ba_effectiveGrowTime(i, PlanterGrowTime, PlanterBarProgress) * 3600)
+						PlanterHarvestTime%i% := nowUnix() + Round((1 - PlanterBarProgress) * PlanterGrowTime * 3600)
 						IniWrite PlanterHarvestTime%i%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" i
 						(SetStatus) && nm_setStatus("Detected", PlanterName%i% "`nField: " FieldName " - Est. Progress: " Round(PlanterBarProgress*100) "%")
 						;NewPlanterBarProgress := PlanterBarProgress  ; variable only needed here for testing status update
@@ -11012,7 +11007,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 
 						sendinput "{" RotRight " 2}"
 						sleep 100
-						PlanterBarProgress := nm_PlanterDetection(ba_isReservedSlot(i) ? 15 : 0)
+						PlanterBarProgress := nm_PlanterDetection()
 						sendinput "{" RotLeft " 2}"
 						sleep 100
 
@@ -11022,7 +11017,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 							VerifiedPlanterBarProgress := PlanterBarProgress  ; PlanterBarProgress2, variable only needed for testing status update
 							PlanterBarProgress := (NewPlanterBarProgress + PlanterBarProgress) / 2
 
-							PlanterHarvestTime%i% := nowUnix() + Round((1 - PlanterBarProgress) * ba_effectiveGrowTime(i, PlanterGrowTime, PlanterBarProgress) * 3600)
+							PlanterHarvestTime%i% := nowUnix() + Round((1 - PlanterBarProgress) * PlanterGrowTime * 3600)
 							IniWrite PlanterHarvestTime%i%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" i
 							(SetStatus) && nm_setStatus("Detected", PlanterName%i% "`nField: " FieldName " - Est. Progress: " Round(PlanterBarProgress*100) "%")
 							break
@@ -11038,7 +11033,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 					r := 1
 				}
 			}
-			sendinput "{" (ba_isReservedSlot(i) ? RotUp : RotDown) " 4}" ((r = 1) ? "{" RotRight " 2}" : "")
+			sendinput "{" RotDown " 4}" ((r = 1) ? "{" RotRight " 2}" : "")
 			Sleep 500
 		}
 	}
@@ -21611,10 +21606,8 @@ ba_getNextPlanter(nextfield){
 	}
 	return [nextPlanterName, nextPlanterNectarBonus, nextPlanterGrowBonus, nextPlanterGrowTime]
 }
-;Development aid: walk to the reserved planter, read its bar and report what it
-;says, without harvesting or replanting. RotUp raises the camera and points the
-;view at the ground; this planter is overhead, so RotDown is what swings the
-;view up to it. The picture is taken from there, before the camera is put back.
+;Development aid: walk to the reserved planter and report what its bar says,
+;without harvesting or replanting.
 ba_readCoconutPaperProgress(){
 	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
 	local p := 0
@@ -21624,17 +21617,19 @@ ba_readCoconutPaperProgress(){
 	nm_setStatus("Traveling", "Paper Planter (Coconut)")
 	nm_gotoPlanter("coconutpaper")
 
+	;swing the view up to the planter and photograph it there and then - before
+	;any searching, and long before the camera goes back - so the picture is
+	;exactly the view the reading is taken from
 	sendinput "{" RotDown " 4}"
-	Sleep 500
+	Sleep 800
+	ba_dumpProShopScreen("planterbar")
+
 	Loop 12 {
-		if ((p := nm_PlanterDetection(15)) > 0)
+		if ((p := ba_coconutPaperDetection()) > 0)
 			break
 		Sleep 200
 		sendinput "{" ZoomOut "}"
 	}
-
-	;still looking up at the planter here, which is the only view worth keeping
-	ba_dumpProShopScreen("planterbar")
 	if (p > 0)
 		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
 			. (CoconutPaperPlantedAt
@@ -22160,7 +22155,10 @@ ba_harvestPlanter(planterNum){
 					sleep 100
 					MouseMove windowX+350, windowY+offsetY+100
 					Gdip_DisposeImage(pBMScreen)
-					nm_PlanterTimeUpdate(FieldName, 1, 1)
+					if (ba_isReservedSlot(planterNum))
+						ba_coconutPaperTimeUpdate()
+					else
+						nm_PlanterTimeUpdate(FieldName)
 					return 1
 				}
 				Gdip_DisposeImage(pBMScreen)
