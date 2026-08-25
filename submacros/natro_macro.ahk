@@ -10990,7 +10990,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 
 			Loop 20
 			{
-				if (((PlanterBarProgress := nm_PlanterDetection(ba_isReservedSlot(i) ? 25 : 0)) > 0) && PlanterBarProgress <= 1)
+				if (((PlanterBarProgress := nm_PlanterDetection(ba_isReservedSlot(i) ? 15 : 0)) > 0) && PlanterBarProgress <= 1)
 				{
 					; if new estimate within +/-10%, update
 					;for the reserved slot that expectation is the undegraded one, so it
@@ -11011,7 +11011,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 
 						sendinput "{" RotRight " 2}"
 						sleep 100
-						PlanterBarProgress := nm_PlanterDetection(ba_isReservedSlot(i) ? 25 : 0)
+						PlanterBarProgress := nm_PlanterDetection(ba_isReservedSlot(i) ? 15 : 0)
 						sendinput "{" RotLeft " 2}"
 						sleep 100
 
@@ -21610,33 +21610,53 @@ ba_getNextPlanter(nextfield){
 	}
 	return [nextPlanterName, nextPlanterNectarBonus, nextPlanterGrowBonus, nextPlanterGrowTime]
 }
-;Development aid: walk to the reserved planter, read its bar and report what
-;it says, without harvesting or replanting anything.
+;Development aid: walk to the reserved planter, read its bar and report what it
+;says, without harvesting or replanting. Which way the bar comes into view is
+;not obvious from the ground, so the pitch is swept rather than guessed, and the
+;screen is always kept so a reading can be checked against what was really there.
 ba_readCoconutPaperProgress(){
 	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
-	local p := 0
+	local p := 0, tilt := ""
 	nm_updateAction("Planters")
 	nm_setShiftLock(0)
 	nm_Reset()
 	nm_setStatus("Traveling", "Paper Planter (Coconut)")
 	nm_gotoPlanter("coconutpaper")
+
 	sendinput "{" RotDown " 4}"
 	Sleep 500
-	Loop 20 {
-		if ((p := nm_PlanterDetection(25)) > 0)
+	Loop 8 {
+		if ((p := nm_PlanterDetection(15)) > 0) {
+			tilt := "down"
 			break
+		}
 		Sleep 200
 		sendinput "{" ZoomOut "}"
 	}
-	if (p > 0)
-		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
-			. " - planted " Round((nowUnix() - CoconutPaperPlantedAt)/60) " min ago"
-			. " - full grow time " Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 2) " h")
-	else {
-		ba_dumpProShopScreen("planterbar")
-		nm_setStatus("Error", "Growth bar not read - saved settings\proshop_debug_planterbar.png")
+	if (p = 0) {
+		sendinput "{" RotUp " 8}"
+		Sleep 500
+		Loop 8 {
+			if ((p := nm_PlanterDetection(15)) > 0) {
+				tilt := "up"
+				break
+			}
+			Sleep 200
+			sendinput "{" ZoomOut "}"
+		}
 	}
-	sendinput "{" RotUp " 4}"
+
+	ba_dumpProShopScreen("planterbar")
+	if (p > 0)
+		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown - camera " tilt
+			. (CoconutPaperPlantedAt
+				? " - planted " Round((nowUnix() - CoconutPaperPlantedAt)/60) " min ago - full grow time "
+					. Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 2) " h"
+				: " - plant time never recorded, so no grow time yet")
+			. "`nsaved settings\proshop_debug_planterbar.png")
+	else
+		nm_setStatus("Error", "Growth bar not read - saved settings\proshop_debug_planterbar.png")
+	sendinput "{" ((tilt = "up") ? RotDown : RotUp) " 4}"
 }
 ;A degraded field grows planters more slowly than the planter tables say, by
 ;an amount the game never shows and the wiki only describes in words: every
