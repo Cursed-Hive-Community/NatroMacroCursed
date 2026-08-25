@@ -21646,12 +21646,14 @@ ba_gotoProShop(){
 ba_leaveProShop(){
 	global SC_E
 	Loop 3 {
+		;look before pressing: E is a toggle, and pressing it while already
+		;outside would walk back in
+		if (nm_imgSearch("proshop_arrowleft.png", 30, "low")[1] != 0)
+			return
 		SendInput "{" SC_E " down}"
 		Sleep 100
 		SendInput "{" SC_E " up}"
 		Sleep 1000
-		if (nm_imgSearch("proshop_arrowleft.png", 30, "low")[1] != 0)
-			return
 	}
 }
 ;Crafting Paper Planters at the Pro Shop. The shop always reopens on the same
@@ -21665,7 +21667,7 @@ ba_leaveProShop(){
 ;sit on an opaque bar that survives a change of backdrop by 17.
 ba_restockPaperPlanters(){
 	global SC_E
-	local searchRet, crafted := 0
+	local searchRet, inside, crafted := 0
 
 	nm_updateAction("Planters")
 	ba_gotoProShop()
@@ -21681,18 +21683,30 @@ ba_restockPaperPlanters(){
 		}
 		Sleep 100
 	}
+	;E is a toggle: pressing it again would walk straight back out, so press once
+	;and wait for the controls to appear instead of pressing until they do. If
+	;they never do, say whether a looser match would have seen them, which
+	;separates a shop that never opened from controls drawn differently.
 	nm_setStatus("Entering", "Pro Shop")
-	Loop 3 {
-		SendInput "{" SC_E " down}"
+	ActivateRoblox()
+	SendInput "{" SC_E " down}"
+	Sleep 100
+	SendInput "{" SC_E " up}"
+	inside := 0
+	Loop 60 {
 		Sleep 100
-		SendInput "{" SC_E " up}"
-		Sleep 1500
-		if (nm_imgSearch("proshop_arrowleft.png", 30, "low")[1] = 0)
+		if (nm_imgSearch("proshop_arrowleft.png", 30, "low")[1] = 0) {
+			inside := 1
 			break
-		if (A_Index = 3) {
-			nm_setStatus("Error", "Could not enter the Pro Shop")
-			return 0
 		}
+	}
+	if (!inside) {
+		nm_setStatus("Error", "Could not enter the Pro Shop"
+			. ((nm_imgSearch("proshop_arrowleft.png", 120, "low")[1] = 0) ? " - controls seen only at tolerance 120"
+			: (nm_imgSearch("proshop_arrowleft.png", 200, "low")[1] = 0) ? " - controls seen only at tolerance 200"
+			: " - no shop controls on screen"))
+		ba_leaveProShop()
+		return 0
 	}
 
 	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low")
