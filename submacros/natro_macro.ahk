@@ -21746,6 +21746,11 @@ ba_gotoProShop(){
 ba_dumpProShopScreen(step){
 	global
 	local pBM
+	;Gdip_BitmapFromScreen takes the desktop pixels inside a rectangle, so
+	;whatever happens to sit on top of the game is what gets saved. Every other
+	;capture in the macro brings Roblox forward first; this one did not.
+	ActivateRoblox()
+	Sleep 200
 	GetRobloxClientPos()
 	pBM := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
 	Gdip_SaveBitmapToFile(pBM, A_WorkingDir "\settings\proshop_debug_" step ".png")
