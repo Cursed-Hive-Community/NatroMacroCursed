@@ -899,6 +899,7 @@ nm_importConfig()
 		, "CoconutPaperRestockOnly", 0
 		, "CoconutPaperPlantedAt", 0
 		, "CoconutPaperReadOnly", 0
+		, "CoconutPaperCycle", 0
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -20882,6 +20883,7 @@ ba_planter(){
 	global CoconutPaperRestockEvery
 	global CoconutPaperPlaced
 	global CoconutPaperPlantedAt
+	global CoconutPaperCycle
 	global DandelionFieldCheck
 	global MountainTopFieldCheck
 	global MushroomFieldCheck
@@ -21022,6 +21024,9 @@ ba_planter(){
 			;worked out from the bar later on
 			CoconutPaperPlantedAt := nowUnix()
 			IniWrite CoconutPaperPlantedAt, "settings\nm_config.ini", "Planters", "CoconutPaperPlantedAt"
+			CoconutPaperCycle++
+			IniWrite CoconutPaperCycle, "settings\nm_config.ini", "Planters", "CoconutPaperCycle"
+			ba_coconutPaperLog("plant")
 		}
 	}
 	;re-place planters here
@@ -21630,6 +21635,9 @@ ba_readCoconutPaperProgress(){
 		Sleep 200
 		sendinput "{" ZoomOut "}"
 	}
+	;a sample of the growth curve that costs no harvest, so the dev tool can be
+	;left running to plot a whole cycle point by point
+	ba_coconutPaperLog((p > 0) ? "devread" : "devread_failed", (p > 0) ? Round(p, 4) : "")
 	if (p > 0)
 		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
 			. (CoconutPaperPlantedAt
@@ -21640,6 +21648,29 @@ ba_readCoconutPaperProgress(){
 	else
 		nm_setStatus("Error", "Growth bar not read - saved settings\proshop_debug_planterbar.png")
 	sendinput "{" RotUp " 4}"
+}
+;A record of every paper planter cycle, so the way the coconut field degrades
+;can be worked out afterwards from real numbers instead of guessed at. One row
+;per event, in a shape a spreadsheet will plot without any rearranging:
+;  plant        a planter went into the ground, and which cycle it is
+;  read         the growth bar was read: how far along, and what full grow
+;               time that implies for a planter that has been in the ground
+;               for seconds_since_plant
+;  read_failed  the bar could not be read at all
+;  harvest      it came out, so seconds_since_plant is the true grow time
+;Plotting cycle against the harvest row's seconds_since_plant shows the
+;degradation building up; the gap between one harvest and the next plant shows
+;how much of it wears off while the field is left alone.
+ba_coconutPaperLog(event, progress := "", growHours := "", note := ""){
+	global CoconutPaperPlantedAt, CoconutPaperCycle, PlanterHarvestTime3
+	local path := A_WorkingDir "\settings\coconut_paper_log.csv", since := "", row
+	if CoconutPaperPlantedAt
+		since := nowUnix() - CoconutPaperPlantedAt
+	if !FileExist(path)
+		try FileAppend "unix,utc,cycle,event,seconds_since_plant,progress,implied_grow_hours,harvest_timer_unix,note`n", path
+	row := nowUnix() "," FormatTime(A_NowUTC, "yyyy-MM-dd HH:mm:ss") "," CoconutPaperCycle "," event
+		. "," since "," progress "," growHours "," PlanterHarvestTime3 "," note "`n"
+	try FileAppend row, path
 }
 ;;; Coconut (Paper) growth reading ;;;
 ;The shared nm_PlanterDetection is left exactly as it was, because it works for
@@ -21721,8 +21752,10 @@ ba_coconutPaperTimeUpdate(){
 		grow := ba_effectiveGrowTime(CoconutPaperSlot, 1, p)
 		PlanterHarvestTime3 := nowUnix() + Round((1 - p) * grow * 3600)
 		IniWrite PlanterHarvestTime3, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
+		ba_coconutPaperLog("read", Round(p, 4), Round(grow, 3))
 		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown - full grow time " Round(grow, 2) " h")
 	} else {
+		ba_coconutPaperLog("read_failed")
 		ba_dumpProShopScreen("planterbar")
 		nm_setStatus("Warning", "Paper Planter growth bar not read - saved settings\proshop_debug_planterbar.png")
 	}
@@ -22322,6 +22355,8 @@ ba_harvestPlanter(planterNum){
 			DisconnectCheck()
 			nm_findHiveSlot()
 		}
+		if (ba_isReservedSlot(planterNum))
+			ba_coconutPaperLog("harvest")
 		;the harvest leaves a token link behind: farm it before moving on
 		if (ba_isReservedSlot(planterNum) && CoconutPaperTokenLink)
 			ba_coconutPaperTokenLink()
