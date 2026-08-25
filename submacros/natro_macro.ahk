@@ -900,6 +900,7 @@ nm_importConfig()
 		, "CoconutPaperPlantedAt", 0
 		, "CoconutPaperReadOnly", 0
 		, "CoconutPaperCycle", 0
+		, "CoconutPaperDebugShots", 0
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -7063,6 +7064,7 @@ ba_gotoPlanterFieldSwitch_(*){
 nm_CoconutPaperSettingsGui(*){
 	global CoconutPaperGui, CoconutPaperHotbar, CoconutPaperTokenLink, CoconutPaperTokenField
 	global CoconutPaperRestock, CoconutPaperRestockEvery, CoconutPaperRestockOnly, CoconutPaperReadOnly
+	global CoconutPaperDebugShots
 	global fieldnamelist, MainGui
 	local GuiCtrl
 	if (IsSet(CoconutPaperGui) && IsObject(CoconutPaperGui))
@@ -7091,7 +7093,9 @@ nm_CoconutPaperSettingsGui(*){
 	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
 	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y268 w300 cRed vCoconutPaperReadOnly Checked" CoconutPaperReadOnly, "Testing: only read the planter's growth, nothing else"))
 	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
-	CoconutPaperGui.Show("w320 h305")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y288 w300 cRed vCoconutPaperDebugShots Checked" CoconutPaperDebugShots, "Testing: keep a screenshot of every step"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Show("w320 h325")
 }
 ;Toggling the reserved slot hands it over: whatever is growing there now is
 ;flagged for immediate harvest, rather than being abandoned in the field.
@@ -21615,19 +21619,18 @@ ba_getNextPlanter(nextfield){
 ;without harvesting or replanting.
 ba_readCoconutPaperProgress(){
 	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
-	local p := 0
+	local p := 0, shot := ""
 	nm_updateAction("Planters")
 	nm_setShiftLock(0)
 	nm_Reset()
 	nm_setStatus("Traveling", "Paper Planter (Coconut)")
 	nm_gotoPlanter("coconutpaper")
 
-	;swing the view up to the planter and photograph it there and then - before
-	;any searching, and long before the camera goes back - so the picture is
-	;exactly the view the reading is taken from
+	;swing the view up to the planter, and photograph it from there rather than
+	;after the camera has gone back
 	sendinput "{" RotDown " 4}"
 	Sleep 800
-	ba_dumpProShopScreen("planterbar")
+	shot := ba_dumpProShopScreen("planterbar")
 
 	Loop 12 {
 		if ((p := ba_coconutPaperDetection()) > 0)
@@ -21644,9 +21647,9 @@ ba_readCoconutPaperProgress(){
 				? " - planted " Round((nowUnix() - CoconutPaperPlantedAt)/60) " min ago - full grow time "
 					. Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 2) " h"
 				: " - plant time never recorded, so no grow time yet")
-			. "`nsaved settings\proshop_debug_planterbar.png")
+			. shot)
 	else
-		nm_setStatus("Error", "Growth bar not read - saved settings\proshop_debug_planterbar.png")
+		nm_setStatus("Error", "Growth bar not read" ba_dumpProShopScreen("planterbar", 1))
 	sendinput "{" RotUp " 4}"
 }
 ;A record of every paper planter cycle, so the way the coconut field degrades
@@ -21756,8 +21759,7 @@ ba_coconutPaperTimeUpdate(){
 		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown - full grow time " Round(grow, 2) " h")
 	} else {
 		ba_coconutPaperLog("read_failed")
-		ba_dumpProShopScreen("planterbar")
-		nm_setStatus("Warning", "Paper Planter growth bar not read - saved settings\proshop_debug_planterbar.png")
+		nm_setStatus("Warning", "Paper Planter growth bar not read" ba_dumpProShopScreen("planterbar", 1))
 	}
 	sendinput "{" RotUp " 4}"
 }
@@ -21846,9 +21848,16 @@ ba_gotoProShop(){
 ;When the shop is not recognised, save what the macro is looking at: the
 ;templates are cut from screenshots taken by hand, and only a picture from a
 ;real run can show how the two differ.
-ba_dumpProShopScreen(step){
+;Returns the phrase to tack onto a status when it saves, and nothing when it
+;does not - which keeps the file name out of the message, and so keeps the
+;picture off Discord, since Status.ahk attaches whatever the status names.
+;These were for finding faults that are now fixed, so they are off unless
+;asked for. A caller passes always for one worth keeping regardless.
+ba_dumpProShopScreen(step, always := 0){
 	global
 	local pBM
+	if (!always && !CoconutPaperDebugShots)
+		return ""
 	;Gdip_BitmapFromScreen takes the desktop pixels inside a rectangle, so
 	;whatever happens to sit on top of the game is what gets saved. Every other
 	;capture in the macro brings Roblox forward first; this one did not.
@@ -21858,6 +21867,7 @@ ba_dumpProShopScreen(step){
 	pBM := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
 	Gdip_SaveBitmapToFile(pBM, A_WorkingDir "\settings\proshop_debug_" step ".png")
 	Gdip_DisposeImage(pBM)
+	return " - saved settings\proshop_debug_" step ".png"
 }
 ;Leaving is the same E prompt: it is done once the shop controls are gone.
 ba_leaveProShop(){
@@ -21898,8 +21908,7 @@ ba_restockPaperPlanters(){
 		if (nm_imgSearch("e_button.png", 30, "high")[1] = 0)
 			break
 		if (A_Index = 30) {
-			ba_dumpProShopScreen("door")
-			nm_setStatus("Error", "Pro Shop door not found - saved settings\proshop_debug_door.png")
+			nm_setStatus("Error", "Pro Shop door not found" ba_dumpProShopScreen("door"))
 			return 0
 		}
 		Sleep 100
@@ -21922,8 +21931,7 @@ ba_restockPaperPlanters(){
 		}
 	}
 	if (!inside) {
-		ba_dumpProShopScreen("enter")
-		nm_setStatus("Error", "Could not enter the Pro Shop - saved settings\proshop_debug_enter.png")
+		nm_setStatus("Error", "Could not enter the Pro Shop" ba_dumpProShopScreen("enter"))
 		;the shop may well be open with its controls simply unrecognised, and E is
 		;a toggle, so do not gamble on another press: resetting always gets out
 		nm_Reset()
@@ -21932,8 +21940,7 @@ ba_restockPaperPlanters(){
 
 	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low")
 	if (searchRet[1] != 0) {
-		ba_dumpProShopScreen("arrow")
-		nm_setStatus("Error", "Pro Shop arrow not found - saved settings\proshop_debug_arrow.png")
+		nm_setStatus("Error", "Pro Shop arrow not found" ba_dumpProShopScreen("arrow"))
 		ba_leaveProShop()
 		return 0
 	}
@@ -21944,8 +21951,7 @@ ba_restockPaperPlanters(){
 	Sleep 800
 
 	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright")[1] != 0) {
-		ba_dumpProShopScreen("title")
-		nm_setStatus("Error", "Paper Planter not found in the Pro Shop - saved settings\proshop_debug_title.png")
+		nm_setStatus("Error", "Paper Planter not found in the Pro Shop" ba_dumpProShopScreen("title"))
 		ba_leaveProShop()
 		return 0
 	}
@@ -21976,8 +21982,7 @@ ba_restockPaperPlanters(){
 	atCapacity := (FileExist(A_WorkingDir "\nm_image_assets\proshop_full.png")
 		&& (nm_imgSearch("proshop_full.png", 30, "low")[1] = 0))
 	if ((crafted = 0) && !atCapacity) {
-		ba_dumpProShopScreen("craft")
-		nm_setStatus("Error", "Crafted nothing and not at capacity - saved settings\proshop_debug_craft.png")
+		nm_setStatus("Error", "Crafted nothing and not at capacity" ba_dumpProShopScreen("craft"))
 		ba_leaveProShop()
 		return 0
 	}
