@@ -337,6 +337,7 @@ settings["CoconutPaperTokenField"] := {enum: 372, type: "str", section: "Planter
 settings["CoconutPaperRestock"] := {enum: 373, type: "int", section: "Planters", regex: "i)^(0|1)$"}
 settings["CoconutPaperRestockEvery"] := {enum: 374, type: "int", section: "Planters", regex: "i)^([1-9][0-9]{0,2})$"}
 settings["CoconutPaperPlaced"] := {enum: 375, type: "int", section: "Planters", regex: "i)^([0-9]{1,3})$"}
+settings["CoconutPaperRestockOnly"] := {enum: 376, type: "int", section: "Planters", regex: "i)^(0|1)$"}
 settings["DandelionFieldCheck"] := {enum: 50, type: "int", section: "Planters", regex: "i)^(0|1)$"}
 settings["MountainTopFieldCheck"] := {enum: 51, type: "int", section: "Planters", regex: "i)^(0|1)$"}
 settings["MushroomFieldCheck"] := {enum: 52, type: "int", section: "Planters", regex: "i)^(0|1)$"}
