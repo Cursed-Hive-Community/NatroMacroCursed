@@ -897,6 +897,7 @@ nm_importConfig()
 		, "CoconutPaperRestockEvery", 40
 		, "CoconutPaperPlaced", 0
 		, "CoconutPaperRestockOnly", 0
+		, "CoconutPaperPlantedAt", 0
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -10981,9 +10982,11 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 				if (((PlanterBarProgress := nm_PlanterDetection()) > 0) && PlanterBarProgress <= 1)
 				{
 					; if new estimate within +/-10%, update
-					if (Abs(PlanterBarProgress - CurrentPlanterBarProgress) <= 0.10)
+					;for the reserved slot that expectation is the undegraded one, so it
+					;disagrees by design: rely on two readings agreeing instead
+					if (!ba_isReservedSlot(i) && (Abs(PlanterBarProgress - CurrentPlanterBarProgress) <= 0.10))
 					{
-						PlanterHarvestTime%i% := nowUnix() + Round((1 - PlanterBarProgress) * PlanterGrowTime * 3600)
+						PlanterHarvestTime%i% := nowUnix() + Round((1 - PlanterBarProgress) * ba_effectiveGrowTime(i, PlanterGrowTime, PlanterBarProgress) * 3600)
 						IniWrite PlanterHarvestTime%i%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" i
 						(SetStatus) && nm_setStatus("Detected", PlanterName%i% "`nField: " FieldName " - Est. Progress: " Round(PlanterBarProgress*100) "%")
 						;NewPlanterBarProgress := PlanterBarProgress  ; variable only needed here for testing status update
@@ -11007,7 +11010,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 							VerifiedPlanterBarProgress := PlanterBarProgress  ; PlanterBarProgress2, variable only needed for testing status update
 							PlanterBarProgress := (NewPlanterBarProgress + PlanterBarProgress) / 2
 
-							PlanterHarvestTime%i% := nowUnix() + Round((1 - PlanterBarProgress) * PlanterGrowTime * 3600)
+							PlanterHarvestTime%i% := nowUnix() + Round((1 - PlanterBarProgress) * ba_effectiveGrowTime(i, PlanterGrowTime, PlanterBarProgress) * 3600)
 							IniWrite PlanterHarvestTime%i%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" i
 							(SetStatus) && nm_setStatus("Detected", PlanterName%i% "`nField: " FieldName " - Est. Progress: " Round(PlanterBarProgress*100) "%")
 							break
@@ -20871,6 +20874,7 @@ ba_planter(){
 	global CoconutPaperRestock
 	global CoconutPaperRestockEvery
 	global CoconutPaperPlaced
+	global CoconutPaperPlantedAt
 	global DandelionFieldCheck
 	global MountainTopFieldCheck
 	global MushroomFieldCheck
@@ -21007,6 +21011,10 @@ ba_planter(){
 			ba_SavePlacedPlanter("Coconut", coconutPaperPlanter, CoconutPaperSlot, "Refreshing", 1)
 			CoconutPaperPlaced++
 			IniWrite CoconutPaperPlaced, "settings\nm_config.ini", "Planters", "CoconutPaperPlaced"
+			;the moment it went into the ground, so its real growth rate can be
+			;worked out from the bar later on
+			CoconutPaperPlantedAt := nowUnix()
+			IniWrite CoconutPaperPlantedAt, "settings\nm_config.ini", "Planters", "CoconutPaperPlantedAt"
 		}
 	}
 	;re-place planters here
@@ -21590,6 +21598,22 @@ ba_getNextPlanter(nextfield){
 		}
 	}
 	return [nextPlanterName, nextPlanterNectarBonus, nextPlanterGrowBonus, nextPlanterGrowTime]
+}
+;A degraded field grows planters more slowly than the planter tables say, by
+;an amount the game never shows and the wiki only describes in words: every
+;harvest degrades the field, up to a cap of 48 hours. Measuring that beats
+;modelling it. The reserved planter has been in the ground since it was placed,
+;so the progress on its bar gives the real full-grow time directly - time in
+;the ground divided by progress - whatever the degradation happens to be.
+;Every other slot keeps the table value it has always used.
+ba_effectiveGrowTime(planterNum, tableHours, progress){
+	global CoconutPaperPlantedAt
+	local measured
+	if (!ba_isReservedSlot(planterNum) || !CoconutPaperPlantedAt || (progress <= 0.05))
+		return tableHours
+	measured := (nowUnix() - CoconutPaperPlantedAt) / 3600 / progress
+	;it can only ever be slower than natural, and never by more than the cap
+	return Min(tableHours + 48, Max(tableHours, measured))
 }
 ;the Coconut (Paper) slot is reserved: the automatic algorithm leaves it
 ;alone and it always holds a Paper planter placed at the coconut paper spot
