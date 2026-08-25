@@ -21650,7 +21650,7 @@ ba_leaveProShop(){
 		Sleep 100
 		SendInput "{" SC_E " up}"
 		Sleep 1000
-		if (nm_imgSearch("proshop_leaveshop.png", 30, "high")[1] != 0)
+		if (nm_imgSearch("proshop_leaveshop.png", 30, "high", "0xFF00FF")[1] != 0)
 			return
 	}
 }
@@ -21659,6 +21659,9 @@ ba_leaveProShop(){
 ;title is checked anyway. One click crafts exactly one, and the button turns
 ;from green "Craft Item" to red "Capacity Exceeded" at the 100 cap, which is
 ;the stop signal: nothing has to be counted. Returns the number crafted.
+;The shop banners are translucent - whatever stands behind them shows through -
+;so every template here keeps only the light glyph pixels and masks the rest to
+;magenta, matched with ImageSearch's *Trans option.
 ba_restockPaperPlanters(){
 	global SC_E
 	local searchRet, crafted := 0
@@ -21666,7 +21669,7 @@ ba_restockPaperPlanters(){
 	nm_updateAction("Planters")
 	ba_gotoProShop()
 
-	if (nm_imgSearch("proshop_openshop.png", 30, "high")[1] != 0) {
+	if (nm_imgSearch("proshop_openshop.png", 30, "high", "0xFF00FF")[1] != 0) {
 		nm_setStatus("Error", "Pro Shop door not found")
 		return 0
 	}
@@ -21676,7 +21679,7 @@ ba_restockPaperPlanters(){
 		Sleep 100
 		SendInput "{" SC_E " up}"
 		Sleep 1500
-		if (nm_imgSearch("proshop_leaveshop.png", 30, "high")[1] = 0)
+		if (nm_imgSearch("proshop_leaveshop.png", 30, "high", "0xFF00FF")[1] = 0)
 			break
 		if (A_Index = 3) {
 			nm_setStatus("Error", "Could not enter the Pro Shop")
@@ -21684,19 +21687,19 @@ ba_restockPaperPlanters(){
 		}
 	}
 
-	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low")
+	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low", "0xFF00FF")
 	if (searchRet[1] != 0) {
 		nm_setStatus("Error", "Pro Shop arrow not found")
 		ba_leaveProShop()
 		return 0
 	}
 	GetRobloxClientPos()
-	MouseMove windowX+searchRet[2]+16, windowY+searchRet[3]+23
+	MouseMove windowX+searchRet[2]+14, windowY+searchRet[3]+21
 	Sleep 200
 	Click
 	Sleep 800
 
-	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright")[1] != 0) {
+	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright", "0xFF00FF")[1] != 0) {
 		nm_setStatus("Error", "Paper Planter not found in the Pro Shop")
 		ba_leaveProShop()
 		return 0
@@ -21704,11 +21707,11 @@ ba_restockPaperPlanters(){
 
 	nm_setStatus("Crafting", "Paper Planter")
 	Loop 100 {
-		searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
+		searchRet := nm_imgSearch("proshop_craft.png", 30, "low", "0xFF00FF")
 		if (searchRet[1] != 0) ;button no longer green: capacity reached
 			break
 		GetRobloxClientPos()
-		MouseMove windowX+searchRet[2]+65, windowY+searchRet[3]+14
+		MouseMove windowX+searchRet[2]+36, windowY+searchRet[3]+9
 		Sleep 100
 		Click
 		crafted++
