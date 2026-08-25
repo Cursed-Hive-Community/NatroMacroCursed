@@ -21692,7 +21692,7 @@ ba_leaveProShop(){
 ;sit on an opaque bar that survives a change of backdrop by 17.
 ba_restockPaperPlanters(){
 	global SC_E
-	local searchRet, inside, crafted := 0
+	local searchRet, inside, atCapacity, crafted := 0
 
 	nm_updateAction("Planters")
 	ba_gotoProShop()
@@ -21758,8 +21758,14 @@ ba_restockPaperPlanters(){
 	nm_setStatus("Crafting", "Paper Planter")
 	Loop 100 {
 		searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
-		if (searchRet[1] != 0) ;button no longer green: capacity reached
-			break
+		if (searchRet[1] != 0) {
+			;the button flickers while an item is being made, so look twice before
+			;concluding there is nothing left to craft
+			Sleep 400
+			searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
+			if (searchRet[1] != 0)
+				break
+		}
 		GetRobloxClientPos()
 		MouseMove windowX+searchRet[2]+95, windowY+searchRet[3]+16
 		Sleep 100
@@ -21767,9 +21773,19 @@ ba_restockPaperPlanters(){
 		crafted++
 		Sleep 250
 	}
-	;the item title matched, so this is its page; a button that is not the green
-	;one therefore reads "Capacity Exceeded". Crafting nothing here means the
-	;hundred cap was already met - a wasted walk, not a fault to be reported.
+	;a green button gone can mean the cap is reached or that the materials have
+	;run out, and those deserve opposite treatment. Only a "Capacity Exceeded"
+	;actually recognised on screen counts as a full stock; anything else is a
+	;fault worth a picture. The file is checked first because nm_imgSearch kills
+	;the macro outright when an asset is missing.
+	atCapacity := (FileExist(A_WorkingDir "\nm_image_assets\proshop_full.png")
+		&& (nm_imgSearch("proshop_full.png", 30, "low")[1] = 0))
+	if ((crafted = 0) && !atCapacity) {
+		ba_dumpProShopScreen("craft")
+		nm_setStatus("Error", "Crafted nothing and not at capacity - saved settings\proshop_debug_craft.png")
+		ba_leaveProShop()
+		return 0
+	}
 	nm_setStatus((crafted = 0) ? "Full" : "Crafted", (crafted = 0)
 		? "Paper Planters already at capacity"
 		: crafted " Paper Planter" ((crafted = 1) ? "" : "s"))
