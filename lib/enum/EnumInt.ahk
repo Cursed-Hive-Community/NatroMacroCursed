@@ -373,4 +373,5 @@
 	, "CoconutPaperRestock"
 	, "CoconutPaperRestockEvery"
 	, "CoconutPaperPlaced"
+	, "CoconutPaperRestockOnly"
 ]

@@ -896,6 +896,7 @@ nm_importConfig()
 		, "CoconutPaperRestock", 1
 		, "CoconutPaperRestockEvery", 40
 		, "CoconutPaperPlaced", 0
+		, "CoconutPaperRestockOnly", 0
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -7058,7 +7059,7 @@ ba_gotoPlanterFieldSwitch_(*){
 ;has to be told which key holds it.
 nm_CoconutPaperSettingsGui(*){
 	global CoconutPaperGui, CoconutPaperHotbar, CoconutPaperTokenLink, CoconutPaperTokenField
-	global CoconutPaperRestock, CoconutPaperRestockEvery, fieldnamelist, MainGui
+	global CoconutPaperRestock, CoconutPaperRestockEvery, CoconutPaperRestockOnly, fieldnamelist, MainGui
 	local GuiCtrl
 	if (IsSet(CoconutPaperGui) && IsObject(CoconutPaperGui))
 		CoconutPaperGui.Destroy(), CoconutPaperGui := ""
@@ -7082,7 +7083,9 @@ nm_CoconutPaperSettingsGui(*){
 	(GuiCtrl := CoconutPaperGui.Add("Edit", "x150 y222 w40 h20 limit3 Number vCoconutPaperRestockEvery", CoconutPaperRestockEvery))
 	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
 	CoconutPaperGui.Add("Text", "x196 y225 +BackgroundTrans", "planters placed")
-	CoconutPaperGui.Show("w320 h260")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y248 w300 cRed vCoconutPaperRestockOnly Checked" CoconutPaperRestockOnly, "Testing: run the Pro Shop trip and nothing else"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Show("w320 h285")
 }
 ;Toggling the reserved slot hands it over: whatever is growing there now is
 ;flagged for immediate harvest, rather than being abandoned in the field.
@@ -10722,8 +10725,16 @@ robloxFPSGui(*) {
 ; MAIN LOOP
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 nm_Start(){
+	global CoconutPaperRestockOnly
 	ActivateRoblox()
 	global serverStart := nowUnix()
+	;a testing setting: run the Pro Shop trip and nothing else, so it can be
+	;worked on without waiting for a whole cycle of the macro to come round
+	if CoconutPaperRestockOnly
+		Loop {
+			ba_restockPaperPlanters()
+			Sleep 5000
+		}
 	Loop 
 		for i in priorityList
 			(%"nm_" i%)()
@@ -21645,12 +21656,12 @@ ba_gotoProShop(){
 ;When the shop is not recognised, save what the macro is looking at: the
 ;templates are cut from screenshots taken by hand, and only a picture from a
 ;real run can show how the two differ.
-ba_dumpProShopScreen(){
+ba_dumpProShopScreen(step){
 	global
 	local pBM
 	GetRobloxClientPos()
 	pBM := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
-	Gdip_SaveBitmapToFile(pBM, A_WorkingDir "\settings\proshop_debug.png")
+	Gdip_SaveBitmapToFile(pBM, A_WorkingDir "\settings\proshop_debug_" step ".png")
 	Gdip_DisposeImage(pBM)
 }
 ;Leaving is the same E prompt: it is done once the shop controls are gone.
@@ -21692,7 +21703,8 @@ ba_restockPaperPlanters(){
 		if (nm_imgSearch("e_button.png", 30, "high")[1] = 0)
 			break
 		if (A_Index = 30) {
-			nm_setStatus("Error", "Pro Shop door not found")
+			ba_dumpProShopScreen("door")
+			nm_setStatus("Error", "Pro Shop door not found - saved settings\proshop_debug_door.png")
 			return 0
 		}
 		Sleep 100
@@ -21715,8 +21727,8 @@ ba_restockPaperPlanters(){
 		}
 	}
 	if (!inside) {
-		ba_dumpProShopScreen()
-		nm_setStatus("Error", "Could not enter the Pro Shop - saved settings\proshop_debug.png")
+		ba_dumpProShopScreen("enter")
+		nm_setStatus("Error", "Could not enter the Pro Shop - saved settings\proshop_debug_enter.png")
 		;the shop may well be open with its controls simply unrecognised, and E is
 		;a toggle, so do not gamble on another press: resetting always gets out
 		nm_Reset()
@@ -21725,8 +21737,8 @@ ba_restockPaperPlanters(){
 
 	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low")
 	if (searchRet[1] != 0) {
-		ba_dumpProShopScreen()
-		nm_setStatus("Error", "Pro Shop arrow not found - saved settings\proshop_debug.png")
+		ba_dumpProShopScreen("arrow")
+		nm_setStatus("Error", "Pro Shop arrow not found - saved settings\proshop_debug_arrow.png")
 		ba_leaveProShop()
 		return 0
 	}
@@ -21737,8 +21749,8 @@ ba_restockPaperPlanters(){
 	Sleep 800
 
 	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright")[1] != 0) {
-		ba_dumpProShopScreen()
-		nm_setStatus("Error", "Paper Planter not found in the Pro Shop - saved settings\proshop_debug.png")
+		ba_dumpProShopScreen("title")
+		nm_setStatus("Error", "Paper Planter not found in the Pro Shop - saved settings\proshop_debug_title.png")
 		ba_leaveProShop()
 		return 0
 	}
@@ -21755,7 +21767,11 @@ ba_restockPaperPlanters(){
 		crafted++
 		Sleep 250
 	}
-	nm_setStatus("Crafted", crafted " Paper Planter" ((crafted = 1) ? "" : "s"))
+	if (crafted = 0)
+		ba_dumpProShopScreen("craft")
+	nm_setStatus((crafted = 0) ? "Error" : "Crafted", (crafted = 0)
+		? "Crafted nothing - saved settings\proshop_debug_craft.png"
+		: crafted " Paper Planter" ((crafted = 1) ? "" : "s"))
 	ba_leaveProShop()
 	return crafted
 }
