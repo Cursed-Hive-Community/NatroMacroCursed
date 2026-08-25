@@ -10980,7 +10980,10 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 				}
 			}
 
-			sendinput "{" RotUp " 4}"
+			;RotUp raises the camera, which points the view at the ground - right for
+			;planters sitting on it. The reserved one is overhead, so it needs the
+			;opposite: RotDown drops the camera and the view swings up to it.
+			sendinput "{" (ba_isReservedSlot(i) ? RotDown : RotUp) " 4}"
 			Sleep 200
 
 			; get prior PlanterBarProgress bounds for comparison
@@ -11035,7 +11038,7 @@ nm_PlanterTimeUpdate(FieldName, SetStatus := 1, atPlanter := 0)
 					r := 1
 				}
 			}
-			sendinput "{" RotDown " 4}" ((r = 1) ? "{" RotRight " 2}" : "")
+			sendinput "{" (ba_isReservedSlot(i) ? RotUp : RotDown) " 4}" ((r = 1) ? "{" RotRight " 2}" : "")
 			Sleep 500
 		}
 	}
@@ -21609,9 +21612,9 @@ ba_getNextPlanter(nextfield){
 	return [nextPlanterName, nextPlanterNectarBonus, nextPlanterGrowBonus, nextPlanterGrowTime]
 }
 ;Development aid: walk to the reserved planter, read its bar and report what it
-;says, without harvesting or replanting. The bar only ever appears above the
-;planter, so the camera is tilted up and the picture is kept while it is still
-;pointing there - looking down shows nothing worth photographing.
+;says, without harvesting or replanting. RotUp raises the camera and points the
+;view at the ground; this planter is overhead, so RotDown is what swings the
+;view up to it. The picture is taken from there, before the camera is put back.
 ba_readCoconutPaperProgress(){
 	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
 	local p := 0
@@ -21621,7 +21624,7 @@ ba_readCoconutPaperProgress(){
 	nm_setStatus("Traveling", "Paper Planter (Coconut)")
 	nm_gotoPlanter("coconutpaper")
 
-	sendinput "{" RotUp " 4}"
+	sendinput "{" RotDown " 4}"
 	Sleep 500
 	Loop 12 {
 		if ((p := nm_PlanterDetection(15)) > 0)
@@ -21630,6 +21633,7 @@ ba_readCoconutPaperProgress(){
 		sendinput "{" ZoomOut "}"
 	}
 
+	;still looking up at the planter here, which is the only view worth keeping
 	ba_dumpProShopScreen("planterbar")
 	if (p > 0)
 		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
@@ -21640,7 +21644,7 @@ ba_readCoconutPaperProgress(){
 			. "`nsaved settings\proshop_debug_planterbar.png")
 	else
 		nm_setStatus("Error", "Growth bar not read - saved settings\proshop_debug_planterbar.png")
-	sendinput "{" RotDown " 4}"
+	sendinput "{" RotUp " 4}"
 }
 ;A degraded field grows planters more slowly than the planter tables say, by
 ;an amount the game never shows and the wiki only describes in words: every
