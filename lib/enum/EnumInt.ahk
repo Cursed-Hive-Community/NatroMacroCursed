@@ -370,4 +370,7 @@
 	, "CoconutPaperHotbar"
 	, "CoconutPaperTokenLink"
 	, "CoconutPaperTokenField"
+	, "CoconutPaperRestock"
+	, "CoconutPaperRestockEvery"
+	, "CoconutPaperPlaced"
 ]
