@@ -310,7 +310,8 @@ nm_importPaths()
 		"gtb", ["blue", "mountain", "red"], ; go to (field) booster
 		"gtc", ["clock", "antpass", "robopass", "honeydis", "treatdis", "blueberrydis", "strawberrydis", "coconutdis", "gluedis", "royaljellydis", "blender", "windshrine", ; go to collect (machine)
 				"stockings", "wreath", "feast", "gingerbread", "snowmachine", "candles", "samovar", "lidart", "gummybeacon", "rbpdelevel", ; beesmas
-				"honeylb", "honeystorm", "stickerstack", "stickerprinter", "normalmm", "megamm", "nightmm", "extrememm", "wintermm"], ; other
+				"honeylb", "honeystorm", "stickerstack", "stickerprinter", "normalmm", "megamm", "nightmm", "extrememm", "wintermm",
+				"normalmmtoproshop"], ; other
 		"gtf", ["bamboo", "blueflower", "cactus", "clover", "coconut", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
 				"rose", "spider", "strawberry", "stump", "sunflower"], ; go to field
 		"gtp", ["bamboo", "blueflower", "cactus", "clover", "coconut", "coconutpaper", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
@@ -892,6 +893,9 @@ nm_importConfig()
 		, "CoconutPaperHotbar", 7
 		, "CoconutPaperTokenLink", 1
 		, "CoconutPaperTokenField", "Sunflower"
+		, "CoconutPaperRestock", 1
+		, "CoconutPaperRestockEvery", 40
+		, "CoconutPaperPlaced", 0
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -7053,7 +7057,8 @@ ba_gotoPlanterFieldSwitch_(*){
 ;it has to be thrown while jumping, by spamming its hotbar key, so the macro
 ;has to be told which key holds it.
 nm_CoconutPaperSettingsGui(*){
-	global CoconutPaperGui, CoconutPaperHotbar, CoconutPaperTokenLink, CoconutPaperTokenField, fieldnamelist, MainGui
+	global CoconutPaperGui, CoconutPaperHotbar, CoconutPaperTokenLink, CoconutPaperTokenField
+	global CoconutPaperRestock, CoconutPaperRestockEvery, fieldnamelist, MainGui
 	local GuiCtrl
 	if (IsSet(CoconutPaperGui) && IsObject(CoconutPaperGui))
 		CoconutPaperGui.Destroy(), CoconutPaperGui := ""
@@ -7070,7 +7075,14 @@ nm_CoconutPaperSettingsGui(*){
 	CoconutPaperGui.Add("Text", "x10 y165 +BackgroundTrans", "Token link field:")
 	(GuiCtrl := CoconutPaperGui.Add("DropDownList", "x150 y162 w100 h200 vCoconutPaperTokenField", fieldnamelist)).Text := CoconutPaperTokenField
 	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
-	CoconutPaperGui.Show("w320 h200")
+	CoconutPaperGui.Add("Text", "x10 y190 w300 h1 0x7")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y200 w300 vCoconutPaperRestock Checked" CoconutPaperRestock, "Craft more Paper Planters at the Pro Shop"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x10 y225 +BackgroundTrans", "Go there every:")
+	(GuiCtrl := CoconutPaperGui.Add("Edit", "x150 y222 w40 h20 limit3 Number vCoconutPaperRestockEvery", CoconutPaperRestockEvery))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x196 y225 +BackgroundTrans", "planters placed")
+	CoconutPaperGui.Show("w320 h260")
 }
 ;Toggling the reserved slot hands it over: whatever is growing there now is
 ;flagged for immediate harvest, rather than being abandoned in the field.
@@ -20845,6 +20857,9 @@ ba_planter(){
 	global CoconutFieldCheck
 	global CoconutPaperCheck
 	global CoconutPaperSlot
+	global CoconutPaperRestock
+	global CoconutPaperRestockEvery
+	global CoconutPaperPlaced
 	global DandelionFieldCheck
 	global MountainTopFieldCheck
 	global MushroomFieldCheck
@@ -20966,12 +20981,22 @@ ba_planter(){
 		PlanterHarvestNow%CoconutPaperSlot%:=0
 		IniWrite 0, "settings\nm_config.ini", "Planters", "PlanterHarvestNow" CoconutPaperSlot
 	}
-	;refill the reserved Coconut (Paper) slot first, so its one hour cycle is
-	;not held up behind the nectar optimisation below
+	;stock up before the slot runs dry, counting the planters this macro has
+	;placed rather than reading the hotbar
+	if(CoconutPaperCheck && CoconutPaperRestock && (CoconutPaperPlaced >= CoconutPaperRestockEvery)) {
+		ba_restockPaperPlanters()
+		CoconutPaperPlaced:=0
+		IniWrite 0, "settings\nm_config.ini", "Planters", "CoconutPaperPlaced"
+	}
+	;refill the reserved Coconut (Paper) slot, so its one hour cycle is not
+	;held up behind the nectar optimisation below
 	if(CoconutPaperCheck && (PlanterName%CoconutPaperSlot%="none")) {
 		coconutPaperPlanter:=ba_coconutPaperPlanter()
-		if((coconutPaperPlanter[1]!="none") && (ba_placeCoconutPaper()=1))
+		if((coconutPaperPlanter[1]!="none") && (ba_placeCoconutPaper()=1)) {
 			ba_SavePlacedPlanter("Coconut", coconutPaperPlanter, CoconutPaperSlot, "Refreshing", 1)
+			CoconutPaperPlaced++
+			IniWrite CoconutPaperPlaced, "settings\nm_config.ini", "Planters", "CoconutPaperPlaced"
+		}
 	}
 	;re-place planters here
 	;--- determine max number of planters ---
@@ -21606,6 +21631,92 @@ ba_placeCoconutPaper(){
 	}
 	nm_setStatus("Error: Unable to place", "Paper Planter (Coconut)")
 	return 0
+}
+;The Pro Shop stands just past the normal memory match, so the trip is composed
+;of two legs rather than one path duplicating the other: the existing memory
+;match route, then gtc-normalmmtoproshop for the few steps that remain.
+ba_gotoProShop(){
+	nm_setShiftLock(0)
+	nm_Reset()
+	nm_setStatus("Traveling", "Pro Shop")
+	nm_gotoCollect("normalmm")
+	nm_gotoCollect("normalmmtoproshop")
+}
+;Leaving is the same E prompt: it is done once the banner is gone.
+ba_leaveProShop(){
+	global SC_E
+	Loop 3 {
+		SendInput "{" SC_E " down}"
+		Sleep 100
+		SendInput "{" SC_E " up}"
+		Sleep 1000
+		if (nm_imgSearch("proshop_leaveshop.png", 30, "high")[1] != 0)
+			return
+	}
+}
+;Crafting Paper Planters at the Pro Shop. The shop always reopens on the same
+;item, so a single click on the left arrow lands on the Paper Planter - the
+;title is checked anyway. One click crafts exactly one, and the button turns
+;from green "Craft Item" to red "Capacity Exceeded" at the 100 cap, which is
+;the stop signal: nothing has to be counted. Returns the number crafted.
+ba_restockPaperPlanters(){
+	global SC_E
+	local searchRet, crafted := 0
+
+	nm_updateAction("Planters")
+	ba_gotoProShop()
+
+	if (nm_imgSearch("proshop_openshop.png", 30, "high")[1] != 0) {
+		nm_setStatus("Error", "Pro Shop door not found")
+		return 0
+	}
+	nm_setStatus("Entering", "Pro Shop")
+	Loop 3 {
+		SendInput "{" SC_E " down}"
+		Sleep 100
+		SendInput "{" SC_E " up}"
+		Sleep 1500
+		if (nm_imgSearch("proshop_leaveshop.png", 30, "high")[1] = 0)
+			break
+		if (A_Index = 3) {
+			nm_setStatus("Error", "Could not enter the Pro Shop")
+			return 0
+		}
+	}
+
+	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low")
+	if (searchRet[1] != 0) {
+		nm_setStatus("Error", "Pro Shop arrow not found")
+		ba_leaveProShop()
+		return 0
+	}
+	GetRobloxClientPos()
+	MouseMove windowX+searchRet[2]+16, windowY+searchRet[3]+23
+	Sleep 200
+	Click
+	Sleep 800
+
+	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright")[1] != 0) {
+		nm_setStatus("Error", "Paper Planter not found in the Pro Shop")
+		ba_leaveProShop()
+		return 0
+	}
+
+	nm_setStatus("Crafting", "Paper Planter")
+	Loop 100 {
+		searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
+		if (searchRet[1] != 0) ;button no longer green: capacity reached
+			break
+		GetRobloxClientPos()
+		MouseMove windowX+searchRet[2]+65, windowY+searchRet[3]+14
+		Sleep 100
+		Click
+		crafted++
+		Sleep 250
+	}
+	nm_setStatus("Crafted", crafted " Paper Planter" ((crafted = 1) ? "" : "s"))
+	ba_leaveProShop()
+	return crafted
 }
 ;Farming the token link the harvest leaves behind, after jln7_'s CHC script:
 ;walk a small square in an open field so the linked tokens are picked up one
