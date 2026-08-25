@@ -21641,6 +21641,76 @@ ba_readCoconutPaperProgress(){
 		nm_setStatus("Error", "Growth bar not read - saved settings\proshop_debug_planterbar.png")
 	sendinput "{" RotUp " 4}"
 }
+;;; Coconut (Paper) growth reading ;;;
+;The shared nm_PlanterDetection is left exactly as it was, because it works for
+;every planter sitting on the ground. This one hangs overhead in shade, so it
+;gets its own reading: the same idea - measure the light part of the bar
+;against the whole - with its own swatches, its own tolerance for the shading,
+;and a four pixel needle rather than eight, since the planter's own label cuts
+;across the middle of the bar. Returns a fraction, or 0 if the bar is not seen.
+ba_coconutPaperDetection(){
+	static pBMLight, pBMDark
+	global windowX, windowY, windowWidth, windowHeight
+	local pBMScreen, pG, PStart, PLightEnd, PDarkEnd, x, y, cx2, dx2
+	if !(IsSet(pBMLight) && IsSet(pBMDark))
+	{
+		pBMLight := Gdip_CreateBitmap(1,4)
+		pG := Gdip_GraphicsFromImage(pBMLight), Gdip_GraphicsClear(pG, 0xff86d570), Gdip_DeleteGraphics(pG)
+		pBMDark := Gdip_CreateBitmap(1,4)
+		pG := Gdip_GraphicsFromImage(pBMDark), Gdip_GraphicsClear(pG, 0xff567848), Gdip_DeleteGraphics(pG)
+	}
+	ActivateRoblox()
+	GetRobloxClientPos()
+	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
+	;20 covers the shading measured on this planter, and is nowhere near the 86
+	;that separates the filled part of the bar from the empty one
+	if (Gdip_ImageSearch(pBMScreen, pBMLight, &PStart, , , , , 20, , 5) != 1)
+	{
+		Gdip_DisposeImage(pBMScreen)
+		return 0
+	}
+	x := SubStr(PStart, 1, InStr(PStart, ",")-1), y := SubStr(PStart, InStr(PStart, ",")+1)
+	if ((Gdip_ImageSearch(pBMScreen, pBMLight, &PLightEnd, x, y, , y+4, 20, , 8) != 1)
+		|| (Gdip_ImageSearch(pBMScreen, pBMDark, &PDarkEnd, x, y, , y+4, 20, , 8) != 1))
+	{
+		Gdip_DisposeImage(pBMScreen)
+		return 0
+	}
+	Gdip_DisposeImage(pBMScreen)
+	cx2 := SubStr(PLightEnd, 1, InStr(PLightEnd, ",")-1)+1
+	dx2 := SubStr(PDarkEnd, 1, InStr(PDarkEnd, ",")-1)+1
+	if (dx2 <= x)
+		return 0
+	return (cx2-x)/(dx2-x)
+}
+;Re-time the reserved planter from what its bar shows. RotUp raises the camera
+;and points the view at the ground; this planter is overhead, so RotDown is
+;what swings the view up to it. It has been in the ground since
+;CoconutPaperPlantedAt, so the progress divides straight into the real
+;full-grow time, degradation included, without modelling a mechanic the game
+;never puts a number on.
+ba_coconutPaperTimeUpdate(){
+	global CoconutPaperPlantedAt, CoconutPaperSlot, PlanterHarvestTime3, RotUp, RotDown, ZoomOut
+	local p := 0, grow
+	sendinput "{" RotDown " 4}"
+	Sleep 800
+	Loop 12 {
+		if ((p := ba_coconutPaperDetection()) > 0)
+			break
+		Sleep 200
+		sendinput "{" ZoomOut "}"
+	}
+	if (p > 0) {
+		grow := ba_effectiveGrowTime(CoconutPaperSlot, 1, p)
+		PlanterHarvestTime3 := nowUnix() + Round((1 - p) * grow * 3600)
+		IniWrite PlanterHarvestTime3, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
+		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown - full grow time " Round(grow, 2) " h")
+	} else {
+		ba_dumpProShopScreen("planterbar")
+		nm_setStatus("Warning", "Paper Planter growth bar not read - saved settings\proshop_debug_planterbar.png")
+	}
+	sendinput "{" RotUp " 4}"
+}
 ;A degraded field grows planters more slowly than the planter tables say, by
 ;an amount the game never shows and the wiki only describes in words: every
 ;harvest degrades the field, up to a cap of 48 hours. Measuring that beats
