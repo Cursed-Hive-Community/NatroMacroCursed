@@ -21642,7 +21642,7 @@ ba_gotoProShop(){
 	nm_gotoCollect("normalmm")
 	nm_gotoCollect("normalmmtoproshop")
 }
-;Leaving is the same E prompt: it is done once the banner is gone.
+;Leaving is the same E prompt: it is done once the shop controls are gone.
 ba_leaveProShop(){
 	global SC_E
 	Loop 3 {
@@ -21650,7 +21650,7 @@ ba_leaveProShop(){
 		Sleep 100
 		SendInput "{" SC_E " up}"
 		Sleep 1000
-		if (nm_imgSearch("proshop_leaveshop.png", 30, "high", "0xFF00FF")[1] != 0)
+		if (nm_imgSearch("proshop_arrowleft.png", 30, "low")[1] != 0)
 			return
 	}
 }
@@ -21659,9 +21659,10 @@ ba_leaveProShop(){
 ;title is checked anyway. One click crafts exactly one, and the button turns
 ;from green "Craft Item" to red "Capacity Exceeded" at the 100 cap, which is
 ;the stop signal: nothing has to be counted. Returns the number crafted.
-;The shop banners are translucent - whatever stands behind them shows through -
-;so every template here keeps only the light glyph pixels and masks the rest to
-;magenta, matched with ImageSearch's *Trans option.
+;The prompt banners are translucent - whatever stands behind them shows through,
+;and the same prompt differs by 70 per channel between two walls - so they are
+;not matched at all. The E box beside them is fixed, and the shop's own controls
+;sit on an opaque bar that survives a change of backdrop by 17.
 ba_restockPaperPlanters(){
 	global SC_E
 	local searchRet, crafted := 0
@@ -21669,16 +21670,13 @@ ba_restockPaperPlanters(){
 	nm_updateAction("Planters")
 	ba_gotoProShop()
 
-	;the prompt only shows once the character has come to rest, so give it a
-	;moment rather than looking exactly as the walk ends. If it never shows, say
-	;whether any E prompt is up at all: that separates standing in the wrong
-	;place from standing in the right one and failing to read the banner.
+	;the prompt appears once the character has come to rest, so give it a moment
+	;rather than looking exactly as the walk ends
 	Loop 30 {
-		if (nm_imgSearch("proshop_openshop.png", 30, "high", "0xFF00FF")[1] = 0)
+		if (nm_imgSearch("e_button.png", 30, "high")[1] = 0)
 			break
 		if (A_Index = 30) {
-			nm_setStatus("Error", "Pro Shop door not found"
-				. ((nm_imgSearch("e_button.png", 30, "high")[1] = 0) ? " - an E prompt is showing" : " - no E prompt at all"))
+			nm_setStatus("Error", "Pro Shop door not found")
 			return 0
 		}
 		Sleep 100
@@ -21689,7 +21687,7 @@ ba_restockPaperPlanters(){
 		Sleep 100
 		SendInput "{" SC_E " up}"
 		Sleep 1500
-		if (nm_imgSearch("proshop_leaveshop.png", 30, "high", "0xFF00FF")[1] = 0)
+		if (nm_imgSearch("proshop_arrowleft.png", 30, "low")[1] = 0)
 			break
 		if (A_Index = 3) {
 			nm_setStatus("Error", "Could not enter the Pro Shop")
@@ -21697,7 +21695,7 @@ ba_restockPaperPlanters(){
 		}
 	}
 
-	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low", "0xFF00FF")
+	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low")
 	if (searchRet[1] != 0) {
 		nm_setStatus("Error", "Pro Shop arrow not found")
 		ba_leaveProShop()
@@ -21709,7 +21707,7 @@ ba_restockPaperPlanters(){
 	Click
 	Sleep 800
 
-	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright", "0xFF00FF")[1] != 0) {
+	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright")[1] != 0) {
 		nm_setStatus("Error", "Paper Planter not found in the Pro Shop")
 		ba_leaveProShop()
 		return 0
@@ -21717,11 +21715,11 @@ ba_restockPaperPlanters(){
 
 	nm_setStatus("Crafting", "Paper Planter")
 	Loop 100 {
-		searchRet := nm_imgSearch("proshop_craft.png", 30, "low", "0xFF00FF")
+		searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
 		if (searchRet[1] != 0) ;button no longer green: capacity reached
 			break
 		GetRobloxClientPos()
-		MouseMove windowX+searchRet[2]+36, windowY+searchRet[3]+9
+		MouseMove windowX+searchRet[2]+65, windowY+searchRet[3]+14
 		Sleep 100
 		Click
 		crafted++
