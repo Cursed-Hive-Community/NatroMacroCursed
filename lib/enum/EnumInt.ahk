@@ -378,4 +378,6 @@
 	, "CoconutPaperReadOnly"
 	, "CoconutPaperCycle"
 	, "CoconutPaperDebugShots"
+	, "CoconutPaperCheckInterrupt"
+	, "CoconutPaperFirstCheck"
 ]

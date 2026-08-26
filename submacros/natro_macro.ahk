@@ -901,6 +901,8 @@ nm_importConfig()
 		, "CoconutPaperReadOnly", 0
 		, "CoconutPaperCycle", 0
 		, "CoconutPaperDebugShots", 0
+		, "CoconutPaperCheckInterrupt", 1
+		, "CoconutPaperFirstCheck", 40
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -7064,7 +7066,7 @@ ba_gotoPlanterFieldSwitch_(*){
 nm_CoconutPaperSettingsGui(*){
 	global CoconutPaperGui, CoconutPaperHotbar, CoconutPaperTokenLink, CoconutPaperTokenField
 	global CoconutPaperRestock, CoconutPaperRestockEvery, CoconutPaperRestockOnly, CoconutPaperReadOnly
-	global CoconutPaperDebugShots
+	global CoconutPaperDebugShots, CoconutPaperCheckInterrupt, CoconutPaperFirstCheck
 	global fieldnamelist, MainGui
 	local GuiCtrl
 	if (IsSet(CoconutPaperGui) && IsObject(CoconutPaperGui))
@@ -7093,9 +7095,15 @@ nm_CoconutPaperSettingsGui(*){
 	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
 	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y268 w300 cRed vCoconutPaperReadOnly Checked" CoconutPaperReadOnly, "Testing: only read the planter's growth, nothing else"))
 	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
-	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y288 w300 cRed vCoconutPaperDebugShots Checked" CoconutPaperDebugShots, "Testing: keep a screenshot of every step"))
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y288 w300 vCoconutPaperCheckInterrupt Checked" CoconutPaperCheckInterrupt, "Interrupt gathering when the planter is due"))
 	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
-	CoconutPaperGui.Show("w320 h325")
+	CoconutPaperGui.Add("Text", "x10 y312 +BackgroundTrans", "First look after:")
+	(GuiCtrl := CoconutPaperGui.Add("Edit", "x150 y309 w40 h20 limit3 Number vCoconutPaperFirstCheck", CoconutPaperFirstCheck))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x196 y312 +BackgroundTrans", "minutes")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y336 w300 cRed vCoconutPaperDebugShots Checked" CoconutPaperDebugShots, "Testing: keep a screenshot of every step"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Show("w320 h372")
 }
 ;Toggling the reserved slot hands it over: whatever is growing there now is
 ;flagged for immediate harvest, rather than being abandoned in the field.
@@ -16498,6 +16506,7 @@ nm_GoGather(){
 		, FieldName, FieldPattern, FieldPatternSize, FieldPatternReps, FieldPatternShift, FieldPatternInvertFB, FieldPatternInvertLR, FieldUntilMins, FieldUntilPack, FieldReturnType, FieldSprinklerLoc, FieldSprinklerDist, FieldRotateDirection, FieldRotateTimes, FieldDriftCheck
 		, MondoBuffCheck, MondoAction, LastMondoBuff
 		, PlanterMode, gotoPlanterField, MPlanterGatherA, MPlanterGather1, MPlanterGather2, MPlanterGather3, LastPlanterGatherSlot, MPlanterHold1, MPlanterHold2, MPlanterHold3, PlanterField1, PlanterField2, PlanterField3, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3
+		, CoconutPaperCheckInterrupt, CoconutPaperSlot
 		, QuestLadybugs, QuestRhinoBeetles, QuestSpider, QuestMantis, QuestScorpions, QuestWerewolf
 		, GatherStartTime, TotalGatherTime, SessionGatherTime, ConvertStartTime, TotalConvertTime, SessionConvertTime
 		, GameFrozenCounter
@@ -16961,6 +16970,14 @@ nm_GoGather(){
 						interruptReason := "Planter Harvest"
 						break
 					}
+				}
+				;Coconut (Paper) interrupt: the reserved planter comes due on its own
+				;schedule, and a gather session can run long enough to leave it sitting
+				;grown for the best part of an hour
+				if (CoconutPaperCheckInterrupt && ba_isReservedSlot(CoconutPaperSlot)
+					&& (PlanterField3 != "None") && (nowUnix() >= PlanterHarvestTime3)) {
+					interruptReason := "Paper Planter"
+					break
 				}
 				if nm_BugrunInterrupt() {
 					interruptReason := "Kill Bugs"
@@ -20888,6 +20905,7 @@ ba_planter(){
 	global CoconutPaperPlaced
 	global CoconutPaperPlantedAt
 	global CoconutPaperCycle
+	global CoconutPaperFirstCheck
 	global DandelionFieldCheck
 	global MountainTopFieldCheck
 	global MushroomFieldCheck
@@ -21028,6 +21046,13 @@ ba_planter(){
 			;worked out from the bar later on
 			CoconutPaperPlantedAt := nowUnix()
 			IniWrite CoconutPaperPlantedAt, "settings\nm_config.ini", "Planters", "CoconutPaperPlantedAt"
+			;The tables give this planter an hour, and the log says it is ready
+			;sooner - a planter found grown tells us nothing except that we were
+			;late. Looking earlier costs a walk and gains a reading: if it is not
+			;ready the bar gives the real time to the minute, and if it is, it is
+			;harvested that much sooner.
+			PlanterHarvestTime3 := CoconutPaperPlantedAt + CoconutPaperFirstCheck*60
+			IniWrite PlanterHarvestTime3, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
 			CoconutPaperCycle++
 			IniWrite CoconutPaperCycle, "settings\nm_config.ini", "Planters", "CoconutPaperCycle"
 			ba_coconutPaperLog("plant")
@@ -21743,6 +21768,7 @@ ba_coconutPaperDetection(){
 ba_coconutPaperTimeUpdate(){
 	global CoconutPaperPlantedAt, CoconutPaperSlot, PlanterHarvestTime3, RotUp, RotDown, ZoomOut
 	local p := 0, grow
+	nm_setStatus("Checking", "Paper Planter growth")
 	sendinput "{" RotDown " 4}"
 	Sleep 800
 	Loop 12 {
