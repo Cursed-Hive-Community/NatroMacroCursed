@@ -21759,6 +21759,39 @@ ba_coconutPaperDetection(){
 		return 0
 	return (cx2-x)/(dx2-x)
 }
+;Read the bar on arrival, whatever happens next. Waiting for the game to say
+;"not fully grown" only ever measures the planter when the macro is early, and
+;the log shows it is normally late - nine cycles produced not one reading. A
+;planter found already grown says nothing on its own; the bar says how far
+;along it really is, which is the number the degradation question turns on.
+;Returns the fraction, or 0 if the bar could not be read. Leaves the camera as
+;it found it.
+ba_coconutPaperMeasure(){
+	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
+	local p := 0, mins := ""
+	nm_setStatus("Checking", "Paper Planter growth")
+	sendinput "{" RotDown " 4}"
+	Sleep 800
+	Loop 12 {
+		if ((p := ba_coconutPaperDetection()) > 0)
+			break
+		Sleep 200
+		sendinput "{" ZoomOut "}"
+	}
+	sendinput "{" RotUp " 4}"
+	Sleep 300
+	if CoconutPaperPlantedAt
+		mins := Round((nowUnix() - CoconutPaperPlantedAt)/60)
+	if (p > 0)
+		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
+			. (mins ? " after " mins " min" : ""))
+	else
+		nm_setStatus("Warning", "Paper Planter growth bar not read"
+			. ba_dumpProShopScreen("planterbar", 1))
+	ba_coconutPaperLog((p > 0) ? "read" : "read_failed", (p > 0) ? Round(p, 4) : ""
+		, ((p > 0) && (p < 1)) ? Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 3) : "")
+	return p
+}
 ;Re-time the reserved planter from what its bar shows. RotUp raises the camera
 ;and points the view at the ground; this planter is overhead, so RotDown is
 ;what swings the view up to it. It has been in the ground since
@@ -21806,8 +21839,11 @@ ba_effectiveGrowTime(planterNum, tableHours, progress){
 	;misreading would swing the answer by days - so come back after twice as long
 	;instead, which walks up to even the 48 hour cap in a handful of visits
 	measured := (progress > 0.02) ? (inGround / progress) : (2 * inGround)
-	;it can only ever be slower than natural, and never by more than the cap
-	return Min(tableHours + 48, Max(tableHours, measured))
+	;The table's hour was only ever a starting guess, and the log says this
+	;planter is ready well inside it - so a measurement is allowed to come in
+	;under the table as well as over. Bounded either side only by what the game
+	;could plausibly do: never under six minutes, never past the 48 hour cap.
+	return Min(tableHours + 48, Max(0.1, measured))
 }
 ;the Coconut (Paper) slot is reserved: the automatic algorithm leaves it
 ;alone and it always holds a Paper planter placed at the coconut paper spot
@@ -22216,6 +22252,18 @@ ba_harvestPlanter(planterNum){
 	nm_Reset(1, ((GatherPlanterLoot = 1) && ((fieldname = "Rose") || (fieldname = "Pine Tree") || (fieldname = "Pumpkin") || (fieldname = "Cactus") || (fieldname = "Spider"))) ? min(20000, (60-HiveBees)*1000) : 0)
 	nm_setStatus("Traveling", planterName . " (" . fieldName . ")")
 	nm_gotoPlanter(ba_planterPath(fieldName, planterNum))
+	if (ba_isReservedSlot(planterNum)) {
+		paperGrown := ba_coconutPaperMeasure()
+		;a bar that reads short is the answer already: come back when it says it
+		;will be ready, rather than pressing E to be told the same thing
+		if ((paperGrown > 0) && (paperGrown < 0.99)) {
+			paperGrow := ba_effectiveGrowTime(planterNum, 1, paperGrown)
+			PlanterHarvestTime%planterNum% := nowUnix() + Round((1 - paperGrown) * paperGrow * 3600)
+			IniWrite PlanterHarvestTime%planterNum%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" planterNum
+			nm_setStatus("Holding", "Paper Planter - back in " Round((1 - paperGrown) * paperGrow * 60) " min")
+			return 1
+		}
+	}
 	nm_setStatus("Collecting", (planterName . " (" . fieldName . ")"))
 	if (ba_isReservedSlot(planterNum)) {
 		findPlanter := 0
