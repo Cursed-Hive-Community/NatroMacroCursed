@@ -21768,7 +21768,7 @@ ba_coconutPaperDetection(){
 ;it found it.
 ba_coconutPaperMeasure(){
 	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
-	local p := 0, mins := ""
+	local p := 0, mins := "", shot := ""
 	nm_setStatus("Checking", "Paper Planter growth")
 	sendinput "{" RotDown " 4}"
 	Sleep 800
@@ -21778,16 +21778,19 @@ ba_coconutPaperMeasure(){
 		Sleep 200
 		sendinput "{" ZoomOut "}"
 	}
+	;Photograph the planter here, with the view still up on it. This is the frame
+	;the reading was taken from; once the camera swings back there is nothing to
+	;see but the ground.
+	shot := ba_dumpProShopScreen("planterbar", 1)
 	sendinput "{" RotUp " 4}"
 	Sleep 300
 	if CoconutPaperPlantedAt
 		mins := Round((nowUnix() - CoconutPaperPlantedAt)/60)
 	if (p > 0)
 		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
-			. (mins ? " after " mins " min" : ""))
+			. (mins ? " after " mins " min" : "") shot)
 	else
-		nm_setStatus("Warning", "Paper Planter growth bar not read"
-			. ba_dumpProShopScreen("planterbar", 1))
+		nm_setStatus("Warning", "Paper Planter growth bar not read" shot)
 	ba_coconutPaperLog((p > 0) ? "read" : "read_failed", (p > 0) ? Round(p, 4) : ""
 		, ((p > 0) && (p < 1)) ? Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 3) : "")
 	return p
