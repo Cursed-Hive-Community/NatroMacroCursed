@@ -21839,11 +21839,9 @@ ba_effectiveGrowTime(planterNum, tableHours, progress){
 	;misreading would swing the answer by days - so come back after twice as long
 	;instead, which walks up to even the 48 hour cap in a handful of visits
 	measured := (progress > 0.02) ? (inGround / progress) : (2 * inGround)
-	;The table's hour was only ever a starting guess, and the log says this
-	;planter is ready well inside it - so a measurement is allowed to come in
-	;under the table as well as over. Bounded either side only by what the game
-	;could plausibly do: never under six minutes, never past the 48 hour cap.
-	return Min(tableHours + 48, Max(0.1, measured))
+	;it can only ever be slower than the hour the tables give, and never by more
+	;than the 48 hour cap the field can carry
+	return Min(tableHours + 48, Max(tableHours, measured))
 }
 ;the Coconut (Paper) slot is reserved: the automatic algorithm leaves it
 ;alone and it always holds a Paper planter placed at the coconut paper spot
