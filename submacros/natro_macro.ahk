@@ -22343,7 +22343,9 @@ ba_harvestPlanter(planterNum){
 		Sleep 50 ; wait for game to update frame
 		GetRobloxClientPos(hwnd)
 		if (((HarvestFullGrown = 1) || ba_isReservedSlot(planterNum)) && !PlanterHarvestNow%planterNum%) {
-			loop 3 {
+			;The "not fully grown" dialog takes a moment to come up, and three
+			;screenshots taken back to back can all land before it does. Give it time.
+			loop 6 {
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
 				if (Gdip_ImageSearch(pBMScreen, bitmaps["no"], &pos, , , , , 2, , 3) = 1) {
 					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
@@ -22359,6 +22361,22 @@ ba_harvestPlanter(planterNum){
 					return 1
 				}
 				Gdip_DisposeImage(pBMScreen)
+				Sleep 250
+			}
+			;No dialog found, which normally means it was collected - but it can also
+			;mean the dialog was missed, and falling through from here clears the slot
+			;and records a harvest for a planter still standing in the field. The bar
+			;settles it: still there means still growing, so come back when it says.
+			if (ba_isReservedSlot(planterNum)) {
+				paperGrown := ba_coconutPaperMeasure()
+				if (paperGrown > 0) {
+					paperGrow := ba_effectiveGrowTime(planterNum, 1, paperGrown)
+					PlanterHarvestTime%planterNum% := nowUnix() + Round(Max(60, (1 - paperGrown) * paperGrow * 3600))
+					IniWrite PlanterHarvestTime%planterNum%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" planterNum
+					nm_setStatus("Holding", "Paper Planter still growing - " Round(paperGrown*100, 1) "% - back in "
+						. Round(Max(1, (1 - paperGrown) * paperGrow * 60)) " min")
+					return 1
+				}
 			}
 		}
 		else {
