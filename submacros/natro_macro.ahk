@@ -21037,26 +21037,8 @@ ba_planter(){
 	;refill the reserved Coconut (Paper) slot, so its one hour cycle is not
 	;held up behind the nectar optimisation below
 	if(CoconutPaperCheck && (PlanterName%CoconutPaperSlot%="none")) {
-		coconutPaperPlanter:=ba_coconutPaperPlanter()
-		if((coconutPaperPlanter[1]!="none") && (ba_placeCoconutPaper()=1)) {
-			ba_SavePlacedPlanter("Coconut", coconutPaperPlanter, CoconutPaperSlot, "Refreshing", 1)
-			CoconutPaperPlaced++
-			IniWrite CoconutPaperPlaced, "settings\nm_config.ini", "Planters", "CoconutPaperPlaced"
-			;the moment it went into the ground, so its real growth rate can be
-			;worked out from the bar later on
-			CoconutPaperPlantedAt := nowUnix()
-			IniWrite CoconutPaperPlantedAt, "settings\nm_config.ini", "Planters", "CoconutPaperPlantedAt"
-			;The tables give this planter an hour, and the log says it is ready
-			;sooner - a planter found grown tells us nothing except that we were
-			;late. Looking earlier costs a walk and gains a reading: if it is not
-			;ready the bar gives the real time to the minute, and if it is, it is
-			;harvested that much sooner.
-			PlanterHarvestTime3 := CoconutPaperPlantedAt + CoconutPaperFirstCheck*60
-			IniWrite PlanterHarvestTime3, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
-			CoconutPaperCycle++
-			IniWrite CoconutPaperCycle, "settings\nm_config.ini", "Planters", "CoconutPaperCycle"
-			ba_coconutPaperLog("plant")
-		}
+		if (ba_placeCoconutPaper())
+			ba_coconutPaperRecordPlant()
 	}
 	;re-place planters here
 	;--- determine max number of planters ---
@@ -21759,6 +21741,31 @@ ba_coconutPaperDetection(){
 		return 0
 	return (cx2-x)/(dx2-x)
 }
+;Record a paper planter that has just gone into the ground: the slot, the
+;moment, the cycle number and when to first go and look. Shared by the two
+;places one gets planted - on the spot right after a harvest, and on a trip
+;made for it - so the bookkeeping cannot drift between them.
+ba_coconutPaperRecordPlant(){
+	global CoconutPaperPlantedAt, CoconutPaperCycle, CoconutPaperSlot, CoconutPaperFirstCheck
+	global PlanterHarvestTime3, CoconutPaperPlaced
+	local planter := ba_coconutPaperPlanter()
+	if (planter[1] = "none")
+		return 0
+	ba_SavePlacedPlanter("Coconut", planter, CoconutPaperSlot, "Refreshing", 1)
+	CoconutPaperPlantedAt := nowUnix()
+	IniWrite CoconutPaperPlantedAt, "settings\nm_config.ini", "Planters", "CoconutPaperPlantedAt"
+	;the tables give this planter an hour and degradation only adds to it, so the
+	;first look is deliberately early: a bar read short gives the real time to the
+	;minute, where a planter found grown says only that we were late
+	PlanterHarvestTime3 := CoconutPaperPlantedAt + CoconutPaperFirstCheck*60
+	IniWrite PlanterHarvestTime3, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
+	CoconutPaperCycle++
+	IniWrite CoconutPaperCycle, "settings\nm_config.ini", "Planters", "CoconutPaperCycle"
+	CoconutPaperPlaced++
+	IniWrite CoconutPaperPlaced, "settings\nm_config.ini", "Planters", "CoconutPaperPlaced"
+	ba_coconutPaperLog("plant")
+	return 1
+}
 ;Read the bar on arrival, whatever happens next. Waiting for the game to say
 ;"not fully grown" only ever measures the planter when the macro is early, and
 ;the log shows it is normally late - nine cycles produced not one reading. A
@@ -21766,7 +21773,7 @@ ba_coconutPaperDetection(){
 ;along it really is, which is the number the degradation question turns on.
 ;Returns the fraction, or 0 if the bar could not be read. Leaves the camera as
 ;it found it.
-ba_coconutPaperMeasure(){
+ba_coconutPaperMeasure(afterHarvest := 0){
 	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
 	local p := 0, mins := "", shot := ""
 	nm_setStatus("Checking", "Paper Planter growth")
@@ -21781,7 +21788,7 @@ ba_coconutPaperMeasure(){
 	;Photograph the planter here, with the view still up on it. This is the frame
 	;the reading was taken from; once the camera swings back there is nothing to
 	;see but the ground.
-	shot := ba_dumpProShopScreen("planterbar", 1)
+	shot := ba_dumpProShopScreen("planterbar", !afterHarvest)
 	sendinput "{" RotUp " 4}"
 	Sleep 300
 	if CoconutPaperPlantedAt
@@ -21789,9 +21796,12 @@ ba_coconutPaperMeasure(){
 	if (p > 0)
 		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
 			. (mins ? " after " mins " min" : "") shot)
+	else if (afterHarvest)
+		;no bar because the planter is gone, which is what a harvest is meant to do
+		nm_setStatus("Collected", "Paper Planter (Coconut)")
 	else
 		nm_setStatus("Warning", "Paper Planter growth bar not read" shot)
-	ba_coconutPaperLog((p > 0) ? "read" : "read_failed", (p > 0) ? Round(p, 4) : ""
+	ba_coconutPaperLog((p > 0) ? "read" : (afterHarvest ? "gone" : "read_failed"), (p > 0) ? Round(p, 4) : ""
 		, ((p > 0) && (p < 1)) ? Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 3) : "")
 	return p
 }
@@ -21864,13 +21874,15 @@ ba_fieldTakenByPaper(fieldName){
 ;keeps throwing until the game answers with the "already a planter in this
 ;field" alert instead - which can only mean one of the throws landed.
 ;Returns 1 on success.
-ba_placeCoconutPaper(){
+ba_placeCoconutPaper(atSpot := 0){
 	global CoconutPaperHotbar, SC_Space
 	nm_updateAction("Planters")
 	nm_setShiftLock(0)
-	nm_Reset()
-	nm_setStatus("Traveling", "Paper Planter (Coconut)")
-	nm_gotoPlanter("coconutpaper")
+	if (!atSpot) {
+		nm_Reset()
+		nm_setStatus("Traveling", "Paper Planter (Coconut)")
+		nm_gotoPlanter("coconutpaper")
+	}
 	nm_setStatus("Placing", "Paper Planter (Coconut)")
 	Loop 8 {
 		sendinput "{" SC_Space " up}"
@@ -22371,7 +22383,7 @@ ba_harvestPlanter(planterNum){
 			;and records a harvest for a planter still standing in the field. The bar
 			;settles it: still there means still growing, so come back when it says.
 			if (ba_isReservedSlot(planterNum)) {
-				paperGrown := ba_coconutPaperMeasure()
+				paperGrown := ba_coconutPaperMeasure(1)
 				if (paperGrown > 0) {
 					paperGrow := ba_effectiveGrowTime(planterNum, 1, paperGrown)
 					PlanterHarvestTime%planterNum% := nowUnix() + Round(Max(60, (1 - paperGrown) * paperGrow * 3600))
@@ -22424,7 +22436,18 @@ ba_harvestPlanter(planterNum){
 		IniWrite TotalPlantersCollected, "settings\nm_config.ini", "Status", "TotalPlantersCollected"
 		IniWrite SessionPlantersCollected, "settings\nm_config.ini", "Status", "SessionPlantersCollected"
 		;gather loot
-		if (GatherPlanterLoot = 1)
+		if (ba_isReservedSlot(planterNum)) {
+			ba_coconutPaperLog("harvest")
+			;Still standing where it grew, and the next one goes in the same place, so
+			;throw it now rather than walking back for it later. This has to happen
+			;before the full bag conversion below, which returns to the hive. If it
+			;fails the slot simply stays empty and the usual trip picks it up.
+			if (ba_placeCoconutPaper(1))
+				ba_coconutPaperRecordPlant()
+		}
+		;the loot walk is worth ten seconds in a field; at the coconut paper spot
+		;there is nothing on the ground to walk into
+		if ((GatherPlanterLoot = 1) && !ba_isReservedSlot(planterNum))
 		{
 			nm_setStatus("Looting", planterName . " Loot")
 			Sleep 1000
@@ -22453,8 +22476,6 @@ ba_harvestPlanter(planterNum){
 			DisconnectCheck()
 			nm_findHiveSlot()
 		}
-		if (ba_isReservedSlot(planterNum))
-			ba_coconutPaperLog("harvest")
 		;the harvest leaves a token link behind: farm it before moving on
 		if (ba_isReservedSlot(planterNum) && CoconutPaperTokenLink)
 			ba_coconutPaperTokenLink()
