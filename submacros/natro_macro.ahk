@@ -22445,8 +22445,10 @@ ba_harvestPlanter(planterNum){
 			if (ba_placeCoconutPaper(1))
 				ba_coconutPaperRecordPlant()
 		}
-		;the loot walk is worth ten seconds in a field; at the coconut paper spot
-		;there is nothing on the ground to walk into
+		;This planter is thrown up onto the field from underneath, so its loot drops
+		;up there while the macro is standing below it. The loot walk circles the
+		;spot it was harvested from and cannot reach any of it - ten seconds spent
+		;collecting nothing. The token link trip further down is what gathers it.
 		if ((GatherPlanterLoot = 1) && !ba_isReservedSlot(planterNum))
 		{
 			nm_setStatus("Looting", planterName . " Loot")
