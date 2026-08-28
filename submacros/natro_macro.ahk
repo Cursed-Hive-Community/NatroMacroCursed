@@ -903,6 +903,7 @@ nm_importConfig()
 		, "CoconutPaperDebugShots", 0
 		, "CoconutPaperCheckInterrupt", 1
 		, "CoconutPaperFirstCheck", 40
+		, "CoconutPaperPredicted", ""
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -16506,7 +16507,7 @@ nm_GoGather(){
 		, FieldName, FieldPattern, FieldPatternSize, FieldPatternReps, FieldPatternShift, FieldPatternInvertFB, FieldPatternInvertLR, FieldUntilMins, FieldUntilPack, FieldReturnType, FieldSprinklerLoc, FieldSprinklerDist, FieldRotateDirection, FieldRotateTimes, FieldDriftCheck
 		, MondoBuffCheck, MondoAction, LastMondoBuff
 		, PlanterMode, gotoPlanterField, MPlanterGatherA, MPlanterGather1, MPlanterGather2, MPlanterGather3, LastPlanterGatherSlot, MPlanterHold1, MPlanterHold2, MPlanterHold3, PlanterField1, PlanterField2, PlanterField3, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3
-		, CoconutPaperCheckInterrupt, CoconutPaperSlot
+		, CoconutPaperCheckInterrupt, CoconutPaperSlot, CoconutPaperPredicted
 		, QuestLadybugs, QuestRhinoBeetles, QuestSpider, QuestMantis, QuestScorpions, QuestWerewolf
 		, GatherStartTime, TotalGatherTime, SessionGatherTime, ConvertStartTime, TotalConvertTime, SessionConvertTime
 		, GameFrozenCounter
@@ -21672,7 +21673,7 @@ ba_readCoconutPaperProgress(){
 ;degradation building up; the gap between one harvest and the next plant shows
 ;how much of it wears off while the field is left alone.
 ba_coconutPaperLog(event, progress := "", growHours := "", note := ""){
-	global CoconutPaperPlantedAt, CoconutPaperCycle, PlanterHarvestTime3
+	global CoconutPaperPlantedAt, CoconutPaperCycle, PlanterHarvestTime3, CoconutPaperPredicted
 	local path := A_WorkingDir "\settings\coconut_paper_log.csv", since := "", row
 	if CoconutPaperPlantedAt
 		since := nowUnix() - CoconutPaperPlantedAt
@@ -21741,6 +21742,13 @@ ba_coconutPaperDetection(){
 		return 0
 	return (cx2-x)/(dx2-x)
 }
+;Keep the full grow time the bar last predicted, so the harvest row can confirm
+;it instead of offering an arrival time in its place.
+ba_coconutPaperPredict(hours){
+	global CoconutPaperPredicted
+	CoconutPaperPredicted := (hours = "") ? "" : Round(hours, 3)
+	IniWrite CoconutPaperPredicted, "settings\nm_config.ini", "Planters", "CoconutPaperPredicted"
+}
 ;Record a paper planter that has just gone into the ground: the slot, the
 ;moment, the cycle number and when to first go and look. Shared by the two
 ;places one gets planted - on the spot right after a harvest, and on a trip
@@ -21763,6 +21771,7 @@ ba_coconutPaperRecordPlant(){
 	IniWrite CoconutPaperCycle, "settings\nm_config.ini", "Planters", "CoconutPaperCycle"
 	CoconutPaperPlaced++
 	IniWrite CoconutPaperPlaced, "settings\nm_config.ini", "Planters", "CoconutPaperPlaced"
+	ba_coconutPaperPredict("")
 	ba_coconutPaperLog("plant")
 	return 1
 }
@@ -21825,6 +21834,7 @@ ba_coconutPaperTimeUpdate(){
 	}
 	if (p > 0) {
 		grow := ba_effectiveGrowTime(CoconutPaperSlot, 1, p)
+		ba_coconutPaperPredict(grow)
 		PlanterHarvestTime3 := nowUnix() + Round((1 - p) * grow * 3600)
 		IniWrite PlanterHarvestTime3, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
 		ba_coconutPaperLog("read", Round(p, 4), Round(grow, 3))
@@ -22271,6 +22281,7 @@ ba_harvestPlanter(planterNum){
 		;will be ready, rather than pressing E to be told the same thing
 		if ((paperGrown > 0) && (paperGrown < 0.99)) {
 			paperGrow := ba_effectiveGrowTime(planterNum, 1, paperGrown)
+			ba_coconutPaperPredict(paperGrow)
 			PlanterHarvestTime%planterNum% := nowUnix() + Round((1 - paperGrown) * paperGrow * 3600)
 			IniWrite PlanterHarvestTime%planterNum%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" planterNum
 			nm_setStatus("Holding", "Paper Planter - back in " Round((1 - paperGrown) * paperGrow * 60) " min")
@@ -22386,6 +22397,7 @@ ba_harvestPlanter(planterNum){
 				paperGrown := ba_coconutPaperMeasure(1)
 				if (paperGrown > 0) {
 					paperGrow := ba_effectiveGrowTime(planterNum, 1, paperGrown)
+					ba_coconutPaperPredict(paperGrow)
 					PlanterHarvestTime%planterNum% := nowUnix() + Round(Max(60, (1 - paperGrown) * paperGrow * 3600))
 					IniWrite PlanterHarvestTime%planterNum%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" planterNum
 					nm_setStatus("Holding", "Paper Planter still growing - " Round(paperGrown*100, 1) "% - back in "
@@ -22437,7 +22449,12 @@ ba_harvestPlanter(planterNum){
 		IniWrite SessionPlantersCollected, "settings\nm_config.ini", "Status", "SessionPlantersCollected"
 		;gather loot
 		if (ba_isReservedSlot(planterNum)) {
-			ba_coconutPaperLog("harvest")
+			;seconds_since_plant here is when the macro turned up, not when the planter
+			;finished - it is always the later of the two. The figure worth keeping is
+			;the one the bar predicted, carried here so the row confirms it rather than
+			;standing in for it.
+			ba_coconutPaperLog("harvest", "", CoconutPaperPredicted
+				, CoconutPaperPredicted ? "confirms predicted grow time" : "never measured")
 			;Still standing where it grew, and the next one goes in the same place, so
 			;throw it now rather than walking back for it later. This has to happen
 			;before the full bag conversion below, which returns to the hive. If it
