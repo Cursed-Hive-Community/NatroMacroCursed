@@ -21982,7 +21982,7 @@ ba_leaveProShop(){
 ;sit on an opaque bar that survives a change of backdrop by 17.
 ba_restockPaperPlanters(){
 	global SC_E
-	local searchRet, inside, atCapacity, crafted := 0
+	local searchRet, inside, atCapacity, burst, clicks := 0, crafted := 0
 
 	nm_updateAction("Planters")
 	ba_gotoProShop()
@@ -22041,8 +22041,16 @@ ba_restockPaperPlanters(){
 		return 0
 	}
 
+	;Craft in bursts. Looking at the screen between every click costs about two
+	;seconds each - an image search over half a 1920x1080 screen, plus the waits -
+	;which is two minutes to fill a stock of sixty. The button does not move, so
+	;clicking it repeatedly needs no fresh search; only the question "is it still
+	;green" does, and that only has to be asked once a burst. Clicks that land
+	;after the cap is reached hit a red button and do nothing, so overshooting
+	;within a burst is harmless.
 	nm_setStatus("Crafting", "Paper Planter")
-	Loop 100 {
+	burst := 10
+	Loop 12 {
 		searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
 		if (searchRet[1] != 0) {
 			;the button flickers while an item is being made, so look twice before
@@ -22054,15 +22062,17 @@ ba_restockPaperPlanters(){
 		}
 		GetRobloxClientPos()
 		MouseMove windowX+searchRet[2]+95, windowY+searchRet[3]+16
-		Sleep 100
-		Click
-		crafted++
-		;Take the pointer off the button before looking again. Left where it
-		;clicked, the cursor covers twenty-odd pixels of the very words being
-		;matched, so the second look always failed and the run stopped after one.
+		Sleep 120
+		Loop burst {
+			Click
+			Sleep 110
+		}
+		clicks += burst
+		;the pointer sits on the very words being matched, so step aside to look
 		MouseMove windowX+60, windowY+windowHeight//2
-		Sleep 350
+		Sleep 300
 	}
+	crafted := clicks
 	;a green button gone can mean the cap is reached or that the materials have
 	;run out, and those deserve opposite treatment. Only a "Capacity Exceeded"
 	;actually recognised on screen counts as a full stock; anything else is a
@@ -22075,9 +22085,11 @@ ba_restockPaperPlanters(){
 		ba_leaveProShop()
 		return 0
 	}
+	;clicks, not planters: the burst that reaches the cap keeps clicking a red
+	;button, so this is an upper bound rather than a count
 	nm_setStatus((crafted = 0) ? "Full" : "Crafted", (crafted = 0)
 		? "Paper Planters already at capacity"
-		: crafted " Paper Planter" ((crafted = 1) ? "" : "s"))
+		: "up to " crafted " Paper Planters - stock now full")
 	ba_leaveProShop()
 	return crafted
 }
