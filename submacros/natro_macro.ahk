@@ -22057,7 +22057,11 @@ ba_restockPaperPlanters(){
 		Sleep 100
 		Click
 		crafted++
-		Sleep 250
+		;Take the pointer off the button before looking again. Left where it
+		;clicked, the cursor covers twenty-odd pixels of the very words being
+		;matched, so the second look always failed and the run stopped after one.
+		MouseMove windowX+60, windowY+windowHeight//2
+		Sleep 350
 	}
 	;a green button gone can mean the cap is reached or that the materials have
 	;run out, and those deserve opposite treatment. Only a "Capacity Exceeded"
