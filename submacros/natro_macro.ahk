@@ -22003,7 +22003,7 @@ ba_leaveProShop(){
 ;sit on an opaque bar that survives a change of backdrop by 17.
 ba_restockPaperPlanters(){
 	global SC_E
-	local searchRet, inside, atCapacity, btnX, btnY, pxX, pxY, msg, crafted := 0
+	local searchRet, inside, atCapacity, btnX, btnY, pxX, pxY, msg, made, crafted := 0
 
 	nm_updateAction("Planters")
 	ba_gotoProShop()
@@ -22069,46 +22069,64 @@ ba_restockPaperPlanters(){
 	;were fast but the count was a guess, and clicks sent faster than the game
 	;registers them are simply lost. The pixel is read to the left of the text,
 	;well clear of where the pointer sits.
+	;Being short of a full stock is not a reason to stop, so the whole cycle -
+	;find the button, click it out, look at it - runs again until the stock is
+	;full. Finding the button afresh each round means one that has moved, or a
+	;shop that has redrawn itself, is picked up rather than clicked past. A
+	;round that makes nothing has met something another round will not solve -
+	;the honey gone, the button gone - so that is where it gives up.
 	nm_setStatus("Crafting", "Paper Planter")
-	;find it once - searchRet still holds the arrow until this runs
-	searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
-	if (searchRet[1] != 0) {
-		Sleep 500
+	atCapacity := 0
+	Loop 8 {
+		if (A_Index > 1)
+			nm_setStatus("Retrying", "Paper Planter craft - the stock is not full yet")
+		;find it each round - searchRet still holds the arrow on the first pass
 		searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
-	}
-	GetRobloxClientPos()
-	btnX := windowX + searchRet[2] + 95, btnY := windowY + searchRet[3] + 16
-	pxX := windowX + searchRet[2] + 15, pxY := windowY + searchRet[3] + 8
-	MouseMove btnX, btnY
-	Sleep 150
-	;Put the pointer back on the button before every click. Click on its own
-	;goes wherever the cursor happens to be, so a hand nudging the mouse
-	;mid-restock sent the clicks off into the room - while the button, no
-	;longer under the pointer and so green again, went on answering yes, and
-	;the loop ran all the way to its guard. That guard is 110, above the stock
-	;cap of 100, so it is never the reason a healthy restock stops. If the
-	;button was never found searchRet is not a position, and the pixel check
-	;refuses on the first pass, which is the right answer anyway.
-	Loop (searchRet[1] = 0) ? 110 : 0 {
-		if !ba_coconutPaperCanCraft(pxX, pxY)
+		if (searchRet[1] != 0) {
+			Sleep 500
+			searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
+		}
+		made := 0
+		;a button that is not there is not a fault by itself: a full stock is
+		;exactly what replaces it, and the capacity check below is what says so
+		if (searchRet[1] = 0) {
+			GetRobloxClientPos()
+			btnX := windowX + searchRet[2] + 95, btnY := windowY + searchRet[3] + 16
+			pxX := windowX + searchRet[2] + 15, pxY := windowY + searchRet[3] + 8
+			MouseMove btnX, btnY
+			Sleep 150
+			;Put the pointer back on the button before every click. Click on its
+			;own goes wherever the cursor happens to be, so a hand nudging the
+			;mouse mid-restock sent the clicks off into the room - while the
+			;button, no longer under the pointer and so green again, went on
+			;answering yes, and the loop ran all the way to its guard. That guard
+			;is 110, above the stock cap of 100, so it never ends a healthy round.
+			Loop 110 {
+				if !ba_coconutPaperCanCraft(pxX, pxY)
+					break
+				MouseMove btnX, btnY, 0
+				Click
+				made++
+				Sleep 330
+			}
+			crafted += made
+		}
+		;the pointer has been parked on the button, whose hover shade is 36 off
+		;the template at a tolerance of 30, so step aside before asking anything
+		;of the image search - otherwise a stock that really is full reads as a
+		;fault
+		MouseMove windowX+60, windowY+windowHeight//2
+		Sleep 300
+		;a green button gone can mean the cap is reached or that the materials
+		;have run out, and those deserve opposite treatment. Only a "Capacity
+		;Exceeded" actually recognised on screen counts as a full stock; anything
+		;else is a fault worth a picture. The file is checked first because
+		;nm_imgSearch kills the macro outright when an asset is missing.
+		atCapacity := (FileExist(A_WorkingDir "\nm_image_assets\proshop_full.png")
+			&& (nm_imgSearch("proshop_full.png", 30, "low")[1] = 0))
+		if (atCapacity || (made = 0))
 			break
-		MouseMove btnX, btnY, 0
-		Click
-		crafted++
-		Sleep 330
 	}
-	;the pointer has been parked on the button, whose hover shade is 36 off the
-	;template at a tolerance of 30, so step aside before asking anything of the
-	;image search - otherwise a stock that really is full reads as a fault
-	MouseMove windowX+60, windowY+windowHeight//2
-	Sleep 300
-	;a green button gone can mean the cap is reached or that the materials have
-	;run out, and those deserve opposite treatment. Only a "Capacity Exceeded"
-	;actually recognised on screen counts as a full stock; anything else is a
-	;fault worth a picture. The file is checked first because nm_imgSearch kills
-	;the macro outright when an asset is missing.
-	atCapacity := (FileExist(A_WorkingDir "\nm_image_assets\proshop_full.png")
-		&& (nm_imgSearch("proshop_full.png", 30, "low")[1] = 0))
 	;"stock now full" is a claim about the button, so it is only made once the
 	;button has been read as full. Stopping for any other reason - the honey
 	;ran out, the clicks landed somewhere else - is worth a picture whether or
