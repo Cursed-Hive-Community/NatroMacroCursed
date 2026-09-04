@@ -21955,15 +21955,21 @@ ba_dumpProShopScreen(step, always := 0){
 	return " - saved settings\proshop_debug_" step ".png"
 }
 ;Is the Pro Shop's craft button still green? Read one pixel to the left of its
-;text, where the fill is flat: 1b772b means another can be made, c9271c means
-;the stock is full. The button dips while an item is being made, so a miss is
-;given three chances before it counts as the end.
+;text, where the fill is flat, and judge it by hue rather than by value. The
+;button darkens to about seven tenths under the pointer - 1b772b becomes
+;12531e - and the pointer has to sit on it to click it, so an exact green can
+;never match once the loop is running. Green means another can be made, red
+;c9271c means the stock is full, and the blue bar behind is the only other
+;thing a misplaced read could land on; asking that green beat both other
+;channels tells all three apart at either brightness. The button dips while an
+;item is being made, so a miss is given three chances before it counts as the
+;end.
 ba_coconutPaperCanCraft(x, y){
 	local c, r, g, b
 	Loop 3 {
 		c := PixelGetColor(x, y)
 		r := (c >> 16) & 0xFF, g := (c >> 8) & 0xFF, b := c & 0xFF
-		if ((Abs(r - 0x1b) <= 30) && (Abs(g - 0x77) <= 30) && (Abs(b - 0x2b) <= 30))
+		if ((g >= 40) && (g > r * 1.4) && (g > b * 1.4))
 			return 1
 		Sleep 250
 	}
@@ -22085,6 +22091,11 @@ ba_restockPaperPlanters(){
 		crafted++
 		Sleep 330
 	}
+	;the pointer has been parked on the button, whose hover shade is 36 off the
+	;template at a tolerance of 30, so step aside before asking anything of the
+	;image search - otherwise a stock that really is full reads as a fault
+	MouseMove windowX+60, windowY+windowHeight//2
+	Sleep 300
 	;a green button gone can mean the cap is reached or that the materials have
 	;run out, and those deserve opposite treatment. Only a "Capacity Exceeded"
 	;actually recognised on screen counts as a full stock; anything else is a
