@@ -310,10 +310,11 @@ nm_importPaths()
 		"gtb", ["blue", "mountain", "red"], ; go to (field) booster
 		"gtc", ["clock", "antpass", "robopass", "honeydis", "treatdis", "blueberrydis", "strawberrydis", "coconutdis", "gluedis", "royaljellydis", "blender", "windshrine", ; go to collect (machine)
 				"stockings", "wreath", "feast", "gingerbread", "snowmachine", "candles", "samovar", "lidart", "gummybeacon", "rbpdelevel", ; beesmas
-				"honeylb", "honeystorm", "stickerstack", "stickerprinter", "normalmm", "megamm", "nightmm", "extrememm", "wintermm"], ; other
+				"honeylb", "honeystorm", "stickerstack", "stickerprinter", "normalmm", "megamm", "nightmm", "extrememm", "wintermm",
+				"normalmmtoproshop"], ; other
 		"gtf", ["bamboo", "blueflower", "cactus", "clover", "coconut", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
 				"rose", "spider", "strawberry", "stump", "sunflower"], ; go to field
-		"gtp", ["bamboo", "blueflower", "cactus", "clover", "coconut", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
+		"gtp", ["bamboo", "blueflower", "cactus", "clover", "coconut", "coconutpaper", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
 				"rose", "spider", "strawberry", "stump", "sunflower"], ; go to planter
 		"gtq", ["black", "brown", "bucko", "honey", "polar", "riley"], ; go to questgiver
 		"wf",  ["bamboo", "blueflower", "cactus", "clover", "coconut", "dandelion", "mountaintop", "mushroom", "pepper", "pinetree", "pineapple", "pumpkin",
@@ -888,6 +889,21 @@ nm_importConfig()
 		, "CactusFieldCheck", 1
 		, "CloverFieldCheck", 1
 		, "CoconutFieldCheck", 0
+		, "CoconutPaperCheck", 0
+		, "CoconutPaperHotbar", 7
+		, "CoconutPaperTokenLink", 1
+		, "CoconutPaperTokenField", "Sunflower"
+		, "CoconutPaperRestock", 1
+		, "CoconutPaperRestockEvery", 40
+		, "CoconutPaperPlaced", 0
+		, "CoconutPaperRestockOnly", 0
+		, "CoconutPaperPlantedAt", 0
+		, "CoconutPaperReadOnly", 0
+		, "CoconutPaperCycle", 0
+		, "CoconutPaperDebugShots", 0
+		, "CoconutPaperCheckInterrupt", 1
+		, "CoconutPaperFirstCheck", 40
+		, "CoconutPaperPredicted", ""
 		, "DandelionFieldCheck", 1
 		, "MountainTopFieldCheck", 0
 		, "MushroomFieldCheck", 0
@@ -2065,6 +2081,10 @@ for x in StrSplit(priorityListNumeric)
 	priorityList.push(defaultPriorityList[x])
 
 CheckNight:=0
+; planter slot reserved for the Coconut (Paper) planter when CoconutPaperCheck
+; is enabled: the automatic algorithm skips it and it always holds a Paper
+; planter placed at the coconut paper spot (paths\gtp-coconutpaper.ahk)
+CoconutPaperSlot:=3
 LostPlanters:=""
 QuestFields:=""
 youDied:=0
@@ -3530,11 +3550,13 @@ MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "xp y114 vRoseFieldCheck Disabled Checked" RoseFieldCheck hidden, "Rose (MOT)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
 (GuiCtrl := MainGui.Add("CheckBox", "xp y139 vMountainTopFieldCheck Disabled Checked" MountainTopFieldCheck hidden, "Mountain Top (INV)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
 (GuiCtrl := MainGui.Add("CheckBox", "xp y164 vCoconutFieldCheck Disabled Checked" CoconutFieldCheck hidden, "Coconut (REF)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "xp y178 vPepperFieldCheck Disabled Checked" PepperFieldCheck hidden, "Pepper (INV)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "xp y178 vCoconutPaperCheck Disabled Checked" CoconutPaperCheck hidden, "Coconut (Paper)")).Section := "Planters", GuiCtrl.OnEvent("Click", ba_coconutPaperSwitch_)
+(GuiCtrl := MainGui.Add("CheckBox", "xp y192 vPepperFieldCheck Disabled Checked" PepperFieldCheck hidden, "Pepper (INV)")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x478 y177 w11 h14 vCoconutPaperSettings Disabled" hidden, "?").OnEvent("Click", nm_CoconutPaperSettingsGui)
 
-MainGui.Add("Text", "x354 y196 w144 h36 0x7 vTextBox1" hidden)
-(GuiCtrl := MainGui.Add("CheckBox", "x358 y200 w138 h13 vConvertFullBagHarvest Disabled Checked" ConvertFullBagHarvest hidden, "Convert Full Bag Harvest")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
-(GuiCtrl := MainGui.Add("CheckBox", "x358 y216 w138 h13 vGatherPlanterLoot Disabled Checked" GatherPlanterLoot hidden, "Gather Planter Loot")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Text", "x354 y206 w144 h32 0x7 vTextBox1" hidden)
+(GuiCtrl := MainGui.Add("CheckBox", "x358 y209 w138 h13 vConvertFullBagHarvest Disabled Checked" ConvertFullBagHarvest hidden, "Convert Full Bag Harvest")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+(GuiCtrl := MainGui.Add("CheckBox", "x358 y223 w138 h13 vGatherPlanterLoot Disabled Checked" GatherPlanterLoot hidden, "Gather Planter Loot")).Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
 SetLoadingProgress(38)
 
 ;Manual Planters
@@ -4251,6 +4273,8 @@ nm_TabPlantersLock(){
 	MainGui["RoseFieldCheck"].Enabled := 0
 	MainGui["MountainTopFieldCheck"].Enabled := 0
 	MainGui["CoconutFieldCheck"].Enabled := 0
+	MainGui["CoconutPaperCheck"].Enabled := 0
+	MainGui["CoconutPaperSettings"].Enabled := 0
 	MainGui["PepperFieldCheck"].Enabled := 0
 	;manual
 	MainGui["MHILeft"].Enabled := 0
@@ -4323,6 +4347,8 @@ nm_TabPlantersUnLock(){
 	MainGui["RoseFieldCheck"].Enabled := 1
 	MainGui["MountainTopFieldCheck"].Enabled := 1
 	MainGui["CoconutFieldCheck"].Enabled := 1
+	MainGui["CoconutPaperCheck"].Enabled := 1
+	MainGui["CoconutPaperSettings"].Enabled := 1
 	MainGui["PepperFieldCheck"].Enabled := 1
 	;manual
 	MainGui["MHILeft"].Enabled := 1
@@ -6366,7 +6392,7 @@ ba_planterSwitch(*){
 		,"N1MinPercent","N2MinPercent","N3MinPercent","N4MinPercent","N5MinPercent"
 		,"N1MinPercentUpDown","N2MinPercentUpDown","N3MinPercentUpDown","N4MinPercentUpDown","N5MinPercentUpDown"
 		,"DandelionFieldCheck","SunflowerFieldCheck","MushroomFieldCheck","BlueFlowerFieldCheck","CloverFieldCheck","SpiderFieldCheck","StrawberryFieldCheck","BambooFieldCheck"
-		,"PineappleFieldCheck","StumpFieldCheck","PumpkinFieldCheck","PineTreeFieldCheck","RoseFieldCheck","MountainTopFieldCheck","CactusFieldCheck","CoconutFieldCheck","PepperFieldCheck"
+		,"PineappleFieldCheck","StumpFieldCheck","PumpkinFieldCheck","PineTreeFieldCheck","RoseFieldCheck","MountainTopFieldCheck","CactusFieldCheck","CoconutFieldCheck","CoconutPaperCheck","CoconutPaperSettings","PepperFieldCheck"
 		,"Text1","Text2","Text3","Text4","Text5"
 		,"TextLine1","TextLine2","TextLine3","TextLine4","TextLine5","TextLine6","TextLine7"
 		,"TextZone1","TextZone2","TextZone3","TextZone4","TextZone5","TextZone6"
@@ -7035,6 +7061,81 @@ ba_gotoPlanterFieldSwitch_(*){
 	}
 	ba_saveConfig_()
 }
+;The planter cannot be placed from the inventory at the coconut paper spot:
+;it has to be thrown while jumping, by spamming its hotbar key, so the macro
+;has to be told which key holds it.
+nm_CoconutPaperSettingsGui(*){
+	global CoconutPaperGui, CoconutPaperHotbar, CoconutPaperTokenLink, CoconutPaperTokenField
+	global CoconutPaperRestock, CoconutPaperRestockEvery, CoconutPaperRestockOnly, CoconutPaperReadOnly
+	global CoconutPaperDebugShots, CoconutPaperCheckInterrupt, CoconutPaperFirstCheck
+	global fieldnamelist, MainGui
+	local GuiCtrl
+	if (IsSet(CoconutPaperGui) && IsObject(CoconutPaperGui))
+		CoconutPaperGui.Destroy(), CoconutPaperGui := ""
+	CoconutPaperGui := Gui("+AlwaysOnTop -MinimizeBox +Owner" MainGui.Hwnd, "Coconut (Paper) Settings")
+	CoconutPaperGui.SetFont("s8 cDefault Norm", "Tahoma")
+	CoconutPaperGui.Add("Text", "x10 y10 w300", "Planter slot 3 is reserved for a Paper planter placed at the coconut paper spot, and harvested as soon as it is fully grown.")
+	CoconutPaperGui.Add("Text", "x10 y48 w300", "That spot is out of reach of the ordinary placement routine, so the macro jumps and spams the planter's hotbar key instead. Tell it which slot holds your Paper planters.")
+	CoconutPaperGui.Add("Text", "x10 y105 +BackgroundTrans", "Paper planter hotbar slot:")
+	(GuiCtrl := CoconutPaperGui.Add("DropDownList", "x150 y102 w50 h120 vCoconutPaperHotbar", [1,2,3,4,5,6,7])).Text := CoconutPaperHotbar
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x10 y130 w300 h1 0x7")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y140 w300 vCoconutPaperTokenLink Checked" CoconutPaperTokenLink, "Farm the token link left behind, after each harvest"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x10 y165 +BackgroundTrans", "Token link field:")
+	(GuiCtrl := CoconutPaperGui.Add("DropDownList", "x150 y162 w100 h200 vCoconutPaperTokenField", fieldnamelist)).Text := CoconutPaperTokenField
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x10 y190 w300 h1 0x7")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y200 w300 vCoconutPaperRestock Checked" CoconutPaperRestock, "Craft more Paper Planters at the Pro Shop"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x10 y225 +BackgroundTrans", "Go there every:")
+	(GuiCtrl := CoconutPaperGui.Add("Edit", "x150 y222 w40 h20 limit3 Number vCoconutPaperRestockEvery", CoconutPaperRestockEvery))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x196 y225 +BackgroundTrans", "planters placed")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y248 w300 cRed vCoconutPaperRestockOnly Checked" CoconutPaperRestockOnly, "Testing: run the Pro Shop trip and nothing else"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y268 w300 cRed vCoconutPaperReadOnly Checked" CoconutPaperReadOnly, "Testing: only read the planter's growth, nothing else"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y288 w300 vCoconutPaperCheckInterrupt Checked" CoconutPaperCheckInterrupt, "Interrupt gathering when the planter is due"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x10 y312 +BackgroundTrans", "First look after:")
+	(GuiCtrl := CoconutPaperGui.Add("Edit", "x150 y309 w40 h20 limit3 Number vCoconutPaperFirstCheck", CoconutPaperFirstCheck))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Change", nm_saveConfig)
+	CoconutPaperGui.Add("Text", "x196 y312 +BackgroundTrans", "minutes")
+	(GuiCtrl := CoconutPaperGui.Add("CheckBox", "x10 y336 w300 cRed vCoconutPaperDebugShots Checked" CoconutPaperDebugShots, "Testing: keep a screenshot of every step"))
+	GuiCtrl.Section := "Planters", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	CoconutPaperGui.Show("w320 h372")
+}
+;Toggling the reserved slot hands it over: whatever is growing there now is
+;flagged for immediate harvest, rather than being abandoned in the field.
+ba_coconutPaperSwitch_(*){
+	global
+	CoconutPaperCheck := MainGui["CoconutPaperCheck"].Value
+	if (CoconutPaperCheck) {
+		if (MsgBox("
+		(
+		You have selected "Coconut (Paper)".
+
+		Planter slot 3 is now reserved. It will always hold a Paper planter placed at the coconut paper spot, harvested as soon as it is fully grown.
+
+		Planters+ will only manage slots 1 and 2, so you will run one fewer planter of your own choosing.
+
+		Any planter currently in slot 3 will be harvested first, even if it is not fully grown.
+		)", "WARNING!!", 1) != "Ok") {
+			CoconutPaperCheck := 0
+			MainGui["CoconutPaperCheck"].Value := 0
+			ba_saveConfig_()
+			return
+		}
+	}
+	if (PlanterName%CoconutPaperSlot% != "None") {
+		PlanterHarvestNow%CoconutPaperSlot% := 1
+		PlanterHarvestTime%CoconutPaperSlot% := nowUnix() - 1
+		IniWrite 1, "settings\nm_config.ini", "Planters", "PlanterHarvestNow" CoconutPaperSlot
+		IniWrite PlanterHarvestTime%CoconutPaperSlot%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
+	}
+	ba_saveConfig_()
+}
 ba_gatherFieldSippingSwitch_(*){
 	global GatherFieldSipping
 	GatherFieldSipping := MainGui["GatherFieldSipping"].Value
@@ -7104,6 +7205,7 @@ ba_saveConfig_(*){ ;//todo: needs replacing!
 	CactusFieldCheck := MainGui["CactusFieldCheck"].Value
 	CloverFieldCheck := MainGui["CloverFieldCheck"].Value
 	CoconutFieldCheck := MainGui["CoconutFieldCheck"].Value
+	CoconutPaperCheck := MainGui["CoconutPaperCheck"].Value
 	DandelionFieldCheck := MainGui["DandelionFieldCheck"].Value
 	MountainTopFieldCheck := MainGui["MountainTopFieldCheck"].Value
 	MushroomFieldCheck := MainGui["MushroomFieldCheck"].Value
@@ -7146,6 +7248,7 @@ ba_saveConfig_(*){ ;//todo: needs replacing!
 	IniWrite CactusFieldCheck, "settings\nm_config.ini", "Planters", "CactusFieldCheck"
 	IniWrite CloverFieldCheck, "settings\nm_config.ini", "Planters", "CloverFieldCheck"
 	IniWrite CoconutFieldCheck, "settings\nm_config.ini", "Planters", "CoconutFieldCheck"
+	IniWrite CoconutPaperCheck, "settings\nm_config.ini", "Planters", "CoconutPaperCheck"
 	IniWrite DandelionFieldCheck, "settings\nm_config.ini", "Planters", "DandelionFieldCheck"
 	IniWrite MountainTopFieldCheck, "settings\nm_config.ini", "Planters", "MountainTopFieldCheck"
 	IniWrite MushroomFieldCheck, "settings\nm_config.ini", "Planters", "MushroomFieldCheck"
@@ -10641,8 +10744,21 @@ robloxFPSGui(*) {
 ; MAIN LOOP
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 nm_Start(){
+	global CoconutPaperRestockOnly, CoconutPaperReadOnly
 	ActivateRoblox()
 	global serverStart := nowUnix()
+	;a testing setting: run the Pro Shop trip and nothing else, so it can be
+	;worked on without waiting for a whole cycle of the macro to come round
+	if CoconutPaperRestockOnly
+		Loop {
+			ba_restockPaperPlanters()
+			Sleep 5000
+		}
+	if CoconutPaperReadOnly
+		Loop {
+			ba_readCoconutPaperProgress()
+			Sleep 5000
+		}
 	Loop 
 		for i in priorityList
 			(%"nm_" i%)()
@@ -16391,6 +16507,7 @@ nm_GoGather(){
 		, FieldName, FieldPattern, FieldPatternSize, FieldPatternReps, FieldPatternShift, FieldPatternInvertFB, FieldPatternInvertLR, FieldUntilMins, FieldUntilPack, FieldReturnType, FieldSprinklerLoc, FieldSprinklerDist, FieldRotateDirection, FieldRotateTimes, FieldDriftCheck
 		, MondoBuffCheck, MondoAction, LastMondoBuff
 		, PlanterMode, gotoPlanterField, MPlanterGatherA, MPlanterGather1, MPlanterGather2, MPlanterGather3, LastPlanterGatherSlot, MPlanterHold1, MPlanterHold2, MPlanterHold3, PlanterField1, PlanterField2, PlanterField3, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3
+		, CoconutPaperCheckInterrupt, CoconutPaperSlot, CoconutPaperPredicted
 		, QuestLadybugs, QuestRhinoBeetles, QuestSpider, QuestMantis, QuestScorpions, QuestWerewolf
 		, GatherStartTime, TotalGatherTime, SessionGatherTime, ConvertStartTime, TotalConvertTime, SessionConvertTime
 		, GameFrozenCounter
@@ -16854,6 +16971,14 @@ nm_GoGather(){
 						interruptReason := "Planter Harvest"
 						break
 					}
+				}
+				;Coconut (Paper) interrupt: the reserved planter comes due on its own
+				;schedule, and a gather session can run long enough to leave it sitting
+				;grown for the best part of an hour
+				if (CoconutPaperCheckInterrupt && ba_isReservedSlot(CoconutPaperSlot)
+					&& (PlanterField3 != "None") && (nowUnix() >= PlanterHarvestTime3)) {
+					interruptReason := "Paper Planter"
+					break
 				}
 				if nm_BugrunInterrupt() {
 					interruptReason := "Kill Bugs"
@@ -20734,6 +20859,9 @@ ba_planter(){
 	global PlanterEstPercent1
 	global PlanterEstPercent2
 	global PlanterEstPercent3
+	global PlanterHarvestNow1
+	global PlanterHarvestNow2
+	global PlanterHarvestNow3
 	global ComfortingFields, MotivatingFields, SatisfyingFields, RefreshingFields, InvigoratingFields
 	global LastComfortingField, LastMotivatingField, LastSatisfyingField, LastRefreshingField, LastInvigoratingField
 	global MaxAllowedPlanters
@@ -20771,6 +20899,14 @@ ba_planter(){
 	global CactusFieldCheck
 	global CloverFieldCheck
 	global CoconutFieldCheck
+	global CoconutPaperCheck
+	global CoconutPaperSlot
+	global CoconutPaperRestock
+	global CoconutPaperRestockEvery
+	global CoconutPaperPlaced
+	global CoconutPaperPlantedAt
+	global CoconutPaperCycle
+	global CoconutPaperFirstCheck
 	global DandelionFieldCheck
 	global MountainTopFieldCheck
 	global MushroomFieldCheck
@@ -20886,6 +21022,25 @@ ba_planter(){
 			}
 		}
 	}
+	;the hand-over harvest is over once the slot is empty, so drop its override:
+	;whatever lands there next is only taken when fully grown
+	if(PlanterHarvestNow%CoconutPaperSlot% && (PlanterName%CoconutPaperSlot%="none")) {
+		PlanterHarvestNow%CoconutPaperSlot%:=0
+		IniWrite 0, "settings\nm_config.ini", "Planters", "PlanterHarvestNow" CoconutPaperSlot
+	}
+	;stock up before the slot runs dry, counting the planters this macro has
+	;placed rather than reading the hotbar
+	if(CoconutPaperCheck && CoconutPaperRestock && (CoconutPaperPlaced >= CoconutPaperRestockEvery)) {
+		ba_restockPaperPlanters()
+		CoconutPaperPlaced:=0
+		IniWrite 0, "settings\nm_config.ini", "Planters", "CoconutPaperPlaced"
+	}
+	;refill the reserved Coconut (Paper) slot, so its one hour cycle is not
+	;held up behind the nectar optimisation below
+	if(CoconutPaperCheck && (PlanterName%CoconutPaperSlot%="none")) {
+		if (ba_placeCoconutPaper())
+			ba_coconutPaperRecordPlant()
+	}
 	;re-place planters here
 	;--- determine max number of planters ---
 	maxplanters:=0
@@ -20897,12 +21052,11 @@ ba_planter(){
 		return
 	;determine number of placed planters
 	plantersplaced:=0
-	planterSlots:=[]
+	planterSlots:=ba_freePlanterSlots()
 	Loop 3 {
-		if(PlanterName%A_Index%="none")
-			planterSlots.push(A_Index)
+		if(PlanterName%A_Index%!="none")
+			plantersplaced++
 	}
-	plantersplaced:=3-planterSlots.Length
 	;temp1:=planterSlots[1]
 	;temp2:=planterSlots[2]
 	;temp3:=planterSlots[3]
@@ -20943,11 +21097,7 @@ ba_planter(){
 				nectarPlantersPlaced:=nectarPlantersPlaced+1
 		}
 		if (currentNectar!="none") {
-			planterSlots:=[]
-			Loop 3 {
-				if(PlanterName%A_Index%="none")
-					planterSlots.push(A_Index)
-			}
+			planterSlots:=ba_freePlanterSlots()
 			for i, planterNum in planterSlots {
 			;Loop 3 { ;3 max planters
 			;temp1:=planterSlots[1]
@@ -21110,10 +21260,7 @@ ba_planter(){
 			if(PlanterNectar%A_Index%=currentNectar)
 				nectarPlantersPlaced:=nectarPlantersPlaced+1
 		}
-		Loop 3 {
-			if(PlanterName%A_Index%="none")
-				planterSlots.push(A_Index)
-		}
+		planterSlots:=ba_freePlanterSlots()
 		for i, planterNum in planterSlots {
 		;Loop 3 {
 			;--- determine max number of planters ---
@@ -21279,11 +21426,7 @@ ba_planter(){
 				nectarPlantersPlaced:=nectarPlantersPlaced+1
 		}
 		if (currentNectar!="none") {
-			planterSlots:=[]
-			Loop 3 {
-				if(PlanterName%A_Index%="none")
-					planterSlots.push(A_Index)
-			}
+			planterSlots:=ba_freePlanterSlots()
 					for i, planterNum in planterSlots {
 			;Loop 3 {
 				;--- determine max number of planters ---
@@ -21428,7 +21571,7 @@ ba_getLastField(currentnectar){
 	;determine allowed fields
 	for key, value in %currentnectar%Fields {
 		tempfieldname := StrReplace(value, " ", "")
-		if(%tempfieldname%FieldCheck && value!=PlanterField1 && value!=PlanterField2 && value!=PlanterField3)
+		if(%tempfieldname%FieldCheck && value!=PlanterField1 && value!=PlanterField2 && value!=PlanterField3 && !ba_fieldTakenByPaper(value))
 			availablefields.Push(value)
 	}
 	arraylen:=availablefields.Length
@@ -21480,6 +21623,586 @@ ba_getNextPlanter(nextfield){
 	}
 	return [nextPlanterName, nextPlanterNectarBonus, nextPlanterGrowBonus, nextPlanterGrowTime]
 }
+;Development aid: walk to the reserved planter and report what its bar says,
+;without harvesting or replanting.
+ba_readCoconutPaperProgress(){
+	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
+	local p := 0, shot := ""
+	nm_updateAction("Planters")
+	nm_setShiftLock(0)
+	nm_Reset()
+	nm_setStatus("Traveling", "Paper Planter (Coconut)")
+	nm_gotoPlanter("coconutpaper")
+
+	;swing the view up to the planter, and photograph it from there rather than
+	;after the camera has gone back
+	sendinput "{" RotDown " 4}"
+	Sleep 800
+	shot := ba_dumpProShopScreen("planterbar")
+
+	Loop 12 {
+		if ((p := ba_coconutPaperDetection()) > 0)
+			break
+		Sleep 200
+		sendinput "{" ZoomOut "}"
+	}
+	;a sample of the growth curve that costs no harvest, so the dev tool can be
+	;left running to plot a whole cycle point by point
+	ba_coconutPaperLog((p > 0) ? "devread" : "devread_failed", (p > 0) ? Round(p, 4) : "")
+	if (p > 0)
+		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
+			. (CoconutPaperPlantedAt
+				? " - planted " Round((nowUnix() - CoconutPaperPlantedAt)/60) " min ago - full grow time "
+					. Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 2) " h"
+				: " - plant time never recorded, so no grow time yet")
+			. shot)
+	else
+		nm_setStatus("Error", "Growth bar not read" ba_dumpProShopScreen("planterbar", 1))
+	sendinput "{" RotUp " 4}"
+}
+;A record of every paper planter cycle, so the way the coconut field degrades
+;can be worked out afterwards from real numbers instead of guessed at. One row
+;per event, in a shape a spreadsheet will plot without any rearranging:
+;  plant        a planter went into the ground, and which cycle it is
+;  read         the growth bar was read: how far along, and what full grow
+;               time that implies for a planter that has been in the ground
+;               for seconds_since_plant
+;  read_failed  the bar could not be read at all
+;  harvest      it came out, so seconds_since_plant is the true grow time
+;Plotting cycle against the harvest row's seconds_since_plant shows the
+;degradation building up; the gap between one harvest and the next plant shows
+;how much of it wears off while the field is left alone.
+ba_coconutPaperLog(event, progress := "", growHours := "", note := ""){
+	global CoconutPaperPlantedAt, CoconutPaperCycle, PlanterHarvestTime3, CoconutPaperPredicted
+	local path := A_WorkingDir "\settings\coconut_paper_log.csv", since := "", row
+	if CoconutPaperPlantedAt
+		since := nowUnix() - CoconutPaperPlantedAt
+	if !FileExist(path)
+		try FileAppend "unix,utc,cycle,event,seconds_since_plant,progress,implied_grow_hours,harvest_timer_unix,note`n", path
+	row := nowUnix() "," FormatTime(A_NowUTC, "yyyy-MM-dd HH:mm:ss") "," CoconutPaperCycle "," event
+		. "," since "," progress "," growHours "," PlanterHarvestTime3 "," note "`n"
+	try FileAppend row, path
+}
+;;; Coconut (Paper) growth reading ;;;
+;The shared nm_PlanterDetection is left exactly as it was, because it works for
+;every planter sitting on the ground. This one hangs overhead in shade, so it
+;gets its own reading: the same idea - measure the light part of the bar
+;against the whole - with its own swatches, its own tolerance for the shading,
+;and a four pixel needle rather than eight, since the planter's own label cuts
+;across the middle of the bar. Returns a fraction, or 0 if the bar is not seen.
+ba_coconutPaperDetection(){
+	static pBMLight, pBMDark, pBMFull
+	global windowX, windowY, windowWidth, windowHeight
+	local pBMScreen, pG, PStart, PLightEnd, PDarkEnd, x, y, cx2, dx2
+	if !(IsSet(pBMLight) && IsSet(pBMDark))
+	{
+		pBMLight := Gdip_CreateBitmap(1,4)
+		pG := Gdip_GraphicsFromImage(pBMLight), Gdip_GraphicsClear(pG, 0xff86d570), Gdip_DeleteGraphics(pG)
+		pBMDark := Gdip_CreateBitmap(1,4)
+		pG := Gdip_GraphicsFromImage(pBMDark), Gdip_GraphicsClear(pG, 0xff567848), Gdip_DeleteGraphics(pG)
+		pBMFull := Gdip_CreateBitmap(1,4)
+		pG := Gdip_GraphicsFromImage(pBMFull), Gdip_GraphicsClear(pG, 0xff1fe744), Gdip_DeleteGraphics(pG)
+	}
+	ActivateRoblox()
+	GetRobloxClientPos()
+	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
+	;A finished planter is not a two tone bar at all: the whole label turns a
+	;vivid green, 1fe744, which is a hundred away from the growing colours in
+	;red alone. There is no remainder left to measure against, so it is
+	;recognised for what it is rather than divided.
+	;Only the top half is searched. The label hangs above the planter, while the
+	;hotbar and its icons sit along the bottom - and one of those icons is close
+	;enough to the finished green to be mistaken for it. Restricted this way, the
+	;only run of the growing green anywhere on screen is the label itself.
+	if (Gdip_ImageSearch(pBMScreen, pBMFull, &PStart, 0, 0, windowWidth, windowHeight//2, 20, , 5) = 1)
+	{
+		Gdip_DisposeImage(pBMScreen)
+		return 1
+	}
+	;20 covers the shading measured on this planter, and is nowhere near the 86
+	;that separates the filled part of the bar from the empty one
+	if (Gdip_ImageSearch(pBMScreen, pBMLight, &PStart, 0, 0, windowWidth, windowHeight//2, 20, , 5) != 1)
+	{
+		Gdip_DisposeImage(pBMScreen)
+		return 0
+	}
+	x := SubStr(PStart, 1, InStr(PStart, ",")-1), y := SubStr(PStart, InStr(PStart, ",")+1)
+	;and the ends are looked for within the label's own width of the start, so
+	;scenery further along the same rows cannot stretch the bar
+	if ((Gdip_ImageSearch(pBMScreen, pBMLight, &PLightEnd, x, y, x+400, y+4, 20, , 8) != 1)
+		|| (Gdip_ImageSearch(pBMScreen, pBMDark, &PDarkEnd, x, y, x+400, y+4, 20, , 8) != 1))
+	{
+		Gdip_DisposeImage(pBMScreen)
+		return 0
+	}
+	Gdip_DisposeImage(pBMScreen)
+	cx2 := SubStr(PLightEnd, 1, InStr(PLightEnd, ",")-1)+1
+	dx2 := SubStr(PDarkEnd, 1, InStr(PDarkEnd, ",")-1)+1
+	if (dx2 <= x)
+		return 0
+	return (cx2-x)/(dx2-x)
+}
+;Keep the full grow time the bar last predicted, so the harvest row can confirm
+;it instead of offering an arrival time in its place.
+ba_coconutPaperPredict(hours){
+	global CoconutPaperPredicted
+	CoconutPaperPredicted := (hours = "") ? "" : Round(hours, 3)
+	IniWrite CoconutPaperPredicted, "settings\nm_config.ini", "Planters", "CoconutPaperPredicted"
+}
+;Record a paper planter that has just gone into the ground: the slot, the
+;moment, the cycle number and when to first go and look. Shared by the two
+;places one gets planted - on the spot right after a harvest, and on a trip
+;made for it - so the bookkeeping cannot drift between them.
+ba_coconutPaperRecordPlant(){
+	global CoconutPaperPlantedAt, CoconutPaperCycle, CoconutPaperSlot, CoconutPaperFirstCheck
+	global PlanterHarvestTime3, CoconutPaperPlaced
+	local planter := ba_coconutPaperPlanter()
+	if (planter[1] = "none")
+		return 0
+	ba_SavePlacedPlanter("Coconut", planter, CoconutPaperSlot, "Refreshing", 1)
+	CoconutPaperPlantedAt := nowUnix()
+	IniWrite CoconutPaperPlantedAt, "settings\nm_config.ini", "Planters", "CoconutPaperPlantedAt"
+	;the tables give this planter an hour and degradation only adds to it, so the
+	;first look is deliberately early: a bar read short gives the real time to the
+	;minute, where a planter found grown says only that we were late
+	PlanterHarvestTime3 := CoconutPaperPlantedAt + CoconutPaperFirstCheck*60
+	IniWrite PlanterHarvestTime3, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
+	CoconutPaperCycle++
+	IniWrite CoconutPaperCycle, "settings\nm_config.ini", "Planters", "CoconutPaperCycle"
+	CoconutPaperPlaced++
+	IniWrite CoconutPaperPlaced, "settings\nm_config.ini", "Planters", "CoconutPaperPlaced"
+	ba_coconutPaperPredict("")
+	ba_coconutPaperLog("plant")
+	return 1
+}
+;Read the bar on arrival, whatever happens next. Waiting for the game to say
+;"not fully grown" only ever measures the planter when the macro is early, and
+;the log shows it is normally late - nine cycles produced not one reading. A
+;planter found already grown says nothing on its own; the bar says how far
+;along it really is, which is the number the degradation question turns on.
+;Returns the fraction, or 0 if the bar could not be read. Leaves the camera as
+;it found it.
+ba_coconutPaperMeasure(afterHarvest := 0){
+	global CoconutPaperPlantedAt, CoconutPaperSlot, RotUp, RotDown, ZoomOut
+	local p := 0, mins := "", shot := ""
+	nm_setStatus("Checking", "Paper Planter growth")
+	sendinput "{" RotDown " 4}"
+	Sleep 800
+	Loop 12 {
+		if ((p := ba_coconutPaperDetection()) > 0)
+			break
+		Sleep 200
+		sendinput "{" ZoomOut "}"
+	}
+	;Photograph the planter here, with the view still up on it. This is the frame
+	;the reading was taken from; once the camera swings back there is nothing to
+	;see but the ground.
+	shot := ba_dumpProShopScreen("planterbar", !afterHarvest)
+	sendinput "{" RotUp " 4}"
+	Sleep 300
+	if CoconutPaperPlantedAt
+		mins := Round((nowUnix() - CoconutPaperPlantedAt)/60)
+	if (p > 0)
+		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown"
+			. (mins ? " after " mins " min" : "") shot)
+	else if (afterHarvest)
+		;no bar because the planter is gone, which is what a harvest is meant to do
+		nm_setStatus("Collected", "Paper Planter (Coconut)")
+	else
+		nm_setStatus("Warning", "Paper Planter growth bar not read" shot)
+	ba_coconutPaperLog((p > 0) ? "read" : (afterHarvest ? "gone" : "read_failed"), (p > 0) ? Round(p, 4) : ""
+		, ((p > 0) && (p < 1)) ? Round(ba_effectiveGrowTime(CoconutPaperSlot, 1, p), 3) : "")
+	return p
+}
+;Re-time the reserved planter from what its bar shows. RotUp raises the camera
+;and points the view at the ground; this planter is overhead, so RotDown is
+;what swings the view up to it. It has been in the ground since
+;CoconutPaperPlantedAt, so the progress divides straight into the real
+;full-grow time, degradation included, without modelling a mechanic the game
+;never puts a number on.
+ba_coconutPaperTimeUpdate(){
+	global CoconutPaperPlantedAt, CoconutPaperSlot, PlanterHarvestTime3, RotUp, RotDown, ZoomOut
+	local p := 0, grow
+	nm_setStatus("Checking", "Paper Planter growth")
+	sendinput "{" RotDown " 4}"
+	Sleep 800
+	Loop 12 {
+		if ((p := ba_coconutPaperDetection()) > 0)
+			break
+		Sleep 200
+		sendinput "{" ZoomOut "}"
+	}
+	if (p > 0) {
+		grow := ba_effectiveGrowTime(CoconutPaperSlot, 1, p)
+		ba_coconutPaperPredict(grow)
+		PlanterHarvestTime3 := nowUnix() + Round((1 - p) * grow * 3600)
+		IniWrite PlanterHarvestTime3, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" CoconutPaperSlot
+		ba_coconutPaperLog("read", Round(p, 4), Round(grow, 3))
+		nm_setStatus("Detected", "Paper Planter - " Round(p*100, 1) "% grown - full grow time " Round(grow, 2) " h")
+	} else {
+		ba_coconutPaperLog("read_failed")
+		nm_setStatus("Warning", "Paper Planter growth bar not read" ba_dumpProShopScreen("planterbar", 1))
+	}
+	sendinput "{" RotUp " 4}"
+}
+;A degraded field grows planters more slowly than the planter tables say, by
+;an amount the game never shows and the wiki only describes in words: every
+;harvest degrades the field, up to a cap of 48 hours. Measuring that beats
+;modelling it. The reserved planter has been in the ground since it was placed,
+;so the progress on its bar gives the real full-grow time directly - time in
+;the ground divided by progress - whatever the degradation happens to be.
+;Every other slot keeps the table value it has always used.
+ba_effectiveGrowTime(planterNum, tableHours, progress){
+	global CoconutPaperPlantedAt
+	local inGround, measured
+	if (!ba_isReservedSlot(planterNum) || !CoconutPaperPlantedAt)
+		return tableHours
+	inGround := (nowUnix() - CoconutPaperPlantedAt) / 3600
+	;below a couple of percent the bar is too short to divide by - a pixel of
+	;misreading would swing the answer by days - so come back after twice as long
+	;instead, which walks up to even the 48 hour cap in a handful of visits
+	measured := (progress > 0.02) ? (inGround / progress) : (2 * inGround)
+	;it can only ever be slower than the hour the tables give, and never by more
+	;than the 48 hour cap the field can carry
+	return Min(tableHours + 48, Max(tableHours, measured))
+}
+;the Coconut (Paper) slot is reserved: the automatic algorithm leaves it
+;alone and it always holds a Paper planter placed at the coconut paper spot
+ba_isReservedSlot(planterNum){
+	global CoconutPaperCheck, CoconutPaperSlot, PlanterMode
+	return ((PlanterMode = 2) && CoconutPaperCheck && (planterNum = CoconutPaperSlot))
+}
+;with the reservation active the coconut field belongs to the paper planter,
+;so the algorithm must not send a second planter there
+ba_fieldTakenByPaper(fieldName){
+	global CoconutPaperSlot
+	return (ba_isReservedSlot(CoconutPaperSlot) && (fieldName = "Coconut"))
+}
+;Placing at the coconut paper spot, after jln7_'s CHC script: the planter is
+;thrown mid-jump by spamming its hotbar key. The E prompt only flashes there
+;for a fraction of a second, far too briefly to confirm the throw, so the macro
+;keeps throwing until the game answers with the "already a planter in this
+;field" alert instead - which can only mean one of the throws landed.
+;Returns 1 on success.
+ba_placeCoconutPaper(atSpot := 0){
+	global CoconutPaperHotbar, SC_Space
+	nm_updateAction("Planters")
+	nm_setShiftLock(0)
+	if (!atSpot) {
+		nm_Reset()
+		nm_setStatus("Traveling", "Paper Planter (Coconut)")
+		nm_gotoPlanter("coconutpaper")
+	}
+	nm_setStatus("Placing", "Paper Planter (Coconut)")
+	Loop 8 {
+		sendinput "{" SC_Space " up}"
+		Sleep 800
+		sendinput "{" SC_Space " down}"
+		Sleep 100
+		sendinput "{" SC_Space " up}"
+		Sleep 200
+		Loop 4 {
+			sendinput "{" CoconutPaperHotbar " 3}"
+			Sleep 50
+		}
+		Loop 10 {
+			Sleep 100
+			if (nm_imgSearch("planteralready.png", 30, "lowright")[1] = 0) {
+				nm_setStatus("Placed", "Paper Planter (Coconut)")
+				return 1
+			}
+			if (nm_imgSearch("3Planters.png", 30, "lowright")[1] = 0) {
+				nm_setStatus("Error", "3 Planters already placed!")
+				return 0
+			}
+		}
+	}
+	nm_setStatus("Error: Unable to place", "Paper Planter (Coconut)")
+	return 0
+}
+;The Pro Shop stands just past the normal memory match, so the trip is composed
+;of two legs rather than one path duplicating the other: the existing memory
+;match route, then gtc-normalmmtoproshop for the few steps that remain.
+ba_gotoProShop(){
+	nm_setShiftLock(0)
+	nm_Reset()
+	nm_setStatus("Traveling", "Pro Shop")
+	nm_gotoCollect("normalmm")
+	nm_gotoCollect("normalmmtoproshop")
+}
+;When the shop is not recognised, save what the macro is looking at: the
+;templates are cut from screenshots taken by hand, and only a picture from a
+;real run can show how the two differ.
+;Returns the phrase to tack onto a status when it saves, and nothing when it
+;does not - which keeps the file name out of the message, and so keeps the
+;picture off Discord, since Status.ahk attaches whatever the status names.
+;These were for finding faults that are now fixed, so they are off unless
+;asked for. A caller passes always for one worth keeping regardless.
+ba_dumpProShopScreen(step, always := 0){
+	global
+	local pBM
+	if (!always && !CoconutPaperDebugShots)
+		return ""
+	;Gdip_BitmapFromScreen takes the desktop pixels inside a rectangle, so
+	;whatever happens to sit on top of the game is what gets saved. Every other
+	;capture in the macro brings Roblox forward first; this one did not.
+	ActivateRoblox()
+	Sleep 200
+	GetRobloxClientPos()
+	pBM := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
+	Gdip_SaveBitmapToFile(pBM, A_WorkingDir "\settings\proshop_debug_" step ".png")
+	Gdip_DisposeImage(pBM)
+	return " - saved settings\proshop_debug_" step ".png"
+}
+;Is the Pro Shop's craft button still green? Read one pixel to the left of its
+;text, where the fill is flat, and judge it by hue rather than by value. The
+;button darkens to about seven tenths under the pointer - 1b772b becomes
+;12531e - and the pointer has to sit on it to click it, so an exact green can
+;never match once the loop is running. Green means another can be made, red
+;c9271c means the stock is full, and the blue bar behind is the only other
+;thing a misplaced read could land on; asking that green beat both other
+;channels tells all three apart at either brightness. The button dips while an
+;item is being made, so a miss is given three chances before it counts as the
+;end.
+ba_coconutPaperCanCraft(x, y){
+	local c, r, g, b
+	Loop 3 {
+		c := PixelGetColor(x, y)
+		r := (c >> 16) & 0xFF, g := (c >> 8) & 0xFF, b := c & 0xFF
+		if ((g >= 40) && (g > r * 1.4) && (g > b * 1.4))
+			return 1
+		Sleep 250
+	}
+	return 0
+}
+;Leaving is the same E prompt: it is done once the shop controls are gone.
+ba_leaveProShop(){
+	global SC_E
+	Loop 3 {
+		;look before pressing: E is a toggle, and pressing it while already
+		;outside would walk back in
+		if (nm_imgSearch("proshop_arrowleft.png", 30, "low")[1] != 0)
+			return
+		SendInput "{" SC_E " down}"
+		Sleep 100
+		SendInput "{" SC_E " up}"
+		Sleep 1000
+	}
+	;still showing shop controls after three presses: reset out of it rather
+	;than leave the macro standing in a menu
+	nm_Reset()
+}
+;Crafting Paper Planters at the Pro Shop. The shop always reopens on the same
+;item, so a single click on the left arrow lands on the Paper Planter - the
+;title is checked anyway. One click crafts exactly one, and the button turns
+;from green "Craft Item" to red "Capacity Exceeded" at the 100 cap, which is
+;the stop signal: nothing has to be counted. Returns the number crafted.
+;The prompt banners are translucent - whatever stands behind them shows through,
+;and the same prompt differs by 70 per channel between two walls - so they are
+;not matched at all. The E box beside them is fixed, and the shop's own controls
+;sit on an opaque bar that survives a change of backdrop by 17.
+ba_restockPaperPlanters(){
+	global SC_E
+	local searchRet, inside, atCapacity, btnX, btnY, pxX, pxY, msg, made, crafted := 0
+
+	nm_updateAction("Planters")
+	ba_gotoProShop()
+
+	;the prompt appears once the character has come to rest, so give it a moment
+	;rather than looking exactly as the walk ends
+	Loop 30 {
+		if (nm_imgSearch("e_button.png", 30, "high")[1] = 0)
+			break
+		if (A_Index = 30) {
+			nm_setStatus("Error", "Pro Shop door not found" ba_dumpProShopScreen("door"))
+			return 0
+		}
+		Sleep 100
+	}
+	;E is a toggle: pressing it again would walk straight back out, so press once
+	;and wait for the controls to appear instead of pressing until they do. If
+	;they never do, say whether a looser match would have seen them, which
+	;separates a shop that never opened from controls drawn differently.
+	nm_setStatus("Entering", "Pro Shop")
+	ActivateRoblox()
+	SendInput "{" SC_E " down}"
+	Sleep 100
+	SendInput "{" SC_E " up}"
+	inside := 0
+	Loop 60 {
+		Sleep 100
+		if (nm_imgSearch("proshop_arrowleft.png", 30, "low")[1] = 0) {
+			inside := 1
+			break
+		}
+	}
+	if (!inside) {
+		nm_setStatus("Error", "Could not enter the Pro Shop" ba_dumpProShopScreen("enter"))
+		;the shop may well be open with its controls simply unrecognised, and E is
+		;a toggle, so do not gamble on another press: resetting always gets out
+		nm_Reset()
+		return 0
+	}
+
+	searchRet := nm_imgSearch("proshop_arrowleft.png", 30, "low")
+	if (searchRet[1] != 0) {
+		nm_setStatus("Error", "Pro Shop arrow not found" ba_dumpProShopScreen("arrow"))
+		ba_leaveProShop()
+		return 0
+	}
+	GetRobloxClientPos()
+	MouseMove windowX+searchRet[2]+18, windowY+searchRet[3]+26
+	Sleep 200
+	Click
+	Sleep 800
+
+	if (nm_imgSearch("proshop_paperplanter.png", 30, "highright")[1] != 0) {
+		nm_setStatus("Error", "Paper Planter not found in the Pro Shop" ba_dumpProShopScreen("title"))
+		ba_leaveProShop()
+		return 0
+	}
+
+	;Away from its text the button is one flat colour - 1b772b while it can still
+	;make one, c9271c once the stock is full - so a single pixel answers the
+	;question an image search was being run for, and answers it for free. Every
+	;click can therefore be checked, which beats clicking blind in bursts: bursts
+	;were fast but the count was a guess, and clicks sent faster than the game
+	;registers them are simply lost. The pixel is read to the left of the text,
+	;well clear of where the pointer sits.
+	;Being short of a full stock is not a reason to stop, so the whole cycle -
+	;find the button, click it out, look at it - runs again until the stock is
+	;full. Finding the button afresh each round means one that has moved, or a
+	;shop that has redrawn itself, is picked up rather than clicked past. A
+	;round that makes nothing has met something another round will not solve -
+	;the honey gone, the button gone - so that is where it gives up.
+	nm_setStatus("Crafting", "Paper Planter")
+	atCapacity := 0
+	Loop 8 {
+		if (A_Index > 1)
+			nm_setStatus("Retrying", "Paper Planter craft - the stock is not full yet")
+		;find it each round - searchRet still holds the arrow on the first pass
+		searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
+		if (searchRet[1] != 0) {
+			Sleep 500
+			searchRet := nm_imgSearch("proshop_craft.png", 30, "low")
+		}
+		made := 0
+		;a button that is not there is not a fault by itself: a full stock is
+		;exactly what replaces it, and the capacity check below is what says so
+		if (searchRet[1] = 0) {
+			GetRobloxClientPos()
+			btnX := windowX + searchRet[2] + 95, btnY := windowY + searchRet[3] + 16
+			pxX := windowX + searchRet[2] + 15, pxY := windowY + searchRet[3] + 8
+			MouseMove btnX, btnY
+			Sleep 150
+			;Put the pointer back on the button before every click. Click on its
+			;own goes wherever the cursor happens to be, so a hand nudging the
+			;mouse mid-restock sent the clicks off into the room - while the
+			;button, no longer under the pointer and so green again, went on
+			;answering yes, and the loop ran all the way to its guard. That guard
+			;is 110, above the stock cap of 100, so it never ends a healthy round.
+			Loop 110 {
+				if !ba_coconutPaperCanCraft(pxX, pxY)
+					break
+				MouseMove btnX, btnY, 0
+				Click
+				made++
+				Sleep 330
+			}
+			crafted += made
+		}
+		;the pointer has been parked on the button, whose hover shade is 36 off
+		;the template at a tolerance of 30, so step aside before asking anything
+		;of the image search - otherwise a stock that really is full reads as a
+		;fault
+		MouseMove windowX+60, windowY+windowHeight//2
+		Sleep 300
+		;a green button gone can mean the cap is reached or that the materials
+		;have run out, and those deserve opposite treatment. Only a "Capacity
+		;Exceeded" actually recognised on screen counts as a full stock; anything
+		;else is a fault worth a picture. The file is checked first because
+		;nm_imgSearch kills the macro outright when an asset is missing.
+		atCapacity := (FileExist(A_WorkingDir "\nm_image_assets\proshop_full.png")
+			&& (nm_imgSearch("proshop_full.png", 30, "low")[1] = 0))
+		if (atCapacity || (made = 0))
+			break
+	}
+	;"stock now full" is a claim about the button, so it is only made once the
+	;button has been read as full. Stopping for any other reason - the honey
+	;ran out, the clicks landed somewhere else - is worth a picture whether or
+	;not anything was made, and must never be dressed up as a finished restock.
+	if (!atCapacity) {
+		msg := (crafted = 0) ? "Crafted nothing"
+			: "Crafted only " crafted " Paper Planter" ((crafted = 1) ? "" : "s")
+		nm_setStatus((crafted = 0) ? "Error" : "Warning",
+			msg " and the stock is not full" ba_dumpProShopScreen("craft"))
+		ba_leaveProShop()
+		return crafted
+	}
+	nm_setStatus((crafted = 0) ? "Full" : "Crafted", (crafted = 0)
+		? "Paper Planters already at capacity"
+		: crafted " Paper Planter" ((crafted = 1) ? "" : "s") " - stock now full")
+	ba_leaveProShop()
+	return crafted
+}
+;Farming the token link the harvest leaves behind, after jln7_'s CHC script:
+;walk a small square in an open field so the linked tokens are picked up one
+;after the other.
+ba_coconutPaperTokenLink(){
+	global CoconutPaperTokenField, FwdKey, BackKey, LeftKey, RightKey
+	nm_updateAction("Planters")
+	nm_setShiftLock(0)
+	nm_Reset()
+	nm_setStatus("Traveling", "Token Link")
+	nm_gotoField(CoconutPaperTokenField)
+	Sleep 500
+	nm_setStatus("Collecting", "Token Link")
+	Loop 25 {
+		sendinput "{" RightKey " down}"
+		Sleep 350
+		sendinput "{" RightKey " up}{" BackKey " down}"
+		Sleep 700
+		sendinput "{" BackKey " up}{" LeftKey " down}"
+		Sleep 350
+		sendinput "{" LeftKey " up}{" FwdKey " down}"
+		Sleep 700
+		sendinput "{" FwdKey " up}{" LeftKey " down}"
+		Sleep 350
+		sendinput "{" LeftKey " up}{" BackKey " down}"
+		Sleep 700
+		sendinput "{" BackKey " up}{" RightKey " down}"
+		Sleep 350
+		sendinput "{" RightKey " up}{" FwdKey " down}"
+		Sleep 700
+		sendinput "{" FwdKey " up}"
+	}
+	Sleep 500
+}
+;that spot is reached by its own path rather than the coconut field one
+ba_planterPath(fieldName, planterNum){
+	return ba_isReservedSlot(planterNum) ? "coconutpaper" : fieldName
+}
+;slots the automatic algorithm is allowed to fill
+ba_freePlanterSlots(){
+	global
+	local slots:=[], i:=0
+	Loop 3 {
+		i:=A_Index
+		if((PlanterName%i%="none") && !ba_isReservedSlot(i))
+			slots.push(i)
+	}
+	return slots
+}
+;read the Paper entry out of the coconut table so grow time and nectar bonus
+;stay in step with CoconutPlanters
+ba_coconutPaperPlanter(){
+	global CoconutPlanters
+	local k, v
+	for k, v in CoconutPlanters
+		if (v[1] = "PaperPlanter")
+			return v
+	return ["none"]
+}
 ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 	global BambooFieldCheck, BlueFlowerFieldCheck, CactusFieldCheck, CloverFieldCheck, CoconutFieldCheck, DandelionFieldCheck, MountainTopFieldCheck, MushroomFieldCheck, PepperFieldCheck, PineTreeFieldCheck, PineappleFieldCheck, PumpkinFieldCheck, RoseFieldCheck, SpiderFieldCheck, StrawberryFieldCheck, StumpFieldCheck, SunflowerFieldCheck, MaxAllowedPlanters, LostPlanters, bitmaps
 
@@ -21493,7 +22216,7 @@ ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 		nm_Reset()
 		nm_OpenMenu("itemmenu")
 		nm_setStatus("Traveling", (planterName . " (" . fieldName . ")"))
-		nm_gotoPlanter(fieldName, 0)
+		nm_gotoPlanter(ba_planterPath(fieldName, planterNum), 0)
 	}
 
 	planterPos := nm_InventorySearch(planterName, "up", 4)
@@ -21610,7 +22333,7 @@ ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 	return 1
 }
 ba_harvestPlanter(planterNum){
-	global PlanterName1, PlanterName2, PlanterName3, PlanterField1, PlanterField2, PlanterField3, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3, PlanterNectar1, PlanterNectar2, PlanterNectar3, PlanterEstPercent1, PlanterEstPercent2, PlanterEstPercent3, PlanterGlitterC1, PlanterGlitterC2, PlanterGlitterC3, PlanterGlitter1, PlanterGlitter2, PlanterGlitter3, BackKey, RightKey, objective, TotalPlantersCollected, SessionPlantersCollected, HarvestFullGrown, ConvertFullBagHarvest, GatherPlanterLoot, BackpackPercent, bitmaps, SC_E, HiveBees, PlanterHarvestNow1, PlanterHarvestNow2, PlanterHarvestNow3
+	global PlanterName1, PlanterName2, PlanterName3, PlanterField1, PlanterField2, PlanterField3, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3, PlanterNectar1, PlanterNectar2, PlanterNectar3, PlanterEstPercent1, PlanterEstPercent2, PlanterEstPercent3, PlanterGlitterC1, PlanterGlitterC2, PlanterGlitterC3, PlanterGlitter1, PlanterGlitter2, PlanterGlitter3, BackKey, RightKey, objective, TotalPlantersCollected, SessionPlantersCollected, HarvestFullGrown, ConvertFullBagHarvest, GatherPlanterLoot, BackpackPercent, bitmaps, SC_E, SC_Space, CoconutPaperTokenLink, HiveBees, PlanterHarvestNow1, PlanterHarvestNow2, PlanterHarvestNow3
 
 	nm_updateAction("Planters")
 
@@ -21619,13 +22342,40 @@ ba_harvestPlanter(planterNum){
 	nm_setShiftLock(0)
 	nm_Reset(1, ((GatherPlanterLoot = 1) && ((fieldname = "Rose") || (fieldname = "Pine Tree") || (fieldname = "Pumpkin") || (fieldname = "Cactus") || (fieldname = "Spider"))) ? min(20000, (60-HiveBees)*1000) : 0)
 	nm_setStatus("Traveling", planterName . " (" . fieldName . ")")
-	nm_gotoPlanter(fieldName)
+	nm_gotoPlanter(ba_planterPath(fieldName, planterNum))
+	if (ba_isReservedSlot(planterNum)) {
+		paperGrown := ba_coconutPaperMeasure()
+		;a bar that reads short is the answer already: come back when it says it
+		;will be ready, rather than pressing E to be told the same thing
+		if ((paperGrown > 0) && (paperGrown < 0.99)) {
+			paperGrow := ba_effectiveGrowTime(planterNum, 1, paperGrown)
+			ba_coconutPaperPredict(paperGrow)
+			PlanterHarvestTime%planterNum% := nowUnix() + Round((1 - paperGrown) * paperGrow * 3600)
+			IniWrite PlanterHarvestTime%planterNum%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" planterNum
+			nm_setStatus("Holding", "Paper Planter - back in " Round((1 - paperGrown) * paperGrow * 60) " min")
+			return 1
+		}
+	}
 	nm_setStatus("Collecting", (planterName . " (" . fieldName . ")"))
-	while ((A_Index <= 5) && !(findPlanter := (nm_imgSearch("e_button.png",10)[1] = 0)))
-		Sleep 200
-	if (findPlanter = 0) {
-		nm_setStatus("Searching", (planterName . " (" . fieldName . ")"))
-		findPlanter := nm_searchForE()
+	if (ba_isReservedSlot(planterNum)) {
+		findPlanter := 0
+		sendinput "{" SC_Space " down}"
+		Loop 30 {
+			Sleep 100
+			if (nm_imgSearch("e_button.png", 30, "high")[1] = 0) {
+				findPlanter := 1
+				break
+			}
+		}
+		if (!findPlanter)
+			sendinput "{" SC_Space " up}"
+	} else {
+		while ((A_Index <= 5) && !(findPlanter := (nm_imgSearch("e_button.png",10)[1] = 0)))
+			Sleep 200
+		if (findPlanter = 0) {
+			nm_setStatus("Searching", (planterName . " (" . fieldName . ")"))
+			findPlanter := nm_searchForE()
+		}
 	}
 	if (findPlanter = 0) {
 		;check for phantom planter
@@ -21661,6 +22411,8 @@ ba_harvestPlanter(planterNum){
 	}
 	else {
 		SendInput "{" SC_E " down}"
+		if (ba_isReservedSlot(planterNum))
+			SendInput "{" SC_Space " up}"
 		Sleep 100
 		SendInput "{" SC_E " up}"
 
@@ -21684,8 +22436,10 @@ ba_harvestPlanter(planterNum){
 
 		Sleep 50 ; wait for game to update frame
 		GetRobloxClientPos(hwnd)
-		if ((HarvestFullGrown = 1) && !PlanterHarvestNow%planterNum%) {
-			loop 3 {
+		if (((HarvestFullGrown = 1) || ba_isReservedSlot(planterNum)) && !PlanterHarvestNow%planterNum%) {
+			;The "not fully grown" dialog takes a moment to come up, and three
+			;screenshots taken back to back can all land before it does. Give it time.
+			loop 6 {
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
 				if (Gdip_ImageSearch(pBMScreen, bitmaps["no"], &pos, , , , , 2, , 3) = 1) {
 					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
@@ -21694,10 +22448,30 @@ ba_harvestPlanter(planterNum){
 					sleep 100
 					MouseMove windowX+350, windowY+offsetY+100
 					Gdip_DisposeImage(pBMScreen)
-					nm_PlanterTimeUpdate(FieldName)
+					if (ba_isReservedSlot(planterNum))
+						ba_coconutPaperTimeUpdate()
+					else
+						nm_PlanterTimeUpdate(FieldName)
 					return 1
 				}
 				Gdip_DisposeImage(pBMScreen)
+				Sleep 250
+			}
+			;No dialog found, which normally means it was collected - but it can also
+			;mean the dialog was missed, and falling through from here clears the slot
+			;and records a harvest for a planter still standing in the field. The bar
+			;settles it: still there means still growing, so come back when it says.
+			if (ba_isReservedSlot(planterNum)) {
+				paperGrown := ba_coconutPaperMeasure(1)
+				if (paperGrown > 0) {
+					paperGrow := ba_effectiveGrowTime(planterNum, 1, paperGrown)
+					ba_coconutPaperPredict(paperGrow)
+					PlanterHarvestTime%planterNum% := nowUnix() + Round(Max(60, (1 - paperGrown) * paperGrow * 3600))
+					IniWrite PlanterHarvestTime%planterNum%, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" planterNum
+					nm_setStatus("Holding", "Paper Planter still growing - " Round(paperGrown*100, 1) "% - back in "
+						. Round(Max(1, (1 - paperGrown) * paperGrow * 60)) " min")
+					return 1
+				}
 			}
 		}
 		else {
@@ -21742,7 +22516,25 @@ ba_harvestPlanter(planterNum){
 		IniWrite TotalPlantersCollected, "settings\nm_config.ini", "Status", "TotalPlantersCollected"
 		IniWrite SessionPlantersCollected, "settings\nm_config.ini", "Status", "SessionPlantersCollected"
 		;gather loot
-		if (GatherPlanterLoot = 1)
+		if (ba_isReservedSlot(planterNum)) {
+			;seconds_since_plant here is when the macro turned up, not when the planter
+			;finished - it is always the later of the two. The figure worth keeping is
+			;the one the bar predicted, carried here so the row confirms it rather than
+			;standing in for it.
+			ba_coconutPaperLog("harvest", "", CoconutPaperPredicted
+				, CoconutPaperPredicted ? "confirms predicted grow time" : "never measured")
+			;Still standing where it grew, and the next one goes in the same place, so
+			;throw it now rather than walking back for it later. This has to happen
+			;before the full bag conversion below, which returns to the hive. If it
+			;fails the slot simply stays empty and the usual trip picks it up.
+			if (ba_placeCoconutPaper(1))
+				ba_coconutPaperRecordPlant()
+		}
+		;This planter is thrown up onto the field from underneath, so its loot drops
+		;up there while the macro is standing below it. The loot walk circles the
+		;spot it was harvested from and cannot reach any of it - ten seconds spent
+		;collecting nothing. The token link trip further down is what gathers it.
+		if ((GatherPlanterLoot = 1) && !ba_isReservedSlot(planterNum))
 		{
 			nm_setStatus("Looting", planterName . " Loot")
 			Sleep 1000
@@ -21763,14 +22555,21 @@ ba_harvestPlanter(planterNum){
 					sleep 200
 				}
 			}
-			nm_walkFrom(fieldName)
+			;no walk-back path exists for the coconut paper spot
+			if (ba_isReservedSlot(planterNum))
+				nm_Reset()
+			else
+				nm_walkFrom(fieldName)
 			DisconnectCheck()
 			nm_findHiveSlot()
 		}
+		;the harvest leaves a token link behind: farm it before moving on
+		if (ba_isReservedSlot(planterNum) && CoconutPaperTokenLink)
+			ba_coconutPaperTokenLink()
 		return 1
 	}
 }
-ba_SavePlacedPlanter(fieldName, planter, planterNum, nectar){
+ba_SavePlacedPlanter(fieldName, planter, planterNum, nectar, fullGrown:=0){
 	global PlanterName1, PlanterName2, PlanterName3
 		, PlanterField1, PlanterField2, PlanterField3
 		, PlanterHarvestTime1, PlanterHarvestTime2, PlanterHarvestTime3
@@ -21827,7 +22626,10 @@ ba_SavePlacedPlanter(fieldName, planter, planterNum, nectar){
 	}
 	;nec=planter[2]
 	;gro=planter[3]
-	if(AutomaticHarvestInterval) {
+	if(fullGrown) { ;the reserved slot is harvested as soon as it is grown
+		planterHarvestInterval:=floor(planter[4]*60*60)
+		PlanterHarvestTime%planterNum%:=nowUnix()+planterHarvestInterval
+	} else if(AutomaticHarvestInterval) {
 		planterHarvestInterval:=floor(min(planter[4], (autoInterval+autoInterval/(planter[2]*planter[3])), (timeToCap+timeToCap/(planter[2]*planter[3])))*60*60)
 		PlanterHarvestTime%planterNum%:=nowUnix()+planterHarvestInterval
 	} else if(HarvestFullGrown) {
@@ -21858,7 +22660,7 @@ ba_SavePlacedPlanter(fieldName, planter, planterNum, nectar){
 
 	;make all harvest times equal
 	Loop 3 {
-		if(not HarvestFullGrown && PlanterHarvestTime%A_Index% > PlanterHarvestTimeN && PlanterHarvestTime%A_Index% < PlanterHarvestTimeN + 600)
+		if(not (HarvestFullGrown || fullGrown) && PlanterHarvestTime%A_Index% > PlanterHarvestTimeN && PlanterHarvestTime%A_Index% < PlanterHarvestTimeN + 600)
 			IniWrite PlanterHarvestTimeN, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" A_Index
 		else if(A_Index=planterNum)
 			IniWrite PlanterHarvestTimeN, "settings\nm_config.ini", "Planters", "PlanterHarvestTime" planterNum
@@ -21928,7 +22730,7 @@ nm_planterSS(){
 			nm_setShiftLock(0)
 			nm_Reset(nm_Reset(1, ((PlanterField%A_Index% = "Rose") || (PlanterField%A_Index% = "Pine Tree") || (PlanterField%A_Index% = "Pumpkin") || (PlanterField%A_Index% = "Cactus") || (PlanterField%A_Index% = "Spider")) ? min(20000, (60-HiveBees)*1000) : 0))
 			nm_setStatus("Traveling", PlanterName%A_Index% " (" PlanterField%A_Index% ")")
-			nm_gotoPlanter(PlanterField%A_Index%, 1)
+			nm_gotoPlanter(ba_planterPath(PlanterField%A_Index%, A_Index), 1)
 
 			sendinput "{" ZoomIn " 2}"
 

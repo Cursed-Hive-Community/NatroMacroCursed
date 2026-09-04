@@ -330,6 +330,21 @@ settings["BlueFlowerFieldCheck"] := {enum: 46, type: "int", section: "Planters",
 settings["CactusFieldCheck"] := {enum: 47, type: "int", section: "Planters", regex: "i)^(0|1)$"}
 settings["CloverFieldCheck"] := {enum: 48, type: "int", section: "Planters", regex: "i)^(0|1)$"}
 settings["CoconutFieldCheck"] := {enum: 49, type: "int", section: "Planters", regex: "i)^(0|1)$"}
+settings["CoconutPaperCheck"] := {enum: 369, type: "int", section: "Planters", regex: "i)^(0|1)$"}
+settings["CoconutPaperHotbar"] := {enum: 370, type: "str", section: "Planters", regex: "i)^([1-7])$"}
+settings["CoconutPaperTokenLink"] := {enum: 371, type: "int", section: "Planters", regex: "i)^(0|1)$"}
+settings["CoconutPaperTokenField"] := {enum: 372, type: "str", section: "Planters", regex: "i)^(Bamboo|Blue Flower|Cactus|Clover|Coconut|Dandelion|Mountain Top|Mushroom|Pepper|Pine Tree|Pineapple|Pumpkin|Rose|Spider|Strawberry|Stump|Sunflower)$"}
+settings["CoconutPaperRestock"] := {enum: 373, type: "int", section: "Planters", regex: "i)^(0|1)$"}
+settings["CoconutPaperRestockEvery"] := {enum: 374, type: "int", section: "Planters", regex: "i)^([1-9][0-9]{0,2})$"}
+settings["CoconutPaperPlaced"] := {enum: 375, type: "int", section: "Planters", regex: "i)^([0-9]{1,3})$"}
+settings["CoconutPaperRestockOnly"] := {enum: 376, type: "int", section: "Planters", regex: "i)^(0|1)$"}
+settings["CoconutPaperPlantedAt"] := {enum: 377, type: "int", section: "Planters", regex: "i)^([0-9]{1,10})$"}
+settings["CoconutPaperReadOnly"] := {enum: 378, type: "int", section: "Planters", regex: "i)^(0|1)$"}
+settings["CoconutPaperCycle"] := {enum: 379, type: "int", section: "Planters", regex: "i)^([0-9]{1,6})$"}
+settings["CoconutPaperDebugShots"] := {enum: 380, type: "int", section: "Planters", regex: "i)^(0|1)$"}
+settings["CoconutPaperCheckInterrupt"] := {enum: 381, type: "int", section: "Planters", regex: "i)^(0|1)$"}
+settings["CoconutPaperFirstCheck"] := {enum: 382, type: "int", section: "Planters", regex: "i)^([1-9][0-9]{0,2})$"}
+settings["CoconutPaperPredicted"] := {enum: 383, type: "str", section: "Planters", regex: "i)^([0-9]{0,3}(\.[0-9]{1,3})?)$"}
 settings["DandelionFieldCheck"] := {enum: 50, type: "int", section: "Planters", regex: "i)^(0|1)$"}
 settings["MountainTopFieldCheck"] := {enum: 51, type: "int", section: "Planters", regex: "i)^(0|1)$"}
 settings["MushroomFieldCheck"] := {enum: 52, type: "int", section: "Planters", regex: "i)^(0|1)$"}
@@ -719,12 +734,20 @@ nm_status(status)
 			|| ((ViciousSSCheck = 1) && InStr(stateString, "Completed: Vicious Bee"))
 			|| ((DeathSSCheck = 1) && (state = "You Died"))
 			|| ((state = "Detected") && InStr(stateString, "Night"))
+			|| InStr(stateString, "settings\proshop_debug_")
 			|| ((PlanterSSCheck = 1) && (((state = "Detected") || (state = "Screenshot") || (state = "Holding")) && InStr(stateString, "Planter")))
 			|| ((HoneySSCheck = 1) && InStr(stateString, "Reporting: Daily Honey LB") && ((discordMode = 0) || (channel := (StrLen(ReportChannelID) < 17) ? MainChannelID : ReportChannelID)))
 			|| ((ssDebugging = 1) && ((state = "Placing") || (state = "Collecting") || (state = "Failed") || InStr(stateString, "Next Quest Step")))
 			|| ((state = "Gathering") && !InStr(objective, "Ended") && (HoneyUpdateSSCheck) && (pBM := CreateHoneyBitmap(1, 0)))
 			|| ((state = "Converting") && (objective = "Backpack") && (HoneyUpdateSSCheck) && (pBM := CreateHoneyBitmap()))))
 		{
+			;A capture named in the status was taken at the moment that mattered.
+			;This runs from a queue, so by the time it gets here the macro has moved
+			;on - the camera swung back, the menu closed - and a fresh screenshot
+			;would show none of what the message is about. Send the file instead.
+			if (!IsSet(pBM) && RegExMatch(stateString, "i)settings\\proshop_debug_[\w]+\.png", &dbgFile)
+				&& FileExist(A_WorkingDir "\" dbgFile[0]))
+				pBM := Gdip_CreateBitmapFromFile(A_WorkingDir "\" dbgFile[0])
 			if !IsSet(pBM)
 				hwnd := GetRobloxHWND(), GetRobloxClientPos(hwnd), pBM := Gdip_BitmapFromScreen((windowWidth > 0) ? (windowX "|" windowY "|" windowWidth "|" windowHeight) : 0)
 		}
