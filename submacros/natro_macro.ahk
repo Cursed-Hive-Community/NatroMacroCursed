@@ -22003,7 +22003,7 @@ ba_leaveProShop(){
 ;sit on an opaque bar that survives a change of backdrop by 17.
 ba_restockPaperPlanters(){
 	global SC_E
-	local searchRet, inside, atCapacity, btnX, btnY, pxX, pxY, crafted := 0
+	local searchRet, inside, atCapacity, btnX, btnY, pxX, pxY, msg, crafted := 0
 
 	nm_updateAction("Planters")
 	ba_gotoProShop()
@@ -22081,12 +22081,18 @@ ba_restockPaperPlanters(){
 	pxX := windowX + searchRet[2] + 15, pxY := windowY + searchRet[3] + 8
 	MouseMove btnX, btnY
 	Sleep 150
-	;a hundred is the stock cap, so this can never be the reason it stops.
-	;If the button was never found searchRet is not a position, and the pixel
-	;check refuses on the first pass, which is the right answer anyway.
+	;Put the pointer back on the button before every click. Click on its own
+	;goes wherever the cursor happens to be, so a hand nudging the mouse
+	;mid-restock sent the clicks off into the room - while the button, no
+	;longer under the pointer and so green again, went on answering yes, and
+	;the loop ran all the way to its guard. That guard is 110, above the stock
+	;cap of 100, so it is never the reason a healthy restock stops. If the
+	;button was never found searchRet is not a position, and the pixel check
+	;refuses on the first pass, which is the right answer anyway.
 	Loop (searchRet[1] = 0) ? 110 : 0 {
 		if !ba_coconutPaperCanCraft(pxX, pxY)
 			break
+		MouseMove btnX, btnY, 0
 		Click
 		crafted++
 		Sleep 330
@@ -22103,10 +22109,17 @@ ba_restockPaperPlanters(){
 	;the macro outright when an asset is missing.
 	atCapacity := (FileExist(A_WorkingDir "\nm_image_assets\proshop_full.png")
 		&& (nm_imgSearch("proshop_full.png", 30, "low")[1] = 0))
-	if ((crafted = 0) && !atCapacity) {
-		nm_setStatus("Error", "Crafted nothing and not at capacity" ba_dumpProShopScreen("craft"))
+	;"stock now full" is a claim about the button, so it is only made once the
+	;button has been read as full. Stopping for any other reason - the honey
+	;ran out, the clicks landed somewhere else - is worth a picture whether or
+	;not anything was made, and must never be dressed up as a finished restock.
+	if (!atCapacity) {
+		msg := (crafted = 0) ? "Crafted nothing"
+			: "Crafted only " crafted " Paper Planter" ((crafted = 1) ? "" : "s")
+		nm_setStatus((crafted = 0) ? "Error" : "Warning",
+			msg " and the stock is not full" ba_dumpProShopScreen("craft"))
 		ba_leaveProShop()
-		return 0
+		return crafted
 	}
 	nm_setStatus((crafted = 0) ? "Full" : "Crafted", (crafted = 0)
 		? "Paper Planters already at capacity"
