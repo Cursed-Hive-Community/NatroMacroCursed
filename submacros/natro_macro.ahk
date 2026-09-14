@@ -736,6 +736,7 @@ nm_importConfig()
 		, "LastEnzymes", 1
 		, "LastGlitter", 1
 		, "LastBlueBoostUse", 1
+		, "PreGlitterStart", 0
 		, "LastMicroConverter", 1
 		, "LastGuid", 1
 		, "AutoFieldBoostActive", 0
@@ -928,7 +929,8 @@ nm_importConfig()
 
 	config["Extensions"] := Map("PFieldBoosted", 0
 		, "EnzymesBoostedOnly", 0
-		, "BlueBoosterInterruptCheck", 0)
+		, "BlueBoosterInterruptCheck", 0
+		, "PreGlitterCheck", 0)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2937,7 +2939,7 @@ MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 ;it lands in the tabs upstream owns.
 TabCtrl.UseTab("Extensions")
 MainGui.SetFont("w700")
-MainGui.Add("GroupBox", "x10 y25 w235 h70", "Boost")
+MainGui.Add("GroupBox", "x10 y25 w235 h93", "Boost")
 MainGui.Add("GroupBox", "x255 y25 w235 h70", "Interrupts")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
@@ -2946,6 +2948,9 @@ MainGui.Add("Button", "x172 y45 w14 h16", "?").OnEvent("Click", ext_GlitterExten
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y68 w170 h18 vEnzymesBoostedOnly Checked" EnzymesBoostedOnly
 	, "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x192 y68 w14 h16", "?").OnEvent("Click", ext_EnzymesBoostedOnlyHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y91 w100 h18 vPreGlitterCheck Checked" PreGlitterCheck
+	, "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x122 y91 w14 h16", "?").OnEvent("Click", ext_PreGlitterHelp)
 (GuiCtrl := MainGui.Add("CheckBox", "x265 y45 w160 h18 vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck
 	, "Blue Booster")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x427 y45 w14 h16", "?").OnEvent("Click", ext_BlueBoosterHelp)
@@ -4569,6 +4574,25 @@ ext_BlueBoosterHelp(*){
 
 	The boost it presses starts a fresh Glitter Extend lease."
 	), "Blue Booster Interrupt", 0x40040
+}
+;What Pre-Glitter buys, and what it costs.
+ext_PreGlitterHelp(*){
+	MsgBox
+	(
+	"The blue booster is worth more than glitter, so the macro will not spend
+	glitter while one is nearly due - and the last ten minutes of every 45
+	minute cooldown are spent in an unboosted field.
+
+	Glitter lasts 15 minutes. Pressed when the booster is 10 to 11 minutes
+	away, it covers that wait and runs out shortly after the booster is
+	pressed, so almost none of it overlaps.
+
+	Pine Tree only. While a pre-glitter is running the macro still collects,
+	does quests and tends planters: shutting all of that out for 15 minutes
+	would cost more than the boost is worth.
+
+	Needs Blue Booster Interrupt on, which is what tracks the cooldown."
+	), "Pre-Glitter", 0x40040
 }
 ;update config
 nm_saveConfig(GuiCtrl, *){
@@ -10912,6 +10936,10 @@ nm_BugrunInterrupt() {
 ;that outlived the boost it was meant to extend.
 nm_GatherBoostInterrupt() {
 	ext_boostLeaseExpire()
+	;a pre-glitter covers the wait for the blue booster and is not worth
+	;shutting the errands out for - see ext_preGlitterDue
+	if ext_preGlitterActive()
+		return nm_boostBypassCheck()
 	return (nowUnix() < ext_boostLeaseDeadline()) || nm_boostBypassCheck()
 }
 nm_MemoryMatchInterrupt() {
@@ -16972,7 +17000,9 @@ nm_GoGather(){
 			if (Mod(A_Index, 20) = 1) { ; every 1s
 				;standing in the field with nothing else to do, so wait for the last
 				;thirty seconds and carry the most boost forward
-				if ext_boostLeaseGatherWindow()
+				if ext_preGlitterDue(FieldName)
+					ext_preGlitterFire(FieldName)
+				else if ext_boostLeaseGatherWindow()
 					ext_boostLeaseRenew(FieldName, "Glitter Extend")
 				nm_autoFieldBoost(FieldName)
 				nm_fieldBoostGlitter()

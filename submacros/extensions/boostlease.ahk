@@ -113,3 +113,69 @@ ext_boostLeaseRenew(fieldName, source := "Boost Lease") {
 	nm_setStatus("Boosted", source ((fieldName != "") ? "`n" fieldName : ""))
 	return 1
 }
+;Pre-Glitter - covering the wait for the blue booster
+;
+;The blue booster is worth more than glitter, so glitter is never spent while
+;one is nearly due; the macro would rather stand in an unboosted field than
+;overlap the two. That wastes the last ten minutes of every cooldown.
+;
+;Glitter runs fifteen minutes. Pressed when the booster is ten to eleven minutes
+;away, it boosts the field right up to the trip that presses the booster, and
+;the overlap left over is small. Pine Tree only, which is DefinetlyNotRay's
+;choice - it is the blue field the macro waits in.
+;
+;A pre-glitter deliberately does not count as being boosted. nm_GatherBoostInterrupt
+;means "we are boosted, do not wander off", and it blocks collecting, quests,
+;planters and bug runs while it is true. Locking the macro out of all of them for
+;fifteen minutes to protect a filler boost costs more than the boost is worth,
+;so the lease is held open for errands until the booster is due.
+ext_preGlitterDue(fieldName) {
+	global PreGlitterCheck, GlitterKey, LastGlitter, LastBlueBoostUse
+	local untilBlue
+
+	if (!PreGlitterCheck || (GlitterKey = "none") || (fieldName != "Pine Tree"))
+		return 0
+	if ((LastBlueBoostUse = "") || (LastBlueBoostUse <= 0))
+		return 0
+	;a glitter pressed inside the last fifteen minutes is still running
+	if ((nowUnix() - LastGlitter) <= 900)
+		return 0
+	untilBlue := 2700 - (nowUnix() - LastBlueBoostUse)
+	return ((untilBlue <= 660) && (untilBlue > 600))
+}
+;Press it, and remember when - the window that follows is what keeps the macro
+;free to run errands until the booster is due.
+ext_preGlitterFire(fieldName) {
+	global LastGlitter, PreGlitterStart, PFieldBoostExtend, fieldOverrideReason
+
+	ext_spamGlitter()
+	LastGlitter := nowUnix()
+	PreGlitterStart := LastGlitter
+	PFieldBoostExtend := 1
+	fieldOverrideReason := "Boost"
+	IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
+	IniWrite PreGlitterStart, "settings\nm_config.ini", "Boost", "PreGlitterStart"
+	nm_setStatus("Boosted", "Pre-Glitter`n" fieldName)
+	return 1
+}
+;Eleven minutes, which is where the window was opened - so it closes as the
+;booster comes due and the macro goes back to treating a boost as a boost.
+ext_preGlitterActive() {
+	global PreGlitterStart
+
+	if (PreGlitterStart <= 0)
+		return 0
+	if ((nowUnix() - PreGlitterStart) < 660)
+		return 1
+	ext_preGlitterClear()
+	return 0
+}
+ext_preGlitterClear() {
+	global PreGlitterStart
+
+	if (PreGlitterStart <= 0)
+		return 0
+	PreGlitterStart := 0
+	IniWrite PreGlitterStart, "settings\nm_config.ini", "Boost", "PreGlitterStart"
+	return 1
+}
