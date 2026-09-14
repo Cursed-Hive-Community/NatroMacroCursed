@@ -27,6 +27,8 @@ ext_blueBoosterUsed() {
 
 	LastBlueBoostUse := nowUnix()
 	GatherFieldBoostedStart := LastBlueBoostUse
+	;the wait a pre-glitter was covering is over
+	ext_preGlitterClear()
 	ext_boostLeaseRenewed := 0, PFieldBoostExtend := 0
 	IniWrite LastBlueBoostUse, "settings\nm_config.ini", "Boost", "LastBlueBoostUse"
 	return 1
