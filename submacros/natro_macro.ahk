@@ -34,6 +34,7 @@ You should have received a copy of the license along with Natro Macro. If not, p
 ;extension modules - features this fork adds on top of stock Natro, kept in
 ;their own files so they stay legible against an upstream diff
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
+#Include "%A_ScriptDir%\extensions\interrupts.ahk"
 
 #Warn VarUnset, Off
 
@@ -734,6 +735,7 @@ nm_importConfig()
 		, "LastWhirligig", 1
 		, "LastEnzymes", 1
 		, "LastGlitter", 1
+		, "LastBlueBoostUse", 1
 		, "LastMicroConverter", 1
 		, "LastGuid", 1
 		, "AutoFieldBoostActive", 0
@@ -925,7 +927,8 @@ nm_importConfig()
 		, "TimersOpen", 0)
 
 	config["Extensions"] := Map("PFieldBoosted", 0
-		, "EnzymesBoostedOnly", 0)
+		, "EnzymesBoostedOnly", 0
+		, "BlueBoosterInterruptCheck", 0)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2934,7 +2937,8 @@ MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 ;it lands in the tabs upstream owns.
 TabCtrl.UseTab("Extensions")
 MainGui.SetFont("w700")
-MainGui.Add("GroupBox", "x10 y25 w480 h70", "Boost")
+MainGui.Add("GroupBox", "x10 y25 w235 h70", "Boost")
+MainGui.Add("GroupBox", "x255 y25 w235 h70", "Interrupts")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
 	, "Glitter Extend")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
@@ -2942,6 +2946,9 @@ MainGui.Add("Button", "x172 y45 w14 h16", "?").OnEvent("Click", ext_GlitterExten
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y68 w170 h18 vEnzymesBoostedOnly Checked" EnzymesBoostedOnly
 	, "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x192 y68 w14 h16", "?").OnEvent("Click", ext_EnzymesBoostedOnlyHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x265 y45 w160 h18 vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck
+	, "Blue Booster")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x427 y45 w14 h16", "?").OnEvent("Click", ext_BlueBoosterHelp)
 
 ; STATUS TAB
 ; ------------------------
@@ -4547,6 +4554,21 @@ ext_EnzymesBoostedOnlyHelp(*){
 	This used to follow Glitter Extend, which is now a separate setting - so
 	turning one on no longer quietly changes the other."
 	), "Boosted Enzyme Only", 0x40040
+}
+;Why this is worth interrupting a trip for.
+ext_BlueBoosterHelp(*){
+	MsgBox
+	(
+	"The blue field booster comes off cooldown every 45 minutes. Natro only
+	looks between gathering trips, so one that came ready early in a trip
+	sits unused until the trip ends - often most of an hour wasted.
+
+	Ticked, the macro breaks off and walks to the booster 40 seconds before
+	the cooldown is up, which is roughly how long the walk takes, so it
+	arrives as the booster becomes available rather than waiting there.
+
+	The boost it presses starts a fresh Glitter Extend lease."
+	), "Blue Booster Interrupt", 0x40040
 }
 ;update config
 nm_saveConfig(GuiCtrl, *){
@@ -13889,6 +13911,9 @@ nm_toBooster(location){
 				LastCoconutDis:=nowUnix(), IniWrite(LastCoconutDis, "settings\nm_config.ini", "Collect", "LastCoconutDis")
 			else
 				Last%location%Boost:=nowUnix(), IniWrite(Last%location%Boost, "settings\nm_config.ini", "Collect", "Last" location "Boost")
+			;the blue booster is on a clock of its own, watched by the interrupt
+			if (location = "blue")
+				ext_blueBoosterUsed()
 			
 			nm_createWalk((location = "mountain") ? nm_Walk(8, LeftKey) : (location = "red") ? nm_Walk(8, BackKey) : nm_Walk(8, RightKey))
 			KeyWait "F14", "D T5 L"
@@ -13920,6 +13945,8 @@ nm_toBooster(location){
 			} else {
 				Last%location%Boost:=nowUnix()-1500
 				IniWrite Last%location%Boost, "settings\nm_config.ini", "Collect", "Last" location "Boost"
+				if (location = "blue")
+					ext_blueBoosterFailed()
 			}
 		}
 	}
@@ -16583,6 +16610,11 @@ nm_GoGather(){
 	;MONDO
 	if nm_MondoInterrupt()
 		return
+	;BLUE BOOSTER
+	if ext_blueBoosterReady() {
+		nm_toBooster("blue")
+		return
+	}
 	if !(nm_GatherBoostInterrupt()){
 		;BUGS GatherInterruptCheck
 		if nm_BugrunInterrupt()
@@ -16948,6 +16980,10 @@ nm_GoGather(){
 
 			;high priority interrupts
 			if (Mod(A_Index, 5) = 1) { ; every 250ms
+				if ext_blueBoosterReady() {
+					interruptReason := "Blue Booster Ready"
+					break
+				}
 				if DisconnectCheck() {
 					interruptReason := "Disconnect"
 					break
