@@ -930,7 +930,8 @@ nm_importConfig()
 	config["Extensions"] := Map("PFieldBoosted", 0
 		, "EnzymesBoostedOnly", 0
 		, "BlueBoosterInterruptCheck", 0
-		, "PreGlitterCheck", 0)
+		, "PreGlitterCheck", 0
+		, "StickerStackInterruptCheck", 0)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2701,6 +2702,9 @@ for k,v in ["PMondoGuid","PMondoGuidComplete","PFieldGuidExtend","PFieldGuidExte
 	%v%:=0
 ;a lease gets one renewal, and the flag that says so resets with the lease
 ext_boostLeaseRenewed := 0
+;sticker stack backoffs are deliberately not persisted - fifteen seconds and
+;one minute mean nothing across a restart
+ext_stickerStackFailedAt := 0, ext_stickerStackUsedAt := 0
 #include "*i %A_ScriptDir%\..\settings\personal.ahk"
 
 ; add tabs
@@ -2954,6 +2958,9 @@ MainGui.Add("Button", "x122 y91 w14 h16", "?").OnEvent("Click", ext_PreGlitterHe
 (GuiCtrl := MainGui.Add("CheckBox", "x265 y45 w160 h18 vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck
 	, "Blue Booster")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x427 y45 w14 h16", "?").OnEvent("Click", ext_BlueBoosterHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x265 y68 w160 h18 vStickerStackInterruptCheck Checked" StickerStackInterruptCheck
+	, "Sticker Stack")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x427 y68 w14 h16", "?").OnEvent("Click", ext_StickerStackHelp)
 
 ; STATUS TAB
 ; ------------------------
@@ -4593,6 +4600,22 @@ ext_PreGlitterHelp(*){
 
 	Needs Blue Booster Interrupt on, which is what tracks the cooldown."
 	), "Pre-Glitter", 0x40040
+}
+;Why a stack is worth leaving a field for.
+ext_StickerStackHelp(*){
+	MsgBox
+	(
+	"A sticker stack is worth whatever gets converted underneath it, and it
+	runs on a timer. Natro places one only between gathering trips, so a
+	stack that came due early in a trip is spent on far less honey than it
+	could have been.
+
+	Ticked, the macro breaks off as soon as the timer is up, places the
+	stack, and returns to the hive to convert under it.
+
+	Needs Sticker Stack itself enabled in the Boost tab, which is where the
+	timer, the item and the skins are set."
+	), "Sticker Stack Interrupt", 0x40040
 }
 ;update config
 nm_saveConfig(GuiCtrl, *){
@@ -16638,6 +16661,9 @@ nm_GoGather(){
 	;MONDO
 	if nm_MondoInterrupt()
 		return
+	;STICKER STACK
+	if ext_stickerStackInterrupt()
+		return
 	;BLUE BOOSTER
 	if ext_blueBoosterReady() {
 		nm_toBooster("blue")
@@ -17010,6 +17036,10 @@ nm_GoGather(){
 
 			;high priority interrupts
 			if (Mod(A_Index, 5) = 1) { ; every 250ms
+				if ext_stickerStackDue() {
+					interruptReason := "Sticker Stack Ready"
+					break
+				}
 				if ext_blueBoosterReady() {
 					interruptReason := "Blue Booster Ready"
 					break
