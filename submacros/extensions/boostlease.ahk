@@ -179,3 +179,14 @@ ext_preGlitterClear() {
 	IniWrite PreGlitterStart, "settings\nm_config.ini", "Boost", "PreGlitterStart"
 	return 1
 }
+;True while the lease is close enough to its end that an errand about to take
+;the macro out of the field should renew before it goes, rather than come back
+;to a boost that ran out on the way.
+ext_boostLeaseNearEnd(sec := 60) {
+	local age
+
+	if !ext_boostLeaseCanRenew()
+		return 0
+	age := ext_boostLeaseAge()
+	return ((age >= (900 - sec)) && (age < 900))
+}
