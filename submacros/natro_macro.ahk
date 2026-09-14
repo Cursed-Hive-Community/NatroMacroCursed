@@ -924,7 +924,8 @@ nm_importConfig()
 		, "TimerY", 150
 		, "TimersOpen", 0)
 
-	config["Extensions"] := Map("PFieldBoosted", 0)
+	config["Extensions"] := Map("PFieldBoosted", 0
+		, "EnzymesBoostedOnly", 0)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2933,11 +2934,14 @@ MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 ;it lands in the tabs upstream owns.
 TabCtrl.UseTab("Extensions")
 MainGui.SetFont("w700")
-MainGui.Add("GroupBox", "x10 y25 w480 h45", "Boost")
+MainGui.Add("GroupBox", "x10 y25 w480 h70", "Boost")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
 	, "Glitter Extend")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x172 y45 w14 h16", "?").OnEvent("Click", ext_GlitterExtendHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y68 w170 h18 vEnzymesBoostedOnly Checked" EnzymesBoostedOnly
+	, "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x192 y68 w14 h16", "?").OnEvent("Click", ext_EnzymesBoostedOnlyHelp)
 
 ; STATUS TAB
 ; ------------------------
@@ -4530,6 +4534,19 @@ ext_GlitterExtendHelp(*){
 
 	Needs a glitter hotbar key set in the Boost tab."
 	), "Glitter Extend", 0x40040
+}
+;Why anyone would want enzymes held back.
+ext_EnzymesBoostedOnlyHelp(*){
+	MsgBox
+	(
+	"Enzymes multiply what a convert is worth, so one spent during a field
+	boost is worth several spent outside one. Ticked, the macro keeps them
+	for boosted converts; unticked, it uses one whenever the ten minute
+	cooldown is up.
+
+	This used to follow Glitter Extend, which is now a separate setting - so
+	turning one on no longer quietly changes the other."
+	), "Boosted Enzyme Only", 0x40040
 }
 ;update config
 nm_saveConfig(GuiCtrl, *){
@@ -17379,6 +17396,7 @@ nm_convert(){
 		, ConvertStartTime, TotalConvertTime, SessionConvertTime
 		, BackpackPercent, BackpackPercentFiltered
 		, PFieldBoosted, GatherFieldBoosted, GatherFieldBoostedStart, LastGlitter, GlitterKey
+		, EnzymesBoostedOnly
 		, GameFrozenCounter, LastConvertBalloon, ConvertBalloon, ConvertMins, HiveBees, ConvertGatherFlag
 
 	if (nm_NightInterrupt() || nm_MondoInterrupt())
@@ -17475,10 +17493,19 @@ nm_convert(){
 					return
 				}
 				inactiveHoney := (nm_activeHoney() = 0) ? inactiveHoney + 1 : 0
-				if(((EnzymesKey!="none") && (!PFieldBoosted || (PFieldBoosted && GatherFieldBoosted))) && (nowUnix()-LastEnzymes)>600 && (inactiveHoney = 0)) {
+				;An enzyme is worth far more spent on a boosted convert than on a
+				;plain one, so holding it back until the field is boosted is the
+				;point of the switch. The boost is read through the lease rather
+				;than through GatherFieldBoosted, which is a detection flag and
+				;says nothing about a boost that Glitter Extend has renewed since.
+				if ((EnzymesKey != "none")
+					&& (!EnzymesBoostedOnly || nm_GatherBoostInterrupt())
+					&& ((nowUnix() - LastEnzymes) > 600)
+					&& (inactiveHoney = 0)) {
 					Send "{" EnzymesKey "}"
-					LastEnzymes:=nowUnix()
+					LastEnzymes := nowUnix()
 					IniWrite LastEnzymes, "settings\nm_config.ini", "Boost", "LastEnzymes"
+					nm_setStatus("Converting", "Balloon`nUsed Enzyme")
 				}
 				if (BalloonConvertTime>60 && inactiveHoney>30) {
 					nm_setStatus("Interrupted", "Inactive Honey")
