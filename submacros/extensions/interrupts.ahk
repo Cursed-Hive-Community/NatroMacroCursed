@@ -95,3 +95,100 @@ ext_stickerStackInterrupt(convertAfter := 1) {
 	handling := 0
 	return 1
 }
+;Mondo Chick spawns at the top of the hour at Mountain Top, and the buff is
+;worth more than the few minutes of gathering it costs. Natro goes for it only
+;once the hour has already turned, only while the macro is not boosted, and only
+;when it next looks between trips - so it regularly arrives to find the spawn
+;gone, or does not go at all.
+;
+;This leaves at :59, a minute early, so the macro is standing at Mountain Top as
+;the chick appears. Being boosted no longer rules the trip out: the boost is
+;renewed before leaving instead.
+;
+;:00 to :14 is a catch-up window. The macro can easily be mid-pattern with a
+;full backpack at :59, and arriving late still beats not going.
+;
+;Buff only. Killing Mondo is a different job with its own routine, and Natro
+;already handles it.
+ext_mondoDue() {
+	global MondoInterruptCheck, MondoBuffCheck, MondoAction, LastMondoBuff
+	local utcMin
+
+	if (!MondoInterruptCheck || (MondoBuffCheck != 1) || (MondoAction != "Buff"))
+		return 0
+	utcMin := FormatTime(A_NowUTC, "m") + 0
+	if !((utcMin = 59) || (utcMin <= 14))
+		return 0
+	;fifty-five minutes, so one spawn is never claimed twice
+	return ((nowUnix() - LastMondoBuff) > 3300)
+}
+;A chick nobody has touched reads exactly 100, so the spawn counts as found once
+;a bar is showing below full - which is what a fight underway looks like, and
+;the fight is what the macro came to stand next to.
+ext_mondoSpawned() {
+	local bar
+
+	for bar in nm_HealthDetection()
+		if (bar != 100.00)
+			return 1
+	return 0
+}
+;handling guards re-entry: the hive return below passes back through code that
+;checks interrupts, and a second trip would arrive at an empty Mountain Top.
+ext_mondoInterrupt() {
+	global youDied, MondoSecs, CurrentField, LastMondoBuff
+	global AFBrollingDice, AFBuseGlitter, AFBuseBooster
+	static handling := 0
+	local found
+
+	if (handling || !ext_mondoDue())
+		return 0
+	handling := 1
+	nm_updateAction("Mondo Interrupt")
+	;the round trip runs to a few minutes, so a lease in its last 105 seconds
+	;would not survive it - renew now rather than come back to nothing
+	if ext_boostLeaseNearEnd(105)
+		ext_boostLeaseRenew(CurrentField, "Mondo Interrupt")
+	nm_setStatus("Traveling", "Mondo Interrupt`nMountain Top")
+	nm_Reset(0, 2000, 0)
+	nm_gotoField("Mountain Top")
+
+	;arrived before the hour turned, which is the point - wait it out on the spot
+	while ((FormatTime(A_NowUTC, "m") + 0) = 59) {
+		if youDied
+			break
+		Sleep 200
+	}
+
+	nm_setStatus("Searching", "Mondo Chick")
+	found := 0
+	;a minute of looking, or until the clock says the spawn has been and gone
+	Loop 240 {
+		if ext_mondoSpawned() {
+			found := 1
+			break
+		}
+		if ((FormatTime(A_NowUTC, "m") + 0) > 1)
+			break
+		Sleep 250
+	}
+	if found {
+		nm_setStatus("Attacking", "Mondo Chick")
+		Loop MondoSecs {
+			nm_autoFieldBoost(CurrentField)
+			if (youDied || AFBrollingDice || AFBuseGlitter || AFBuseBooster || nm_NightInterrupt())
+				break
+			Sleep 1000
+		}
+	} else
+		nm_setStatus("Failed", "Mondo Chick not found")
+	;found or not, this hour's attempt is spent - otherwise the catch-up window
+	;would send the macro back every few seconds until :14
+	LastMondoBuff := nowUnix()
+	IniWrite LastMondoBuff, "settings\nm_config.ini", "Collect", "LastMondoBuff"
+	nm_setStatus("Traveling", "Hive, after Mondo")
+	nm_Reset(2, 2000, 0, 1)
+	nm_findHiveSlot()
+	handling := 0
+	return 1
+}

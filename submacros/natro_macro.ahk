@@ -931,7 +931,8 @@ nm_importConfig()
 		, "EnzymesBoostedOnly", 0
 		, "BlueBoosterInterruptCheck", 0
 		, "PreGlitterCheck", 0
-		, "StickerStackInterruptCheck", 0)
+		, "StickerStackInterruptCheck", 0
+		, "MondoInterruptCheck", 0)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2944,7 +2945,7 @@ MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 TabCtrl.UseTab("Extensions")
 MainGui.SetFont("w700")
 MainGui.Add("GroupBox", "x10 y25 w235 h93", "Boost")
-MainGui.Add("GroupBox", "x255 y25 w235 h70", "Interrupts")
+MainGui.Add("GroupBox", "x255 y25 w235 h93", "Interrupts")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
 	, "Glitter Extend")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
@@ -2961,6 +2962,9 @@ MainGui.Add("Button", "x427 y45 w14 h16", "?").OnEvent("Click", ext_BlueBoosterH
 (GuiCtrl := MainGui.Add("CheckBox", "x265 y68 w160 h18 vStickerStackInterruptCheck Checked" StickerStackInterruptCheck
 	, "Sticker Stack")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x427 y68 w14 h16", "?").OnEvent("Click", ext_StickerStackHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x265 y91 w160 h18 vMondoInterruptCheck Checked" MondoInterruptCheck
+	, "Mondo")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x427 y91 w14 h16", "?").OnEvent("Click", ext_MondoInterruptHelp)
 
 ; STATUS TAB
 ; ------------------------
@@ -4616,6 +4620,26 @@ ext_StickerStackHelp(*){
 	Needs Sticker Stack itself enabled in the Boost tab, which is where the
 	timer, the item and the skins are set."
 	), "Sticker Stack Interrupt", 0x40040
+}
+;What leaving at :59 buys.
+ext_MondoInterruptHelp(*){
+	MsgBox
+	(
+	"Mondo Chick spawns at the top of the hour at Mountain Top, and its buff
+	is worth more than the few minutes of gathering the trip costs.
+
+	Natro only goes once the hour has already turned, only while unboosted,
+	and only when it next looks between trips - so it often arrives to find
+	the spawn gone, or does not go at all.
+
+	Ticked, the macro leaves at :59 so it is standing there as the chick
+	appears, and renews the field boost before going rather than skipping
+	the trip to protect it. Arriving up to :14 still counts, for the times
+	it was mid-pattern with a full backpack when the hour turned.
+
+	Needs Mondo set to Buff in the Collect tab. Killing Mondo is a different
+	job and Natro already handles it."
+	), "Mondo Interrupt", 0x40040
 }
 ;update config
 nm_saveConfig(GuiCtrl, *){
@@ -16661,6 +16685,9 @@ nm_GoGather(){
 	;MONDO
 	if nm_MondoInterrupt()
 		return
+	;MONDO SPAWN
+	if ext_mondoInterrupt()
+		return
 	;STICKER STACK
 	if ext_stickerStackInterrupt()
 		return
@@ -17036,6 +17063,10 @@ nm_GoGather(){
 
 			;high priority interrupts
 			if (Mod(A_Index, 5) = 1) { ; every 250ms
+				if ext_mondoDue() {
+					interruptReason := "Mondo Spawning"
+					break
+				}
 				if ext_stickerStackDue() {
 					interruptReason := "Sticker Stack Ready"
 					break
@@ -17496,6 +17527,10 @@ nm_convert(){
 		, GameFrozenCounter, LastConvertBalloon, ConvertBalloon, ConvertMins, HiveBees, ConvertGatherFlag
 
 	if (nm_NightInterrupt() || nm_MondoInterrupt())
+		return
+	;a balloon convert runs ten minutes and will straddle the hour sooner or
+	;later, so the spawn has to be checked here as well as before a trip
+	if ext_mondoInterrupt()
 		return
 
 	hwnd := GetRobloxHWND()
