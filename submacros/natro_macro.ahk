@@ -31,6 +31,9 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "nowUnix.ahk"
 #Include "ErrorHandling.ahk"
 #Include "HashFile.ahk"
+;extension modules - features this fork adds on top of stock Natro, kept in
+;their own files so they stay legible against an upstream diff
+#Include "%A_ScriptDir%\extensions\boostlease.ahk"
 
 #Warn VarUnset, Off
 
@@ -920,6 +923,8 @@ nm_importConfig()
 		, "TimerX", 150
 		, "TimerY", 150
 		, "TimersOpen", 0)
+
+	config["Extensions"] := Map("PFieldBoosted", 0)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2686,12 +2691,14 @@ MainGui.Add("Button", "x5 y260 w65 h20 -Wrap Disabled vStartButton", " Start (" 
 MainGui.Add("Button", "x75 y260 w65 h20 -Wrap Disabled vPauseButton", " Pause (" PauseHotkey ")").OnEvent("Click", nm_PauseButton)
 MainGui.Add("Button", "x145 y260 w65 h20 -Wrap Disabled vStopButton", " Stop (" StopHotkey ")").OnEvent("Click", nm_StopButton)
 MainGui.Add("Button", "x215 y260 w60 h20 -Wrap vGitSyncButton", "Git Sync").OnEvent("Click", nm_GitSyncGUI)
-for k,v in ["PMondoGuid","PMondoGuidComplete","PFieldBoosted","PFieldGuidExtend","PFieldGuidExtendMins","PFieldBoostExtend","PPopStarExtend"]
+for k,v in ["PMondoGuid","PMondoGuidComplete","PFieldGuidExtend","PFieldGuidExtendMins","PFieldBoostExtend","PPopStarExtend"]
 	%v%:=0
+;a lease gets one renewal, and the flag that says so resets with the lease
+ext_boostLeaseRenewed := 0
 #include "*i %A_ScriptDir%\..\settings\personal.ahk"
 
 ; add tabs
-TabArr := ["Gather","Collect/Kill","Boost","Quests","Planters","Status","Settings","Misc","Credits"], (BuffDetectReset = 1) && TabArr.Push("Advanced")
+TabArr := ["Gather","Collect/Kill","Boost","Quests","Planters","Extensions","Status","Settings","Misc","Credits"], (BuffDetectReset = 1) && TabArr.Push("Advanced")
 (TabCtrl := MainGui.Add("Tab", "x0 y-1 w500 h240 -Wrap", TabArr)).OnEvent("Change", (*) => TabCtrl.Focus())
 SendMessage 0x1331, 0, 20, , TabCtrl ; set minimum tab width
 ; check for update
@@ -2917,6 +2924,20 @@ MainGui.Add("Button", "x340 y124 w150 h40 vNightAnnouncementGUI Disabled", "Nigh
 MainGui.Add("Button", "x340 y184 w150 h20 vReportBugButton Disabled", "Report Bugs").OnEvent("Click", nm_ReportBugButton)
 MainGui.Add("Button", "x340 y206 w150 h20 vMakeSuggestionButton Disabled", "Make Suggestions").OnEvent("Click", nm_MakeSuggestionButton)
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
+
+;EXTENSIONS TAB
+;------------------------
+;Everything this fork adds on top of stock Natro gathers here rather than
+;being scattered through the tabs it touches. Two reasons: the settings are
+;findable, and an upstream Natro diff stays readable because almost none of
+;it lands in the tabs upstream owns.
+TabCtrl.UseTab("Extensions")
+MainGui.SetFont("w700")
+MainGui.Add("GroupBox", "x10 y25 w480 h45", "Boost")
+MainGui.SetFont("s8 cDefault Norm", "Tahoma")
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
+	, "Glitter Extend")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x172 y45 w14 h16", "?").OnEvent("Click", ext_GlitterExtendHelp)
 
 ; STATUS TAB
 ; ------------------------
@@ -4491,6 +4512,25 @@ nm_TabMiscUnLock(){
 	MainGui["AutoMutatorButton"].Enabled := 1
 }
 
+;What Glitter Extend does, in the words of someone who has to decide whether
+;to tick it.
+ext_GlitterExtendHelp(*){
+	MsgBox
+	(
+	"A field boost lasts 15 minutes. Glitter grants 15 minutes of its own.
+
+	Pressed in the closing seconds of a boost, glitter carries it straight on
+	into a second quarter of an hour, so one booster covers 30 minutes of
+	gathering instead of 15. Pressed any earlier it overlaps the boost already
+	running and throws the overlap away.
+
+	The macro waits for the last 30 seconds while it is gathering, and for the
+	last minute when it is about to leave and convert - a trip it would not
+	finish before the boost ran out otherwise.
+
+	Needs a glitter hotbar key set in the Boost tab."
+	), "Glitter Extend", 0x40040
+}
 ;update config
 nm_saveConfig(GuiCtrl, *){
 	global
@@ -10828,7 +10868,13 @@ nm_BugrunInterrupt() {
 			|| (RileyQuestCheck && RileyQuestGatherInterruptCheck && RileyAll))
 			&& ((now-LastBugrunWerewolf)>floor(3600*multiplier))))
 }
-nm_GatherBoostInterrupt() => (now := nowUnix(), ((now-GatherFieldBoostedStart<900) || (now-LastGlitter<900) || nm_boostBypassCheck()))
+;The boost is whatever the lease says it is. Asking the two start times
+;separately, as this used to, let a glitter press open a window of its own
+;that outlived the boost it was meant to extend.
+nm_GatherBoostInterrupt() {
+	ext_boostLeaseExpire()
+	return (nowUnix() < ext_boostLeaseDeadline()) || nm_boostBypassCheck()
+}
 nm_MemoryMatchInterrupt() {
 	global MemoryMatchInterruptCheck
 	now := nowUnix()
@@ -16875,11 +16921,10 @@ nm_GoGather(){
 		while ((GetKeyState("F14") && (A_Index <= 3600)) || (A_Index = 1)) { ; timeout 3m
 			;use glitter
 			if (Mod(A_Index, 20) = 1) { ; every 1s
-				if(PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>525 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none" && fieldOverrideReason="None") { ;between 9 and 15 mins (-minus an extra 15 seconds)
-					Send "{" GlitterKey "}"
-					LastGlitter:=nowUnix()
-					IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
-				}
+				;standing in the field with nothing else to do, so wait for the last
+				;thirty seconds and carry the most boost forward
+				if ext_boostLeaseGatherWindow()
+					ext_boostLeaseRenew(FieldName, "Glitter Extend")
 				nm_autoFieldBoost(FieldName)
 				nm_fieldBoostGlitter()
 			}
@@ -16909,11 +16954,10 @@ nm_GoGather(){
 					} else if ((nowUnix()-LastMicroConverter)>10) {
 						interruptReason := "Backpack exceeds " .  FieldUntilPack . " percent"
 						;use glitter early if boosted and close to glitter time
-						if(PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>600 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none" && (fieldOverrideReason="None" || fieldOverrideReason="Boost")){ ;between 10 and 15 mins
-							Send "{" GlitterKey "}"
-							LastGlitter:=nowUnix()
-							IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
-						}
+						;about to walk off to convert, so take the wider window: the
+						;lease would run out during the trip otherwise
+						if ext_boostLeaseConvertWindow()
+							ext_boostLeaseRenew(FieldName, "Glitter Extend")
 						break
 					}
 				}
@@ -17370,7 +17414,9 @@ nm_convert(){
 			if (disconnectcheck()) {
 				return
 			}
-			if (PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>780 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {
+			;breaking off a convert to renew the lease only pays while there is
+			;still a lease to renew - the window is the last minute of it
+			if ext_boostLeaseConvertWindow() {
 				nm_setStatus("Interrupted", "Field Boosted")
 				return
 			}
@@ -17442,7 +17488,9 @@ nm_convert(){
 				if (disconnectcheck()) {
 					return
 				}
-				if ((PFieldBoosted = 1) && (nowUnix()-GatherFieldBoostedStart)>780 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {
+				;breaking off a convert to renew the lease only pays while there is
+				;still a lease to renew - the window is the last minute of it
+				if ext_boostLeaseConvertWindow() {
 					nm_setStatus("Interrupted", "Field Boosted")
 					return
 				}
