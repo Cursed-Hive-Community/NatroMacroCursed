@@ -12,7 +12,7 @@
 ;
 ;Launched by whichever macro the panel names as host:
 ;
-;	AutoHotkey64.exe /script submacros\Fleet.ahk <port> <secret> <term>
+;	AutoHotkey64.exe /script submacros\Fleet.ahk <port> <secret> <term> <row>
 ;
 ;The term is what keeps two coordinators from fighting. Every takeover starts a
 ;higher one, it rides on every heartbeat, and a macro obeys only the highest it
@@ -23,6 +23,7 @@
 #Include "%A_ScriptDir%\..\lib"
 #Include "Socket.ahk"
 #Include "FleetProtocol.ahk"
+#Include "FleetRoster.ahk"
 #Include "nowUnix.ahk"
 
 ;How often the coordinator says it is alive, and how long a silent macro has
@@ -38,6 +39,9 @@ FLEET_QUIET_SECS := 30
 port := (A_Args.Length >= 1) ? Integer(A_Args[1]) : 47600
 secret := (A_Args.Length >= 2) ? A_Args[2] : ""
 term := (A_Args.Length >= 3) ? Integer(A_Args[3]) : 1
+;the row that started us. It rides on every heartbeat so the macro the panel
+;named as host can tell whether it is being stood in for, and take its job back.
+hostRow := (A_Args.Length >= 4) ? Integer(A_Args[4]) : 0
 
 ;row number -> what we know about that macro. The row is assigned by the panel
 ;and is the one thing a macro carries locally, so it is the identity here too.
@@ -46,8 +50,14 @@ peers := Map()
 bySocket := Map()
 
 logPath := A_ScriptDir "\..\settings\fleet_log.txt"
+rosterPath := A_ScriptDir "\..\settings\fleet_roster.ini"
+;who each row is meant to be. Kept in one file rather than configured on
+;seven machines, and re-read when it changes so editing the panel does not
+;mean restarting the coordinator.
+roster := roster_Load(rosterPath)
+rosterStamp := fleet_RosterStamp()
 
-fleet_Log("coordinator starting, port " port ", term " term)
+fleet_Log("coordinator starting, port " port ", term " term ", row " hostRow)
 if !(listener := sock_Listen(port, fleet_OnSocket)) {
 	fleet_Log("could not listen on port " port " - is another coordinator already up?")
 	ExitApp 1
@@ -89,10 +99,15 @@ fleet_OnLine(s, line) {
 	}
 }
 
-;A macro announcing itself. The secret is checked here and nowhere else: a
-;connection that never says HELLO is never in the roster, so it can do nothing.
+;A macro announcing itself. Two things are checked, and nowhere else: the
+;secret, and that the row it claims actually exists in the roster. A
+;connection that never gets past this is in no table and can do nothing.
+;
+;What the macro says about itself beyond its row number is ignored. Name and
+;role come from the roster file, so the fleet cannot end up with two versions
+;of who row 2 is depending on which machine was edited last.
 fleet_OnHello(s, frame) {
-	global peers, bySocket, secret, term
+	global peers, bySocket, secret, term, hostRow, roster
 	local row, name, previous
 
 	if (fleet_Field(frame, "secret") != secret) {
@@ -102,9 +117,9 @@ fleet_OnHello(s, frame) {
 		return
 	}
 	row := Integer(fleet_Field(frame, "row", 0))
-	if (row <= 0) {
-		fleet_Log("rejected a connection: no row number")
-		sock_SendLine(s, fleet_Frame("BYE", Map("why", "no row")))
+	if ((row <= 0) || !roster.Has(row)) {
+		fleet_Log("rejected a connection: row " row " is not in the roster")
+		sock_SendLine(s, fleet_Frame("BYE", Map("why", "unknown row")))
 		sock_Close(s)
 		return
 	}
@@ -114,9 +129,10 @@ fleet_OnHello(s, frame) {
 		bySocket.Delete(previous)
 		sock_Close(previous)
 	}
-	name := fleet_Field(frame, "name", "row " row)
+	name := roster[row].name
 	peers[row] := { row: row, name: name
-		, role: fleet_Field(frame, "role", "unknown")
+		, role: roster[row].role
+		, user: roster[row].user, owner: roster[row].owner
 		, machine: fleet_Field(frame, "machine", "")
 		, socket: s, state: "online", lastSeen: nowUnix()
 		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: 0 }
@@ -124,7 +140,7 @@ fleet_OnHello(s, frame) {
 	fleet_Log("row " row " (" name ") joined")
 	;tell the newcomer who is in charge before anything else, so it knows which
 	;term to obey, then bring everyone's picture up to date
-	sock_SendLine(s, fleet_Frame("HEARTBEAT", Map("term", term, "at", nowUnix())))
+	sock_SendLine(s, fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	fleet_Broadcast()
 }
 
@@ -182,9 +198,16 @@ fleet_OnClose(s) {
 
 ;Say we are alive, and write off anyone who has not.
 fleet_Beat() {
-	global peers, term
-	local changed := 0, p
+	global peers, term, hostRow, roster, rosterPath, rosterStamp
+	local changed := 0, p, stamp
 
+	;pick up an edited roster without a restart
+	if ((stamp := fleet_RosterStamp()) != rosterStamp) {
+		roster := roster_Load(rosterPath), rosterStamp := stamp
+		fleet_Log("roster reloaded, " roster.Count " rows")
+		fleet_ApplyRoster()
+		changed := 1
+	}
 	for _, p in peers {
 		if ((p.state = "online") && ((nowUnix() - p.lastSeen) > FLEET_QUIET_SECS)) {
 			p.state := "stale"
@@ -192,7 +215,7 @@ fleet_Beat() {
 			fleet_Log("row " p.row " (" p.name ") went quiet")
 		}
 	}
-	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "at", nowUnix())))
+	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	if changed
 		fleet_Broadcast()
 }
@@ -207,7 +230,8 @@ fleet_Broadcast() {
 
 	for _, p in peers {
 		f := Map("row", p.row, "name", p.name, "role", p.role, "state", p.state
-			, "machine", p.machine, "server", p.server, "field", p.field
+			, "machine", p.machine, "user", p.user, "owner", p.owner
+		, "server", p.server, "field", p.field
 			, "guiding", p.guidingField, "until", p.guidingUntil, "charge", p.charge)
 		fleet_Send(fleet_Frame("ROSTER", f))
 	}
@@ -221,6 +245,30 @@ fleet_Send(line) {
 	for _, p in peers
 		if (p.socket)
 			sock_SendLine(p.socket, line)
+}
+
+;The roster file as it stands, so a change can be noticed. Size and time
+;together catch an edit that happens to keep the length the same.
+fleet_RosterStamp() {
+	global rosterPath
+
+	if !FileExist(rosterPath)
+		return ""
+	return FileGetTime(rosterPath, "M") "/" FileGetSize(rosterPath)
+}
+
+;Carry an edited roster into the peers already connected, so a renamed or
+;re-roled account does not have to reconnect for the change to be seen.
+fleet_ApplyRoster() {
+	global peers, roster
+	local row, p
+
+	for row, p in peers {
+		if !roster.Has(row)
+			continue
+		p.name := roster[row].name, p.role := roster[row].role
+		p.user := roster[row].user, p.owner := roster[row].owner
+	}
 }
 
 ;A plain text log beside the macro's own settings. Debugging a fleet by watching

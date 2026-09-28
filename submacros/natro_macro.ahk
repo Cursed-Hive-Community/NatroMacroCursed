@@ -31,10 +31,14 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "nowUnix.ahk"
 #Include "ErrorHandling.ahk"
 #Include "HashFile.ahk"
+#Include "Socket.ahk"
+#Include "FleetProtocol.ahk"
+#Include "FleetRoster.ahk"
 ;extension modules - features this fork adds on top of stock Natro, kept in
 ;their own files so they stay legible against an upstream diff
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
 #Include "%A_ScriptDir%\extensions\interrupts.ahk"
+#Include "%A_ScriptDir%\extensions\fleet.ahk"
 
 #Warn VarUnset, Off
 
@@ -933,6 +937,16 @@ nm_importConfig()
 		, "PreGlitterCheck", 0
 		, "StickerStackInterruptCheck", 0
 		, "MondoInterruptCheck", 0)
+
+	config["Fleet"] := Map("FleetCheck", 0
+		, "FleetRow", 0
+		, "FleetHostRow", 1
+		, "FleetPort", 47600
+		, "FleetSecret", ""
+		, "FleetAddress", ""
+		, "FleetGraceSecs", 45
+		, "FleetServerMain", ""
+		, "FleetServerReserve", "")
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2706,6 +2720,11 @@ ext_boostLeaseRenewed := 0
 ;sticker stack backoffs are deliberately not persisted - fifteen seconds and
 ;one minute mean nothing across a restart
 ext_stickerStackFailedAt := 0, ext_stickerStackUsedAt := 0
+;the fleet as this macro currently sees it. All of it is rebuilt from the
+;coordinator on connect, so none of it is saved.
+ext_fleetSock := 0, ext_fleetTerm := 0, ext_fleetCoordRow := 0
+ext_fleetCoordSeen := 0, ext_fleetBackoff := 0, ext_fleetTrying := ""
+ext_fleetPeers := Map()
 #include "*i %A_ScriptDir%\..\settings\personal.ahk"
 
 ; add tabs
@@ -2946,6 +2965,7 @@ TabCtrl.UseTab("Extensions")
 MainGui.SetFont("w700")
 MainGui.Add("GroupBox", "x10 y25 w235 h93", "Boost")
 MainGui.Add("GroupBox", "x255 y25 w235 h93", "Interrupts")
+MainGui.Add("GroupBox", "x10 y125 w480 h50", "Fleet")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
 	, "Glitter Extend")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
@@ -2965,6 +2985,11 @@ MainGui.Add("Button", "x427 y68 w14 h16", "?").OnEvent("Click", ext_StickerStack
 (GuiCtrl := MainGui.Add("CheckBox", "x265 y91 w160 h18 vMondoInterruptCheck Checked" MondoInterruptCheck
 	, "Mondo")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x427 y91 w14 h16", "?").OnEvent("Click", ext_MondoInterruptHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y145 w190 h18 vFleetCheck Checked" FleetCheck
+	, "Talk to the other macros")).Section := "Fleet", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x212 y145 w14 h16", "?").OnEvent("Click", ext_FleetHelp)
+MainGui.Add("Button", "x380 y143 w100 h20", "Fleet panel").OnEvent("Click", ext_FleetGUI)
+MainGui.Add("Text", "x232 y147 w140 vFleetStatusText +BackgroundTrans", "")
 
 ; STATUS TAB
 ; ------------------------
@@ -3692,6 +3717,12 @@ if (BuffDetectReset = 1)
 	nm_AdvancedGUI()
 SetCursor(0)
 SetLoadingProgress(100)
+
+;join the fleet, if this macro belongs to one. It happens here rather than at
+;Start, because the panel is worth watching while the macro sits idle - and a
+;macro that is paused is still a seat in the server.
+ext_fleetStart()
+SetTimer ext_fleetTabStatus, 2000
 
 ;unlock tabs
 nm_LockTabs(0)
@@ -4640,6 +4671,26 @@ ext_MondoInterruptHelp(*){
 	Needs Mondo set to Buff in the Collect tab. Killing Mondo is a different
 	job and Natro already handles it."
 	), "Mondo Interrupt", 0x40040
+}
+;What joining a fleet buys, for someone deciding whether to tick it.
+ext_FleetHelp(*){
+	MsgBox
+	(
+	"Several macros, one plan.
+
+	Each macro reports what it sees - which field it is on, which server it
+	is in - to a coordinator, and receives the fleet's picture back. On its
+	own that is only a shared view; it is what later lets alts be scheduled
+	around each other.
+
+	One macro hosts the coordinator. If it goes down another takes over and
+	hands the job back when it returns, so no single macro can stop the
+	rest - and a macro that loses the fleet entirely simply carries on
+	farming alone.
+
+	Open the Fleet panel to set the row numbers, the shared secret and the
+	server links."
+	), "Fleet", 0x40040
 }
 ;update config
 nm_saveConfig(GuiCtrl, *){
