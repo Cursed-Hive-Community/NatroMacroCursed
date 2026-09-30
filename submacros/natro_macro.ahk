@@ -2725,6 +2725,10 @@ ext_stickerStackFailedAt := 0, ext_stickerStackUsedAt := 0
 ext_fleetSock := 0, ext_fleetTerm := 0, ext_fleetCoordRow := 0
 ext_fleetCoordSeen := 0, ext_fleetBackoff := 0, ext_fleetTrying := ""
 ext_fleetPeers := Map()
+;where the last beacon came from, and the socket that listens for them.
+;Discovered rather than configured, which is the point: an address typed in
+;is wrong as soon as a router hands out a new lease.
+ext_fleetFoundAt := "", ext_fleetBeaconSock := 0, ext_fleetTryAt := 0
 #include "*i %A_ScriptDir%\..\settings\personal.ahk"
 
 ; add tabs

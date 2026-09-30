@@ -35,6 +35,9 @@
 ;the function fleet_Beat below, and assigning to it overwrites the function.
 FLEET_BEAT_SECS := 5
 FLEET_QUIET_SECS := 30
+;the beacon goes out more often than the heartbeat, because it is what a
+;macro starting up waits on before it can do anything at all
+FLEET_BEACON_SECS := 2
 
 port := (A_Args.Length >= 1) ? Integer(A_Args[1]) : 47600
 secret := (A_Args.Length >= 2) ? A_Args[2] : ""
@@ -63,7 +66,18 @@ if !(listener := sock_Listen(port, fleet_OnSocket)) {
 	ExitApp 1
 }
 fleet_Log("listening")
+
+;The beacon. A macro that had to be told an address would be wrong the moment
+;the router hands out a new lease, so instead we shout where we are onto the
+;local network and let the macros come to us. Bound to port zero - an
+;ephemeral one - so it never competes with the macros for the listening port.
+beacon := sock_UdpListen(0, (*) => 0)
+if !beacon
+	fleet_Log("no UDP socket - macros will have to be given an address by hand")
+
 SetTimer fleet_Beat, FLEET_BEAT_SECS * 1000
+SetTimer fleet_Beacon, FLEET_BEACON_SECS * 1000
+fleet_Beacon()
 return
 
 ;Everything the socket layer has to say about every connection.
@@ -269,6 +283,19 @@ fleet_ApplyRoster() {
 		p.name := roster[row].name, p.role := roster[row].role
 		p.user := roster[row].user, p.owner := roster[row].owner
 	}
+}
+
+;Shout where we are. The fingerprint says which fleet this is without putting
+;the secret on the wire; the port says where to knock. 255.255.255.255 reaches
+;every machine on this subnet, which is as far as a fleet ever spans.
+fleet_Beacon() {
+	global beacon, port, term, hostRow, secret
+
+	if !beacon
+		return 0
+	return sock_UdpSend(beacon, "255.255.255.255", port + 1
+		, fleet_Frame("FLEET", Map("port", port, "term", term, "row", hostRow
+			, "id", fleet_Fingerprint(secret))))
 }
 
 ;A plain text log beside the macro's own settings. Debugging a fleet by watching
