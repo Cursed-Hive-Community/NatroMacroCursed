@@ -71,3 +71,23 @@ fleet_Parse(line) {
 fleet_Field(frame, name, default := "") {
 	return (IsObject(frame) && frame.fields.Has(name)) ? frame.fields[name] : default
 }
+
+;A short, stable fingerprint of the shared secret.
+;
+;The discovery beacon has to say which fleet it belongs to, and it goes out to
+;every machine on the network in clear - so it carries this rather than the
+;secret itself. It is not a security measure and does not pretend to be: the
+;secret is still checked properly over TCP when a macro says HELLO. This only
+;stops two fleets sharing a network from trying to join each other.
+;
+;FNV-1a, because it is four lines and the only property needed is that the same
+;secret always gives the same answer.
+fleet_Fingerprint(secret) {
+	local h := 2166136261
+
+	Loop Parse secret {
+		h := (h ^ (Ord(A_LoopField) & 0xFF)) & 0xFFFFFFFF
+		h := (h * 16777619) & 0xFFFFFFFF
+	}
+	return Format("{:08x}", h)
+}
