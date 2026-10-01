@@ -946,7 +946,8 @@ nm_importConfig()
 		, "FleetAddress", ""
 		, "FleetGraceSecs", 45
 		, "FleetServerMain", ""
-		, "FleetServerReserve", "")
+		, "FleetServerReserve", ""
+		, "FleetCapacity", 6)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2729,6 +2730,8 @@ ext_fleetPeers := Map()
 ;Discovered rather than configured, which is the point: an address typed in
 ;is wrong as soon as a router hands out a new lease.
 ext_fleetFoundAt := "", ext_fleetBeaconSock := 0, ext_fleetTryAt := 0
+;what the fleet has been doing, newest first, as the coordinator reports it
+ext_fleetEvents := []
 #include "*i %A_ScriptDir%\..\settings\personal.ahk"
 
 ; add tabs
@@ -2969,7 +2972,7 @@ TabCtrl.UseTab("Extensions")
 MainGui.SetFont("w700")
 MainGui.Add("GroupBox", "x10 y25 w235 h93", "Boost")
 MainGui.Add("GroupBox", "x255 y25 w235 h93", "Interrupts")
-MainGui.Add("GroupBox", "x10 y125 w480 h50", "Fleet")
+MainGui.Add("GroupBox", "x10 y125 w480 h72", "Fleet")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
 	, "Glitter Extend")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
@@ -2989,11 +2992,14 @@ MainGui.Add("Button", "x427 y68 w14 h16", "?").OnEvent("Click", ext_StickerStack
 (GuiCtrl := MainGui.Add("CheckBox", "x265 y91 w160 h18 vMondoInterruptCheck Checked" MondoInterruptCheck
 	, "Mondo")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x427 y91 w14 h16", "?").OnEvent("Click", ext_MondoInterruptHelp)
-(GuiCtrl := MainGui.Add("CheckBox", "x20 y145 w190 h18 vFleetCheck Checked" FleetCheck
+;Two live lines on the main window, so the ordinary case is to open nothing
+;at all. The panel is for when these say there is something to look at.
+MainGui.Add("Text", "x20 y142 w350 vFleetStripSeats +BackgroundTrans", "")
+MainGui.Add("Text", "x20 y158 w350 vFleetStripNext +BackgroundTrans", "")
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y177 w180 h18 vFleetCheck Checked" FleetCheck
 	, "Talk to the other macros")).Section := "Fleet", GuiCtrl.OnEvent("Click", nm_saveConfig)
-MainGui.Add("Button", "x212 y145 w14 h16", "?").OnEvent("Click", ext_FleetHelp)
-MainGui.Add("Button", "x380 y143 w100 h20", "Fleet panel").OnEvent("Click", ext_FleetGUI)
-MainGui.Add("Text", "x232 y147 w140 vFleetStatusText +BackgroundTrans", "")
+MainGui.Add("Button", "x202 y177 w14 h16", "?").OnEvent("Click", ext_FleetHelp)
+MainGui.Add("Button", "x380 y174 w100 h22", "Fleet panel").OnEvent("Click", ext_FleetGUI)
 
 ; STATUS TAB
 ; ------------------------

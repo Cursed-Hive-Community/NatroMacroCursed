@@ -154,7 +154,7 @@ fleet_OnHello(s, frame) {
 		, socket: s, state: "online", lastSeen: nowUnix()
 		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: 0 }
 	bySocket[s] := row
-	fleet_Log("row " row " (" name ") joined")
+	fleet_Event("row " row " (" name ") joined")
 	;tell the newcomer who is in charge before anything else, so it knows which
 	;term to obey, then bring everyone's picture up to date
 	sock_SendLine(s, fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
@@ -209,7 +209,7 @@ fleet_OnClose(s) {
 		return
 	peers[row].state := "offline", peers[row].socket := 0
 	bySocket.Delete(s)
-	fleet_Log("row " row " (" peers[row].name ") left")
+	fleet_Event("row " row " (" peers[row].name ") left")
 	fleet_Broadcast()
 }
 
@@ -221,7 +221,7 @@ fleet_Beat() {
 	;pick up an edited roster without a restart
 	if ((stamp := fleet_RosterStamp()) != rosterStamp) {
 		roster := roster_Load(rosterPath), rosterStamp := stamp
-		fleet_Log("roster reloaded, " roster.Count " rows")
+		fleet_Event("roster reloaded, " roster.Count " rows")
 		fleet_ApplyRoster()
 		changed := 1
 	}
@@ -229,7 +229,7 @@ fleet_Beat() {
 		if ((p.state = "online") && ((nowUnix() - p.lastSeen) > FLEET_QUIET_SECS)) {
 			p.state := "stale"
 			changed := 1
-			fleet_Log("row " p.row " (" p.name ") went quiet")
+			fleet_Event("row " p.row " (" p.name ") went quiet")
 		}
 	}
 	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
@@ -299,6 +299,14 @@ fleet_Beacon() {
 	return sock_UdpSend(beacon, "255.255.255.255", port + 1
 		, fleet_Frame("FLEET", Map("port", port, "term", term, "row", hostRow
 			, "id", fleet_Fingerprint(secret))))
+}
+
+;Something worth a line in everybody's view, not only in the log file here.
+;The macros keep their own copy, so the panel can show what the fleet has
+;been doing without reading a file off somebody else's machine.
+fleet_Event(text) {
+	fleet_Log(text)
+	fleet_Send(fleet_Frame("EVENT", Map("at", nowUnix(), "text", text)))
 }
 
 ;A plain text log beside the macro's own settings. Debugging a fleet by watching
