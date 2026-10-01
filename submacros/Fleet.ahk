@@ -12,7 +12,7 @@
 ;
 ;Launched by whichever macro the panel names as host:
 ;
-;	AutoHotkey64.exe /script submacros\Fleet.ahk <port> <secret> <term> <row>
+;	AutoHotkey64.exe /script submacros\Fleet.ahk <port> <secret> <term> <row> [roster]
 ;
 ;The term is what keeps two coordinators from fighting. Every takeover starts a
 ;higher one, it rides on every heartbeat, and a macro obeys only the highest it
@@ -53,7 +53,10 @@ peers := Map()
 bySocket := Map()
 
 logPath := A_ScriptDir "\..\settings\fleet_log.txt"
-rosterPath := A_ScriptDir "\..\settings\fleet_roster.ini"
+;the roster file, overridable so a self-test can bring its own and never
+;disturb the real one
+rosterPath := (A_Args.Length >= 5) ? A_Args[5]
+	: A_ScriptDir "\..\settings\fleet_roster.ini"
 ;who each row is meant to be. Kept in one file rather than configured on
 ;seven machines, and re-read when it changes so editing the panel does not
 ;mean restarting the coordinator.
