@@ -34,6 +34,9 @@ probes := ["HELLO fleet"
 	, long]
 
 Note("script hwnd " Format("0x{:X}", A_ScriptHwnd) ", message " Format("0x{:X}", SOCK_MSG))
+;watch the dispatcher itself, so a failure tells which events Windows
+;delivered and not merely which ones reached a callback
+sock_trace := OnEvent
 
 listener := sock_Listen(PORT, OnServer)
 Note("sock_Listen(" PORT ") -> " (listener ? listener : "0") LastError(listener))
@@ -76,7 +79,8 @@ OnDatagram(s, event, data, from) {
 OnServer(s, event, data) {
 	Note("server: " event (StrLen(data) ? " (" StrLen(data) " chars)" : ""))
 	if (event = "line")
-		sock_SendLine(s, data)
+		Note("server: echo of " StrLen(data) " chars -> "
+			(sock_SendLine(s, data) ? "queued" : "refused" LastError(0)))
 }
 
 ;The connecting side.
@@ -166,6 +170,14 @@ LastError(result) {
 	if result
 		return ""
 	return (e := DllCall("ws2_32\WSAGetLastError", "Int")) ? "  (Winsock error " e ")" : ""
+}
+
+;Every event the dispatcher saw, named rather than numbered.
+OnEvent(s, event, err) {
+	static names := Map(1, "READ", 2, "WRITE", 8, "ACCEPT", 16, "CONNECT", 32, "CLOSE")
+
+	Note("dispatch: socket " s " " (names.Has(event) ? names[event] : event)
+		. (err ? " error " err : ""))
 }
 
 Note(text) {
