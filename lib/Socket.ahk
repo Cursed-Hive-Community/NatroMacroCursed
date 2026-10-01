@@ -41,6 +41,12 @@ SOCK_EWOULDBLOCK := 10035
 ;sending that the socket would not take.
 sock_state := Map()
 
+;An optional eye on the dispatcher. Unset in normal use; a self-test sets it
+;to see which events Windows actually delivered, which is the one thing a
+;caller cannot work out from outside - and the thing that would have found
+;the dropped-message bug above in a minute rather than a day.
+sock_trace := ""
+
 ;Winsock has to be started once per process, and the dispatcher hooked up with
 ;it. Repeat calls are free.
 sock_Startup() {
@@ -52,7 +58,12 @@ sock_Startup() {
 	data := Buffer(408, 0)
 	if (DllCall("ws2_32\WSAStartup", "UShort", 0x0202, "Ptr", data, "Int") != 0)
 		return 0
-	OnMessage(SOCK_MSG, sock_Dispatch)
+	;255 is the thread limit, and leaving it at its default of 1 is the subtle
+	;way to lose a socket. With one thread allowed, a message that arrives while
+	;the handler is still running is DISCARDED, not queued - so a busy moment
+	;silently drops the notification that data is waiting, and that socket never
+	;hears about it again. Natro's own handlers all pass 255 for this reason.
+	OnMessage(SOCK_MSG, sock_Dispatch, 255)
 	done := 1
 	return 1
 }
@@ -187,13 +198,20 @@ sock_Close(s) {
 ;Everything Windows has to say about every socket arrives here. wParam is the
 ;socket; lParam packs the event in its low word and any error in its high.
 sock_Dispatch(wParam, lParam, *) {
-	global sock_state
+	;Critical for the other half of the same problem. Allowing 255 threads stops
+	;messages being dropped, but it also lets one dispatch interrupt another -
+	;and two dispatches sharing one socket's buffers would duplicate or lose a
+	;line between them. This buffers the interruption instead of taking it.
+	Critical
+	global sock_state, sock_trace
 	local s := wParam, event := lParam & 0xFFFF, err := (lParam >> 16) & 0xFFFF
 	local st, peer
 
 	if !sock_state.Has(s)
 		return 0
 	st := sock_state[s]
+	if sock_trace
+		sock_trace.Call(s, event, err)
 
 	if (event = SOCK_FD_ACCEPT) {
 		if ((peer := DllCall("ws2_32\accept", "Ptr", s, "Ptr", 0, "Ptr", 0, "Ptr")) = -1)
