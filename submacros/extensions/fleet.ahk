@@ -69,11 +69,15 @@ ext_fleetDiscover() {
 ;fingerprint and is ignored - and since the beacon is broadcast in clear, it
 ;carries that fingerprint rather than the secret itself.
 ext_fleetOnBeacon(s, event, data, from) {
-	global FleetSecret, ext_fleetFoundAt, ext_fleetSock
+	global FleetSecret, ext_fleetFoundAt, ext_fleetSock, ext_fleetOpen
 	local frame := fleet_Parse(data)
 
 	if (!frame || (frame.verb != "FLEET"))
 		return
+	;an open fleet is worth noting even when the fingerprint says it is not
+	;ours - that is exactly the one a macro looking to be bound is hunting for
+	if (fleet_Field(frame, "open") = "1")
+		ext_fleetOpen[from] := frame.fields
 	if (fleet_Field(frame, "id") != fleet_Fingerprint(FleetSecret))
 		return
 	ext_fleetFoundAt := from
@@ -81,6 +85,121 @@ ext_fleetOnBeacon(s, event, data, from) {
 	;it rather than sitting out whatever backoff happens to be running
 	if !ext_fleetSock
 		SetTimer ext_fleetConnect, -200
+}
+
+;--- binding ----------------------------------------------------------------
+;
+;Joining a fleet is a two-sided gesture, like pairing a phone: the host opens
+;its door for a couple of minutes, and a macro walks in. Nothing is typed on
+;both machines and nothing has to match, because the row number and the
+;secret are handed over rather than agreed in advance.
+;
+;The macro stores what it is given and uses it for every reconnection after,
+;so binding happens exactly once per machine.
+
+;Ask the coordinator to open its door. Only the host's own macro will be
+;obeyed, which is checked at the other end.
+ext_fleetOpenDoor(secs := 120) {
+	global ext_fleetSock
+
+	if !ext_fleetSock
+		return 0
+	return sock_SendLine(ext_fleetSock, fleet_Frame("OPEN", Map("secs", secs)))
+}
+
+;The open fleets heard from in the last few seconds. A beacon goes out every
+;two, so anything older than that has stopped offering.
+ext_fleetOpenFleets() {
+	global ext_fleetOpen
+	local addr, f, out := []
+
+	for addr, f in ext_fleetOpen
+		out.Push({ addr: addr
+			, port: Integer(f.Has("port") ? f["port"] : 0)
+			, host: f.Has("host") ? f["host"] : addr
+			, size: f.Has("size") ? f["size"] : 0 })
+	return out
+}
+
+;Knock on an open door, saying what this account is. The answer carries the
+;row and the secret, and that is the whole of the configuration.
+ext_fleetBind(addr, port, name, role, user) {
+	global ext_fleetBindSock, ext_fleetBindWith
+
+	if ext_fleetBindSock
+		sock_Close(ext_fleetBindSock), ext_fleetBindSock := 0
+	ext_fleetBindWith := Map("name", name, "role", role, "user", user
+		, "machine", A_ComputerName)
+	ext_fleetBindSock := sock_Connect(addr, port, ext_fleetOnBindSocket)
+	return ext_fleetBindSock ? 1 : 0
+}
+
+ext_fleetOnBindSocket(s, event, data) {
+	global ext_fleetBindSock, ext_fleetBindWith, ext_fleetBindResult
+	local frame
+
+	if (event = "connect") {
+		if (data != "") {
+			ext_fleetBindResult := "Could not reach that fleet."
+			return
+		}
+		sock_SendLine(s, fleet_Frame("BIND", ext_fleetBindWith))
+		return
+	}
+	if (event = "close") {
+		ext_fleetBindSock := 0
+		if (ext_fleetBindResult = "")
+			ext_fleetBindResult := "The fleet closed the connection."
+		return
+	}
+	if (event != "line")
+		return
+	if !(frame := fleet_Parse(data))
+		return
+	if (frame.verb = "BOUND")
+		ext_fleetBound(Integer(fleet_Field(frame, "row", 0)), fleet_Field(frame, "secret"))
+	else if (frame.verb = "BYE")
+		ext_fleetBindResult := fleet_Field(frame, "why", "refused")
+}
+
+;We are in. Keep the row and the secret, and join properly - the binding
+;socket has done its one job and is dropped.
+ext_fleetBound(row, newSecret) {
+	global ext_fleetBindSock, ext_fleetBindResult, FleetRow
+
+	if (row <= 0)
+		return 0
+	ext_FleetSave("FleetRow", row)
+	ext_FleetSave("FleetHostRow", 0)
+	if (newSecret != "")
+		ext_FleetSave("FleetSecret", newSecret)
+	ext_FleetSave("FleetCheck", 1)
+	if ext_fleetBindSock
+		sock_Close(ext_fleetBindSock), ext_fleetBindSock := 0
+	ext_fleetStop()
+	ext_fleetStart()
+	ext_fleetBindResult := "ok"
+	return 1
+}
+
+;Start a fleet here instead of joining one. The same work the coordinator
+;does for a newcomer, done locally: invent a secret, write ourselves into an
+;empty roster, and take row one.
+ext_fleetStartFleet(name, role, user) {
+	global FleetSecret
+	local path := A_WorkingDir "\settings\fleet_roster.ini", rows
+
+	rows := roster_Load(path)
+	rows[1] := { row: 1, name: name, role: role, user: user, owner: 1 }
+	roster_Save(path, rows)
+	if (FleetSecret = "")
+		ext_FleetSave("FleetSecret", fleet_NewSecret())
+	ext_FleetSave("FleetRow", 1)
+	ext_FleetSave("FleetHostRow", 1)
+	ext_FleetSave("FleetCheck", 1)
+	ext_fleetStop()
+	ext_fleetStart()
+	return 1
 }
 
 ;Everything the socket layer reports about our one connection.
@@ -235,11 +354,11 @@ ext_fleetTakeOver(why) {
 ext_fleetStart() {
 	global FleetCheck, FleetRow, FleetHostRow
 
+	;listening costs nothing and an unbound macro needs it most: it is how the
+	;join dialog finds a fleet to join in the first place
+	ext_fleetDiscover()
 	if (!FleetCheck || (FleetRow <= 0))
 		return 0
-	;start listening before anything else, so a coordinator that is already up
-	;is found on its very next beacon
-	ext_fleetDiscover()
 	;the designated host starts a coordinator without waiting to discover there
 	;is none - it is the expected state at the beginning of a session
 	if (FleetRow = FleetHostRow)
@@ -483,13 +602,15 @@ ext_FleetCell(fields, name) {
 
 ;--- settings, in a window of their own --------------------------------------
 
-;Three steps and an Advanced button. The hard part of setting a fleet up was
-;never the values, it was knowing which of them differ from machine to machine -
-;so step one is the single question each macro answers for itself, and the
-;window says as much rather than leaving it to be found out.
+;Three sections, and the first one has no fields at all any more.
+;
+;It used to ask you to invent row numbers, type them into a table, then go to
+;every other machine and pick which row it was and retype the secret. That is
+;building the directory before anything can talk. Binding turns it round: the
+;two sides find each other, and the table fills itself in as macros arrive.
 ext_FleetSetupGUI(*) {
 	global FleetSetupGui, FleetRoster, FleetRosterPath
-	global FleetRow, FleetHostRow, FleetSecret, FleetServerMain, FleetServerReserve
+	global FleetServerMain, FleetServerReserve
 	local GuiCtrl
 
 	if (IsSet(FleetSetupGui) && IsObject(FleetSetupGui)) {
@@ -502,60 +623,327 @@ ext_FleetSetupGUI(*) {
 	FleetSetupGui := Gui("+AlwaysOnTop +Border", "Fleet - settings")
 	FleetSetupGui.OnEvent("Close", ext_FleetSetupClose)
 	FleetSetupGui.SetFont("s8 cDefault Bold", "Tahoma")
-	FleetSetupGui.Add("GroupBox", "x8 y4 w584 h64", "1 - which account is this macro?")
-	FleetSetupGui.Add("GroupBox", "x8 y72 w584 h88", "2 - the same on every macro")
-	FleetSetupGui.Add("GroupBox", "x8 y168 w584 h150", "3 - the accounts")
+	FleetSetupGui.Add("GroupBox", "x8 y4 w584 h68", "1 - this macro")
+	FleetSetupGui.Add("GroupBox", "x8 y76 w584 h66", "2 - the servers, the same on every macro")
+	FleetSetupGui.Add("GroupBox", "x8 y146 w584 h150", "3 - the accounts")
 	FleetSetupGui.SetFont("Norm")
 
-	FleetSetupGui.Add("Text", "x18 y25 w86", "This macro is:")
-	FleetSetupGui.Add("DropDownList", "x108 y22 w250 vFleetWhoAmI").OnEvent("Change", ext_FleetWhoChanged)
-	FleetSetupGui.Add("CheckBox", "x372 y24 w210 vFleetIsHost Checked" ((FleetHostRow > 0) && (FleetHostRow = FleetRow))
-		, "This macro hosts the coordinator").OnEvent("Click", ext_FleetHostChanged)
-	FleetSetupGui.SetFont("c808080")
-	FleetSetupGui.Add("Text", "x18 y46 w564"
-		, "Every macro answers this one differently. Everything below is identical on all of them.")
-	FleetSetupGui.SetFont("cDefault")
+	FleetSetupGui.Add("Text", "x18 y22 w420 h36 vFleetWho", "")
+	FleetSetupGui.Add("Button", "x446 y20 w136 h22 vFleetAct1", "").OnEvent("Click", ext_FleetAct1)
+	FleetSetupGui.Add("Button", "x446 y44 w136 h22 vFleetAct2", "").OnEvent("Click", ext_FleetAct2)
 
-	FleetSetupGui.Add("Text", "x18 y93 w86", "Fleet secret:")
-	(GuiCtrl := FleetSetupGui.Add("Edit", "x108 y91 w170 h18 vFleetSecret", FleetSecret)).Section := "Fleet"
+	FleetSetupGui.Add("Text", "x18 y96 w60", "Main:")
+	(GuiCtrl := FleetSetupGui.Add("Edit", "x82 y94 w500 h18 vFleetServerMain", FleetServerMain)).Section := "Fleet"
 	GuiCtrl.OnEvent("Change", nm_saveConfig)
-	FleetSetupGui.SetFont("c808080")
-	FleetSetupGui.Add("Text", "x286 y93 w300", "Any word, as long as it matches on every macro.")
-	FleetSetupGui.SetFont("cDefault")
-	FleetSetupGui.Add("Text", "x18 y117 w86", "Main server:")
-	(GuiCtrl := FleetSetupGui.Add("Edit", "x108 y115 w474 h18 vFleetServerMain", FleetServerMain)).Section := "Fleet"
-	GuiCtrl.OnEvent("Change", nm_saveConfig)
-	FleetSetupGui.Add("Text", "x18 y139 w86", "Reserve:")
-	(GuiCtrl := FleetSetupGui.Add("Edit", "x108 y137 w474 h18 vFleetServerReserve", FleetServerReserve)).Section := "Fleet"
+	FleetSetupGui.Add("Text", "x18 y118 w60", "Reserve:")
+	(GuiCtrl := FleetSetupGui.Add("Edit", "x82 y116 w500 h18 vFleetServerReserve", FleetServerReserve)).Section := "Fleet"
 	GuiCtrl.OnEvent("Change", nm_saveConfig)
 
-	FleetSetupGui.Add("ListView", "x16 y186 w340 h122 -Multi vFleetRosterList"
-		, ["Row", "Name", "Role", "Roblox user", "Owner"])
+	;no row column: the numbers are assigned at binding and nobody needs to see
+	;them. They are still in Advanced for the day something has to be matched up
+	;against a log.
+	FleetSetupGui.Add("ListView", "x16 y164 w340 h122 -Multi vFleetRosterList"
+		, ["Name", "Role", "Roblox user", "Owner"])
 	FleetSetupGui["FleetRosterList"].OnEvent("ItemSelect", ext_FleetRosterSelect)
-	FleetSetupGui.Add("Text", "x364 y188 w36", "Row:")
-	FleetSetupGui.Add("Edit", "x402 y186 w40 h18 Number vFleetEditRow")
-	FleetSetupGui.Add("Text", "x450 y188 w32", "Name:")
-	FleetSetupGui.Add("Edit", "x484 y186 w98 h18 vFleetEditName")
-	FleetSetupGui.Add("Text", "x364 y212 w36", "Role:")
-	FleetSetupGui.Add("DropDownList", "x402 y210 w84 vFleetEditRole", roster_Roles())
-	FleetSetupGui.Add("Text", "x364 y236 w36", "User:")
-	FleetSetupGui.Add("Edit", "x402 y234 w180 h18 vFleetEditUser")
-	FleetSetupGui.Add("CheckBox", "x402 y258 w180 vFleetEditOwner", "Owns the private server")
-	FleetSetupGui.Add("Button", "x364 y280 w104 h24", "Add / update").OnEvent("Click", ext_FleetRosterSave)
-	FleetSetupGui.Add("Button", "x478 y280 w104 h24", "Remove").OnEvent("Click", ext_FleetRosterRemove)
+	FleetSetupGui.Add("Text", "x364 y168 w36", "Name:")
+	FleetSetupGui.Add("Edit", "x404 y166 w178 h18 vFleetEditName")
+	FleetSetupGui.Add("Text", "x364 y194 w36", "Role:")
+	FleetSetupGui.Add("DropDownList", "x404 y192 w100 vFleetEditRole", roster_Roles())
+	FleetSetupGui.Add("Text", "x364 y220 w36", "User:")
+	FleetSetupGui.Add("Edit", "x404 y218 w178 h18 vFleetEditUser")
+	FleetSetupGui.Add("CheckBox", "x404 y244 w178 vFleetEditOwner", "Owns the private server")
+	FleetSetupGui.Add("Button", "x364 y268 w104 h24", "Update").OnEvent("Click", ext_FleetRosterSave)
+	FleetSetupGui.Add("Button", "x478 y268 w104 h24", "Remove").OnEvent("Click", ext_FleetRosterRemove)
 
-	FleetSetupGui.Add("Button", "x8 y326 w100 h26", "Advanced").OnEvent("Click", ext_FleetAdvanced)
-	FleetSetupGui.Add("Button", "x492 y326 w100 h26", "Close").OnEvent("Click", ext_FleetSetupClose)
+	FleetSetupGui.Add("Button", "x8 y304 w100 h26", "Advanced").OnEvent("Click", ext_FleetAdvanced)
+	FleetSetupGui.Add("Button", "x492 y304 w100 h26", "Close").OnEvent("Click", ext_FleetSetupClose)
 
 	ext_FleetRosterDraw()
-	FleetSetupGui.Show("w600 h364")
+	ext_FleetWhoDraw()
+	SetTimer ext_FleetWhoDraw, 1000
+	FleetSetupGui.Show("w600 h342")
 }
 
 ext_FleetSetupClose(*) {
 	global FleetSetupGui
 
+	SetTimer ext_FleetWhoDraw, 0
 	if (IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
 		FleetSetupGui.Destroy(), FleetSetupGui := ""
+}
+
+;Section one says where this macro stands and offers the one or two things worth
+;doing from there. Three states, and each gets different buttons rather than a
+;row of buttons that are mostly greyed out.
+ext_FleetWhoDraw() {
+	global FleetSetupGui, FleetRoster, FleetRow, FleetHostRow, ext_fleetBindOpenUntil
+	local me, left
+
+	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
+		return
+	if (FleetRow <= 0) {
+		FleetSetupGui["FleetWho"].Text := "This macro is not in a fleet yet."
+			. "`nSet it up once and it will rejoin on its own from then on."
+		ext_FleetButton("FleetAct1", "Set up this macro")
+		ext_FleetButton("FleetAct2", "")
+		return
+	}
+	me := FleetRoster.Has(FleetRow)
+		? FleetRoster[FleetRow].name " (" FleetRoster[FleetRow].role ")"
+		: "row " FleetRow
+	if (FleetHostRow = FleetRow) {
+		left := ext_fleetBindOpenUntil - nowUnix()
+		FleetSetupGui["FleetWho"].Text := me "`nThis macro hosts the fleet."
+		ext_FleetButton("FleetAct1", (left > 0)
+			? "Open for " Floor(left / 60) ":" Format("{:02}", Mod(left, 60))
+			: "Accept new macros")
+		ext_FleetButton("FleetAct2", "Leave the fleet")
+		return
+	}
+	FleetSetupGui["FleetWho"].Text := me "`nJoined this fleet."
+	ext_FleetButton("FleetAct1", "Leave the fleet")
+	ext_FleetButton("FleetAct2", "")
+}
+
+;An empty caption hides the button. A button with nothing to do should not be
+;on screen at all.
+ext_FleetButton(name, caption) {
+	global FleetSetupGui
+
+	FleetSetupGui[name].Text := caption
+	FleetSetupGui[name].Visible := (caption != "")
+}
+
+ext_FleetAct1(*) {
+	global FleetRow, FleetHostRow, ext_fleetBindOpenUntil
+
+	if (FleetRow <= 0) {
+		ext_FleetJoinGUI()
+		return
+	}
+	if (FleetHostRow = FleetRow) {
+		;two minutes, which is the window the coordinator will honour anyway
+		if ext_fleetOpenDoor(120)
+			ext_fleetBindOpenUntil := nowUnix() + 120
+		else
+			MsgBox "The coordinator is not reachable from here yet. Wait for the fleet to come up and try again.", "Fleet", 0x40030
+		ext_FleetWhoDraw()
+		return
+	}
+	ext_FleetLeave()
+}
+
+ext_FleetAct2(*) {
+	ext_FleetLeave()
+}
+
+;Forget the fleet. The roster file is left alone: this macro leaving is not a
+;reason to lose everyone else's details, and the coordinator keeps its own copy.
+ext_FleetLeave() {
+	if (MsgBox("Leave the fleet?`n`nThis macro will stop talking to the others until it is set up again.",
+		"Fleet", 0x40024) != "Yes")
+		return
+	ext_fleetStop()
+	ext_FleetSave("FleetCheck", 0)
+	ext_FleetSave("FleetRow", 0)
+	ext_FleetSave("FleetHostRow", 0)
+	ext_FleetWhoDraw()
+}
+
+;--- the join dialog ---------------------------------------------------------
+
+;One window for both ways in. It shows what it can hear, and offers whichever
+;action makes sense: join the fleet it found, or start one here if there is
+;none. Asking "join or host?" before looking would be asking a question the
+;program can answer itself.
+ext_FleetJoinGUI(*) {
+	global FleetJoinGui, ext_fleetBindResult
+
+	if (IsSet(FleetJoinGui) && IsObject(FleetJoinGui)) {
+		FleetJoinGui.Show()
+		return
+	}
+	ext_fleetBindResult := ""
+	ext_fleetDiscover()
+
+	FleetJoinGui := Gui("+AlwaysOnTop +Border", "Set up this macro")
+	FleetJoinGui.OnEvent("Close", ext_FleetJoinClose)
+	FleetJoinGui.SetFont("s8 cDefault Bold", "Tahoma")
+	FleetJoinGui.Add("GroupBox", "x8 y4 w404 h98", "What is this account?")
+	FleetJoinGui.Add("GroupBox", "x8 y108 w404 h104", "Which fleet?")
+	FleetJoinGui.SetFont("Norm")
+
+	FleetJoinGui.Add("Text", "x18 y26 w40", "Name:")
+	FleetJoinGui.Add("Edit", "x64 y24 w190 h18 vJoinName", A_ComputerName)
+	FleetJoinGui.Add("Text", "x18 y50 w40", "Role:")
+	FleetJoinGui.Add("DropDownList", "x64 y48 w110 vJoinRole Choose4", roster_Roles())
+	FleetJoinGui.Add("Text", "x18 y74 w40", "User:")
+	FleetJoinGui.Add("Edit", "x64 y72 w190 h18 vJoinUser")
+	FleetJoinGui.SetFont("c808080")
+	FleetJoinGui.Add("Text", "x262 y26 w142", "The Roblox username is only needed to force an account out of a server.")
+	FleetJoinGui.SetFont("cDefault")
+
+	FleetJoinGui.Add("Text", "x18 y128 w386 vJoinFound", "Listening for a fleet on your network...")
+	FleetJoinGui.Add("Button", "x18 y150 w180 h26 vJoinButton Disabled", "Join this fleet").OnEvent("Click", ext_FleetJoinDo)
+	FleetJoinGui.Add("Button", "x208 y150 w196 h26", "Start a new fleet here").OnEvent("Click", ext_FleetHostDo)
+	FleetJoinGui.SetFont("c808080")
+	FleetJoinGui.Add("Text", "x18 y182 w386"
+		, "To join, open the door on the macro that hosts the fleet first - settings, Accept new macros.")
+	FleetJoinGui.SetFont("cDefault")
+
+	FleetJoinGui.Add("Button", "x312 y220 w100 h26", "Cancel").OnEvent("Click", ext_FleetJoinClose)
+
+	SetTimer ext_FleetJoinRefresh, 500
+	ext_FleetJoinRefresh()
+	FleetJoinGui.Show("w420 h256")
+}
+
+ext_FleetJoinClose(*) {
+	global FleetJoinGui
+
+	SetTimer ext_FleetJoinRefresh, 0
+	if (IsSet(FleetJoinGui) && IsObject(FleetJoinGui))
+		FleetJoinGui.Destroy(), FleetJoinGui := ""
+}
+
+;What we can hear, twice a second. The button turns on by itself when a fleet
+;answers, which is the clearest way to say "now you can".
+ext_FleetJoinRefresh() {
+	global FleetJoinGui, ext_fleetBindResult
+	local open
+
+	if !(IsSet(FleetJoinGui) && IsObject(FleetJoinGui))
+		return
+	if (ext_fleetBindResult = "ok") {
+		ext_FleetJoinClose()
+		MsgBox "Joined. This macro will rejoin on its own from now on.", "Fleet", 0x40040
+		ext_FleetWhoDraw()
+		return
+	}
+	if (ext_fleetBindResult != "") {
+		MsgBox ext_fleetBindResult, "Fleet", 0x40030
+		ext_fleetBindResult := ""
+		return
+	}
+	open := ext_fleetOpenFleets()
+	if open.Length {
+		FleetJoinGui["JoinFound"].Text := "Found " open[1].host
+			. " (" open[1].size " accounts), accepting new macros."
+		FleetJoinGui["JoinButton"].Enabled := true
+	}
+	else {
+		FleetJoinGui["JoinFound"].Text := "Listening for a fleet on your network..."
+		FleetJoinGui["JoinButton"].Enabled := false
+	}
+}
+
+ext_FleetJoinDo(*) {
+	global FleetJoinGui
+	local open := ext_fleetOpenFleets()
+
+	if !open.Length
+		return
+	ext_fleetBind(open[1].addr, open[1].port
+		, Trim(FleetJoinGui["JoinName"].Value)
+		, FleetJoinGui["JoinRole"].Text
+		, Trim(FleetJoinGui["JoinUser"].Value))
+}
+
+ext_FleetHostDo(*) {
+	global FleetJoinGui
+
+	ext_fleetStartFleet(Trim(FleetJoinGui["JoinName"].Value)
+		, FleetJoinGui["JoinRole"].Text
+		, Trim(FleetJoinGui["JoinUser"].Value))
+	ext_FleetJoinClose()
+	MsgBox "This macro now hosts the fleet.`n`nTo add another, press Accept new macros here, then set that macro up.", "Fleet", 0x40040
+	ext_FleetWhoDraw()
+}
+
+;Write one setting the way the rest of the macro does: the global and the ini
+;together, so a restart finds what the screen showed.
+ext_FleetSave(name, value) {
+	global
+
+	%name% := value
+	IniWrite value, "settings\nm_config.ini", "Fleet", name
+}
+
+;--- the roster editor -------------------------------------------------------
+
+ext_FleetRosterDraw() {
+	global FleetSetupGui, FleetRoster, FleetRosterOrder
+	local keys := [], row, e
+
+	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
+		return
+	FleetSetupGui["FleetRosterList"].Delete()
+	for row, _ in FleetRoster
+		keys.Push(row)
+	roster_Sort(keys)
+	;the list shows no row numbers, so it keeps its own note of which line is
+	;which account
+	FleetRosterOrder := keys
+	for _, row in keys {
+		e := FleetRoster[row]
+		FleetSetupGui["FleetRosterList"].Add(, e.name, e.role, e.user, e.owner ? "yes" : "")
+	}
+	Loop 4
+		FleetSetupGui["FleetRosterList"].ModifyCol(A_Index, "AutoHdr")
+}
+
+ext_FleetRosterSelect(ctrl, item, selected) {
+	global FleetSetupGui, FleetRoster, FleetRosterOrder, FleetEditRow
+	local row
+
+	if (!selected || !item || (item > FleetRosterOrder.Length))
+		return
+	FleetEditRow := row := FleetRosterOrder[item]
+	if !FleetRoster.Has(row)
+		return
+	FleetSetupGui["FleetEditName"].Value := FleetRoster[row].name
+	FleetSetupGui["FleetEditRole"].Text := FleetRoster[row].role
+	FleetSetupGui["FleetEditUser"].Value := FleetRoster[row].user
+	FleetSetupGui["FleetEditOwner"].Value := FleetRoster[row].owner
+}
+
+;Editing only. Accounts arrive by binding, so there is no Add here - a row this
+;list has never seen would be a row no macro answers to.
+ext_FleetRosterSave(*) {
+	global FleetSetupGui, FleetRoster, FleetRosterPath, FleetEditRow
+	local other
+
+	if (!FleetEditRow || !FleetRoster.Has(FleetEditRow)) {
+		MsgBox "Pick an account in the list first.", "Fleet", 0x40030
+		return
+	}
+	;only one account can own the private server, so ticking it here clears it
+	;elsewhere rather than leaving two and choosing one silently later
+	if FleetSetupGui["FleetEditOwner"].Value
+		for other, _ in FleetRoster
+			FleetRoster[other].owner := 0
+	FleetRoster[FleetEditRow].name := Trim(FleetSetupGui["FleetEditName"].Value)
+	FleetRoster[FleetEditRow].role := FleetSetupGui["FleetEditRole"].Text
+	FleetRoster[FleetEditRow].user := Trim(FleetSetupGui["FleetEditUser"].Value)
+	FleetRoster[FleetEditRow].owner := FleetSetupGui["FleetEditOwner"].Value ? 1 : 0
+	if (FleetRoster[FleetEditRow].name = "")
+		FleetRoster[FleetEditRow].name := "row " FleetEditRow
+	roster_Save(FleetRosterPath, FleetRoster)
+	ext_FleetRosterDraw()
+}
+
+ext_FleetRosterRemove(*) {
+	global FleetRoster, FleetRosterPath, FleetEditRow
+
+	if (!FleetEditRow || !FleetRoster.Has(FleetEditRow))
+		return
+	if (MsgBox("Remove " FleetRoster[FleetEditRow].name " from the fleet?`n`nThat macro will be refused until it is set up again.",
+		"Fleet", 0x40024) != "Yes")
+		return
+	FleetRoster.Delete(FleetEditRow)
+	roster_Save(FleetRosterPath, FleetRoster)
+	FleetEditRow := 0
+	ext_FleetRosterDraw()
 }
 
 ;Port, grace and a hand-typed address. Tucked away because a fleet on an
@@ -605,135 +993,6 @@ ext_FleetAdvClose(*) {
 
 	if (IsSet(FleetAdvGui) && IsObject(FleetAdvGui))
 		FleetAdvGui.Destroy(), FleetAdvGui := ""
-}
-
-;--- the roster editor -------------------------------------------------------
-
-;The account list, as names rather than numbers. A row number means nothing to
-;the person filling this in; "2 - fuzzy 1" does.
-ext_FleetWhoDraw() {
-	global FleetSetupGui, FleetRoster, FleetRow
-	local keys := [], row, items := [], pick := 0
-
-	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
-		return
-	for row, _ in FleetRoster
-		keys.Push(row)
-	roster_Sort(keys)
-	for _, row in keys {
-		items.Push(row " - " FleetRoster[row].name " (" FleetRoster[row].role ")")
-		if (row = FleetRow)
-			pick := items.Length
-	}
-	if !items.Length
-		items.Push("(add your accounts in step 3 first)")
-	FleetSetupGui["FleetWhoAmI"].Delete()
-	FleetSetupGui["FleetWhoAmI"].Add(items)
-	FleetSetupGui["FleetWhoAmI"].Value := pick ? pick : 1
-}
-
-ext_FleetWhoChanged(ctrl, *) {
-	global FleetRow, FleetHostRow, FleetSetupGui
-	local first := StrSplit(Trim(ctrl.Text), " ")[1], row
-
-	;an empty roster shows a placeholder instead of an account, and that has
-	;no number in front of it to read
-	if !IsInteger(first)
-		return
-	if ((row := Integer(first)) <= 0)
-		return
-	ext_FleetSave("FleetRow", row)
-	;the host flag follows the account, not the machine: tick it here and this
-	;row is the one that hosts, whichever computer it happens to run on
-	if FleetSetupGui["FleetIsHost"].Value
-		ext_FleetSave("FleetHostRow", row)
-}
-
-ext_FleetHostChanged(ctrl, *) {
-	global FleetRow
-
-	ext_FleetSave("FleetHostRow", ctrl.Value ? FleetRow : 0)
-}
-
-;Write one setting the way the rest of the macro does.
-ext_FleetSave(name, value) {
-	global
-
-	%name% := value
-	IniWrite value, "settings\nm_config.ini", "Fleet", name
-}
-
-ext_FleetRosterDraw() {
-	global FleetSetupGui, FleetRoster
-	local keys := [], row, e
-
-	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
-		return
-	FleetSetupGui["FleetRosterList"].Delete()
-	for row, _ in FleetRoster
-		keys.Push(row)
-	roster_Sort(keys)
-	for _, row in keys {
-		e := FleetRoster[row]
-		FleetSetupGui["FleetRosterList"].Add(, row, e.name, e.role, e.user, e.owner ? "yes" : "")
-	}
-	Loop 5
-		FleetSetupGui["FleetRosterList"].ModifyCol(A_Index, "AutoHdr")
-	ext_FleetWhoDraw()
-}
-
-ext_FleetRosterSelect(ctrl, item, selected) {
-	global FleetSetupGui, FleetRoster
-	local row
-
-	if (!selected || !item)
-		return
-	row := Integer(ctrl.GetText(item, 1))
-	if !FleetRoster.Has(row)
-		return
-	FleetSetupGui["FleetEditRow"].Value := row
-	FleetSetupGui["FleetEditName"].Value := FleetRoster[row].name
-	FleetSetupGui["FleetEditRole"].Text := FleetRoster[row].role
-	FleetSetupGui["FleetEditUser"].Value := FleetRoster[row].user
-	FleetSetupGui["FleetEditOwner"].Value := FleetRoster[row].owner
-}
-
-;One button for adding and for editing, since a row number the fleet has not
-;seen before is simply a new account.
-ext_FleetRosterSave(*) {
-	global FleetSetupGui, FleetRoster, FleetRosterPath
-	local row, other
-
-	if (!(row := Integer(FleetSetupGui["FleetEditRow"].Value)) || (row <= 0)) {
-		MsgBox "Give the account a row number.`n`nIt is how a macro says which account it is, and the only thing that ties it to this list.", "Fleet", 0x40030
-		return
-	}
-	;only one account can own the private server, so ticking it here clears it
-	;elsewhere rather than leaving two and choosing one silently later
-	if FleetSetupGui["FleetEditOwner"].Value
-		for other, _ in FleetRoster
-			FleetRoster[other].owner := 0
-	FleetRoster[row] := { row: row
-		, name: Trim(FleetSetupGui["FleetEditName"].Value)
-		, role: FleetSetupGui["FleetEditRole"].Text
-		, user: Trim(FleetSetupGui["FleetEditUser"].Value)
-		, owner: FleetSetupGui["FleetEditOwner"].Value ? 1 : 0 }
-	if (FleetRoster[row].name = "")
-		FleetRoster[row].name := "row " row
-	roster_Save(FleetRosterPath, FleetRoster)
-	ext_FleetRosterDraw()
-}
-
-ext_FleetRosterRemove(*) {
-	global FleetSetupGui, FleetRoster, FleetRosterPath
-	local row
-
-	row := Integer(FleetSetupGui["FleetEditRow"].Value)
-	if !FleetRoster.Has(row)
-		return
-	FleetRoster.Delete(row)
-	roster_Save(FleetRosterPath, FleetRoster)
-	ext_FleetRosterDraw()
 }
 
 ;The two live lines on the main window. Dots rather than a count, because the

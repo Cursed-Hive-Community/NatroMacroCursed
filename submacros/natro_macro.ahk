@@ -2732,6 +2732,13 @@ ext_fleetPeers := Map()
 ext_fleetFoundAt := "", ext_fleetBeaconSock := 0, ext_fleetTryAt := 0
 ;what the fleet has been doing, newest first, as the coordinator reports it
 ext_fleetEvents := []
+;binding: the open fleets heard on the network, and the one conversation
+;that joins one. None of it survives a restart, because binding happens once
+;and what it produces - a row and a secret - is what gets saved.
+ext_fleetOpen := Map(), ext_fleetBindSock := 0, ext_fleetBindWith := ""
+ext_fleetBindResult := "", ext_fleetBindOpenUntil := 0
+;which account the roster editor is editing, and the order its list is in
+FleetEditRow := 0, FleetRosterOrder := []
 #include "*i %A_ScriptDir%\..\settings\personal.ahk"
 
 ; add tabs
