@@ -61,6 +61,11 @@ rosterPath := (A_Args.Length >= 5) ? A_Args[5]
 ;seven machines, and re-read when it changes so editing the panel does not
 ;mean restarting the coordinator.
 roster := roster_Load(rosterPath)
+;Binding. The door is shut by default and opens for a couple of minutes when
+;the host asks, which is the only moment a macro can be let in without
+;already knowing the secret. A fleet left open is a fleet anything on the
+;network can walk into, so it shuts itself.
+bindUntil := 0
 rosterStamp := fleet_RosterStamp()
 
 fleet_Log("coordinator starting, port " port ", term " term ", row " hostRow)
@@ -106,6 +111,10 @@ fleet_OnLine(s, line) {
 			fleet_OnHello(s, frame)
 		case "HEARTBEAT":
 			fleet_Touch(s)
+		case "OPEN":
+			fleet_OnOpen(s, frame)
+		case "BIND":
+			fleet_OnBind(s, frame)
 		case "FIELD", "GUIDING", "CHARGE", "MONDO_IN", "STATE":
 			fleet_OnReport(s, frame)
 		case "ACK", "FAIL":
@@ -292,13 +301,67 @@ fleet_ApplyRoster() {
 ;the secret on the wire; the port says where to knock. 255.255.255.255 reaches
 ;every machine on this subnet, which is as far as a fleet ever spans.
 fleet_Beacon() {
-	global beacon, port, term, hostRow, secret
+	global beacon, port, term, hostRow, secret, bindUntil, roster
 
 	if !beacon
 		return 0
 	return sock_UdpSend(beacon, "255.255.255.255", port + 1
 		, fleet_Frame("FLEET", Map("port", port, "term", term, "row", hostRow
-			, "id", fleet_Fingerprint(secret))))
+			, "id", fleet_Fingerprint(secret)
+			, "open", (nowUnix() < bindUntil) ? 1 : 0
+			, "host", A_ComputerName, "size", roster.Count)))
+}
+
+;Open the door. Only the host may ask, and never for longer than five
+;minutes - the point of a window is that it closes.
+fleet_OnOpen(s, frame) {
+	global bindUntil, hostRow
+	local row := fleet_RowOf(s), secs := Integer(fleet_Field(frame, "secs", 120))
+
+	if (!row || (hostRow && (row != hostRow)))
+		return
+	bindUntil := nowUnix() + Min(Max(secs, 10), 300)
+	fleet_Event("accepting new macros for " (bindUntil - nowUnix()) " seconds")
+}
+
+;A macro asking to be let in. This is the one frame that arrives without a
+;secret, because handing the secret over is what binding is for.
+;
+;The row number is assigned here and sent back. Nobody invents one, nobody
+;has to remember which machine is which - the macro stores what it is told
+;and uses it for every reconnection afterwards.
+fleet_OnBind(s, frame) {
+	global roster, rosterPath, rosterStamp, bindUntil, secret
+	local row
+
+	if (nowUnix() > bindUntil) {
+		fleet_Log("refused a bind: the door is shut")
+		sock_SendLine(s, fleet_Frame("BYE", Map("why", "this fleet is not accepting new macros")))
+		return
+	}
+	row := fleet_NextRow()
+	roster[row] := { row: row
+		, name: fleet_Field(frame, "name", "row " row)
+		, role: fleet_Field(frame, "role", "guid")
+		, user: fleet_Field(frame, "user", "")
+		, owner: 0 }
+	roster_Save(rosterPath, roster)
+	rosterStamp := fleet_RosterStamp()
+	fleet_Event("bound " roster[row].name " (" roster[row].role ") from "
+		. fleet_Field(frame, "machine", "somewhere"))
+	sock_SendLine(s, fleet_Frame("BOUND", Map("row", row, "secret", secret)))
+}
+
+;The next free row. Rows are never reused: a number that once meant one
+;account should not quietly come to mean another.
+fleet_NextRow() {
+	global roster
+	local r, best := 0
+
+	for r, _ in roster
+		if (r > best)
+			best := r
+	return best + 1
 }
 
 ;Something worth a line in everybody's view, not only in the log file here.

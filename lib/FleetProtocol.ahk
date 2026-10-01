@@ -91,3 +91,18 @@ fleet_Fingerprint(secret) {
 	}
 	return Format("{:08x}", h)
 }
+
+;A secret nobody has to type.
+;
+;The coordinator makes one the first time it runs and hands it out during
+;binding, so the shared word is never carried from machine to machine by a
+;person. The alphabet leaves out the characters that get misread when someone
+;does end up reading it aloud - no l against 1, no O against 0.
+fleet_NewSecret() {
+	static alphabet := "abcdefghjkmnpqrstuvwxyz23456789"
+	local out := ""
+
+	Loop 10
+		out .= SubStr(alphabet, Random(1, StrLen(alphabet)), 1)
+	return out
+}
