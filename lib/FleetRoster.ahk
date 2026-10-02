@@ -93,17 +93,3 @@ roster_Sort(keys) {
 	}
 	return keys
 }
-
-;The account that owns the private server, or 0. Only one row should carry the
-;flag; if several do, the lowest wins rather than the answer being undefined.
-roster_Owner(rows) {
-	local keys := [], r
-
-	for r, _ in rows
-		keys.Push(r)
-	roster_Sort(keys)
-	for _, r in keys
-		if rows[r].owner
-			return r
-	return 0
-}
