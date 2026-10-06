@@ -142,17 +142,24 @@ Finish(problem) {
 	try sock_Close(client)
 	try sock_Close(listener)
 	try sock_Close(udpSock)
+	;Quiet mode is what makes this runnable over SSH: no window to close, a
+	;verdict in a file, and an exit code a script can read. The interactive
+	;path below is unchanged for when a person runs it by hand.
+	summary := "Socket self-test on " A_ComputerName ", AutoHotkey " A_AhkVersion "`r`n`r`n"
+		. (problem = "" ? "PASS  everything" : StrReplace(problem, "`n", "`r`n"))
+		. "`r`nWhat actually happened:`r`n" StrReplace(Join(trace), "`n", "`r`n")
+	path := A_ScriptDir "\..\settings\socket_diag.txt"
+	try FileDelete path
+	try FileAppend summary, path, "UTF-8"
+	if Quiet() {
+		FileAppend (problem = "" ? "PASS" : "FAIL") "`n", "*"
+		ExitApp (problem = "") ? 0 : 1
+	}
 	if (problem = "") {
 		MsgBox "Socket.ahk works.`n`nPASS  plain line`nPASS  accented line`nPASS  long line`nPASS  datagram"
 			, "Socket self-test", 0x40040
 		ExitApp
 	}
-	summary := "Socket self-test on " A_ComputerName ", AutoHotkey " A_AhkVersion "`r`n`r`n"
-		. StrReplace(problem, "`n", "`r`n") "`r`nWhat actually happened:`r`n"
-		. StrReplace(Join(trace), "`n", "`r`n")
-	path := A_ScriptDir "\..\settings\socket_diag.txt"
-	try FileDelete path
-	try FileAppend summary, path, "UTF-8"
 	try A_Clipboard := summary
 	MsgBox "Socket.ahk is broken.`n`n" problem
 		. "`nThe full trace is on the clipboard - paste it straight into chat."
@@ -183,6 +190,19 @@ OnEvent(s, event, err) {
 Note(text) {
 	global trace
 	trace.Push(A_TickCount " ms  " text)
+}
+
+;True when launched with /quiet, i.e. headless over SSH.
+Quiet() {
+	return ObjHasValue(A_Args, "/quiet")
+}
+
+;Is needle one of the elements of arr?
+ObjHasValue(arr, needle) {
+	for _, v in arr
+		if (v = needle)
+			return 1
+	return 0
 }
 
 Join(arr) {

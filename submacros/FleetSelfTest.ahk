@@ -126,10 +126,6 @@ Report(*) {
 		try ProcessClose(coordPid)
 	try FileDelete ROSTER
 
-	if allOk {
-		MsgBox "Fleet coordinator works.`n`n" Join(lines), "Fleet self-test", 0x40040
-		ExitApp
-	}
 	;the coordinator's own log is the half of the story this script cannot
 	;see, so it travels with the verdict rather than being looked up after
 	summary := "Fleet self-test on " A_ComputerName ", AutoHotkey " A_AhkVersion "`r`n`r`n"
@@ -139,6 +135,15 @@ Report(*) {
 	path := A_ScriptDir "\..\settings\fleet_diag.txt"
 	try FileDelete path
 	try FileAppend summary, path, "UTF-8"
+	;headless over SSH: a verdict in a file, an exit code, no window
+	if Quiet() {
+		FileAppend (allOk ? "PASS" : "FAIL") "`n", "*"
+		ExitApp allOk ? 0 : 1
+	}
+	if allOk {
+		MsgBox "Fleet coordinator works.`n`n" Join(lines), "Fleet self-test", 0x40040
+		ExitApp
+	}
 	try A_Clipboard := summary
 	MsgBox "Fleet coordinator is broken.`n`n" Join(lines)
 		. "`nThe full trace is on the clipboard - paste it straight into chat."
@@ -162,6 +167,19 @@ FleetLog() {
 Check(lines, what, ok) {
 	lines.Push((ok ? "PASS  " : "FAIL  ") what)
 	return ok
+}
+
+;True when launched with /quiet, i.e. headless over SSH.
+Quiet() {
+	return ObjHasValue(A_Args, "/quiet")
+}
+
+;Is needle one of the elements of arr?
+ObjHasValue(arr, needle) {
+	for _, v in arr
+		if (v = needle)
+			return 1
+	return 0
 }
 
 Join(arr) {
