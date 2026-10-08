@@ -41,7 +41,9 @@ for arg in "$@"; do
   esac
 done
 
-SSH="ssh -o ConnectTimeout=10 ${VM_USER}@${VM_HOST}"
+# LogLevel=ERROR hides the post-quantum notice SSH now prints to stderr on
+# every connection, which the validate step would otherwise read as a fault
+SSH="ssh -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR ${VM_USER}@${VM_HOST}"
 # a Windows path with backslashes, for use inside cmd on the far end
 WIN_REPO="${VM_REPO//\//\\}"
 
@@ -52,6 +54,17 @@ FILES=(
   submacros/Fleet.ahk submacros/FleetSelfTest.ahk submacros/SocketSelfTest.ahk
 )
 while IFS= read -r f; do FILES+=("$f"); done < <(ls submacros/extensions/*.ahk)
+
+# What to validate. Only the entry points - the scripts that are actually run -
+# because #Include inlines a file at parse time, so validating natro_macro.ahk
+# parses every library it pulls in. Validating an include-only file on its own
+# both duplicates that and, for the extension files, hangs AutoHotkey outright.
+ENTRY=(
+  submacros/natro_macro.ahk
+  submacros/Fleet.ahk
+  submacros/SocketSelfTest.ahk
+  submacros/FleetSelfTest.ahk
+)
 
 echo "== 1. local checks =="
 python3 tools/nm-check.py
@@ -67,13 +80,19 @@ if [ "$SYNC" -eq 1 ]; then
   echo "   ${#FILES[@]} files copied"
 fi
 
+# the tests write their roster and logs into settings\, which is gitignored and
+# therefore absent from a fresh checkout - the coordinator cannot load its
+# roster without it, so make sure it exists before anything runs
+$SSH "cd ${WIN_REPO} && if not exist settings mkdir settings" >/dev/null 2>&1 || true
+
 echo "== 3. /Validate in the VM =="
 fail=0
-for f in "${FILES[@]}"; do
+for f in "${ENTRY[@]}"; do
   winf="${f//\//\\}"
   # AHK writes the error to stdout with /ErrorStdOut and exits non-zero on a
-  # parse error; silence and a zero code mean the file loads
-  out=$($SSH "cd ${WIN_REPO} && .\\submacros\\AutoHotkey64.exe /script /Validate /ErrorStdOut ${winf}" 2>&1 || true)
+  # parse error; silence and a zero code mean the file loads. The timeout guards
+  # against a connection or an interpreter that hangs rather than answers.
+  out=$(timeout 90 $SSH "cd ${WIN_REPO} && .\\submacros\\AutoHotkey64.exe /script /Validate /ErrorStdOut ${winf}" 2>&1 || true)
   if [ -n "$out" ]; then
     echo "   FAIL  $f"
     echo "$out" | sed 's/^/         /'
@@ -93,7 +112,7 @@ echo "== 4. self-tests in the VM =="
 run_test() {
   local name="$1" script="$2" diag="$3"
   local code=0
-  $SSH "cd ${WIN_REPO} && .\\submacros\\AutoHotkey64.exe /script ${script} /quiet" >/dev/null 2>&1 || code=$?
+  timeout 120 $SSH "cd ${WIN_REPO} && .\\submacros\\AutoHotkey64.exe /script ${script} /quiet" >/dev/null 2>&1 || code=$?
   if [ "$code" -eq 0 ]; then
     echo "   PASS  $name"
   else
