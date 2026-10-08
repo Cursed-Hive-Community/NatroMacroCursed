@@ -16784,6 +16784,32 @@ nm_GoGather(){
 	;FIELD OVERRIDES
 	global fieldOverrideReason:="None"
 	loop 1 {
+		;fleet follow override: a resident gathers whatever field the main is
+		;farming, ahead of its own configured field and every other override -
+		;standing in the main's field is the whole of a resident's job. Picked
+		;up here, at the top of a gather trip, so the resident finishes the trip
+		;it is on before switching; that is the least disruptive hook and the
+		;only one that never cuts a pattern in half. fieldOverrideReason stays
+		;"None" on purpose: the resident then farms this field byte-for-byte
+		;like one of its own, boost detection and gather-start hotkeys included.
+		if (followField := ext_fleetFollowTarget()) {
+			FieldName:=followField
+			FieldPattern:=FieldDefault[FieldName]["pattern"]
+			FieldPatternSize:=FieldDefault[FieldName]["size"]
+			FieldPatternReps:=FieldDefault[FieldName]["width"]
+			FieldPatternShift:=FieldDefault[FieldName]["shiftlock"]
+			FieldPatternInvertFB:=FieldDefault[FieldName]["invertFB"]
+			FieldPatternInvertLR:=FieldDefault[FieldName]["invertLR"]
+			FieldUntilMins:=FieldDefault[FieldName]["gathertime"]
+			FieldUntilPack:=FieldDefault[FieldName]["percent"]
+			FieldReturnType:=FieldDefault[FieldName]["convert"]
+			FieldSprinklerLoc:=FieldDefault[FieldName]["sprinkler"]
+			FieldSprinklerDist:=FieldDefault[FieldName]["distance"]
+			FieldRotateDirection:=FieldDefault[FieldName]["camera"]
+			FieldRotateTimes:=FieldDefault[FieldName]["turns"]
+			FieldDriftCheck:=FieldDefault[FieldName]["drift"]
+			break
+		}
 		;boosted field override
 		if(BoostChaserCheck){
 

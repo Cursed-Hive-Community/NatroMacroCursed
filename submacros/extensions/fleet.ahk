@@ -287,6 +287,23 @@ ext_fleetReportField(field) {
 	return sock_SendLine(ext_fleetSock, fleet_Frame("FIELD", Map("name", field)))
 }
 
+;The field a resident should gather to stay with the main, or "" when this
+;macro is not following one. GOTO reaches only fuzzy/tad residents, so a set
+;follow field already means "I was told to follow"; the FieldDefault guard just
+;refuses a name this build has no pattern for rather than letting the gather
+;loop throw on the lookup. The name round-trips unchanged from the main, which
+;gathered it, so it is a valid key by construction - the guard is for the day
+;that stops being true.
+ext_fleetFollowTarget() {
+	global FleetCheck, ext_fleetFollowField, FieldDefault
+
+	if (!FleetCheck || (ext_fleetFollowField = ""))
+		return ""
+	if !FieldDefault.Has(ext_fleetFollowField)
+		return ""
+	return ext_fleetFollowField
+}
+
 ;Say we are still here. Cheap, and it is what tells the coordinator apart from a
 ;macro that has quietly died.
 ext_fleetBeat() {
