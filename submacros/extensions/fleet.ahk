@@ -236,7 +236,7 @@ ext_fleetHello() {
 ;A frame from the coordinator.
 ext_fleetOnLine(line) {
 	global ext_fleetPeers, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
-	global ext_fleetEvents
+	global ext_fleetEvents, ext_fleetFollowField
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -263,9 +263,28 @@ ext_fleetOnLine(line) {
 			while (ext_fleetEvents.Length > 80)
 				ext_fleetEvents.Pop()
 			ext_fleetCoordSeen := nowUnix()
+		case "GOTO":
+			;the main is farming this field and we are a resident. Store it;
+			;travelling there and gathering is the gather loop's job, added next.
+			ext_fleetFollowField := fleet_Field(frame, "field")
+			ext_fleetCoordSeen := nowUnix()
 		case "BYE":
 			nm_setStatus("Failed", "Fleet refused this macro`n" fleet_Field(frame, "why"))
 	}
+}
+
+;Tell the coordinator which field we are farming, when it changes. Called from
+;the gather loop - the farm path - so a planter harvest or a booster trip,
+;each its own function, never reports one, and the residents following this
+;never chase the main anywhere but to farm. Sent only on a change, since the
+;gather loop runs the same field many times over.
+ext_fleetReportField(field) {
+	global ext_fleetSock, ext_fleetMyField
+
+	if (!ext_fleetSock || (field = "") || (field = ext_fleetMyField))
+		return 0
+	ext_fleetMyField := field
+	return sock_SendLine(ext_fleetSock, fleet_Frame("FIELD", Map("name", field)))
 }
 
 ;Say we are still here. Cheap, and it is what tells the coordinator apart from a

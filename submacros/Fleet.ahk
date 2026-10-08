@@ -182,6 +182,12 @@ fleet_OnReport(s, frame) {
 	switch frame.verb {
 		case "FIELD":
 			p.field := fleet_Field(frame, "name")
+			;the main's field is the one the residents follow. It arrives from
+			;nm_GoGather, the farm path - a planter or booster trip is a
+			;different function and never reports a field, so a resident never
+			;chases the main anywhere but to farm.
+			if ((p.role = "main") && (p.field != ""))
+				fleet_LeadField(p.field)
 		case "GUIDING":
 			p.guidingField := fleet_Field(frame, "field")
 			p.guidingUntil := Integer(fleet_Field(frame, "until", 0))
@@ -362,6 +368,29 @@ fleet_NextRow() {
 		if (r > best)
 			best := r
 	return best + 1
+}
+
+;Point the residents at the field the main is farming. Fuzzy and tad alts
+;improve the field they stand in, so they go where the main goes - but only
+;to farm, which is all a FIELD report ever means. Forwarded once per change:
+;the main re-enters nm_GoGather every trip, and moving the whole hive on an
+;unchanged field would be pure churn.
+fleet_LeadField(field) {
+	global peers
+	static last := ""
+	local p, sent := 0
+
+	if (field = last)
+		return 0
+	last := field
+	for _, p in peers
+		if (p.socket && (p.state = "online") && ((p.role = "fuzzy") || (p.role = "tad"))) {
+			sock_SendLine(p.socket, fleet_Frame("GOTO", Map("field", field)))
+			sent++
+		}
+	if sent
+		fleet_Event("main farming " field " - " sent " resident(s) following")
+	return sent
 }
 
 ;Something worth a line in everybody's view, not only in the log file here.

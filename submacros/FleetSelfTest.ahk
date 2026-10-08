@@ -44,6 +44,7 @@ Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' PORT ' ' SECRET ' 1 1
 Sleep 1200
 
 seenBy["main"] := Map(), seenBy["fuzzy"] := Map()
+gotoField := "", fieldSent := 0
 clientA := sock_Connect("127.0.0.1", PORT, OnA)
 clientB := sock_Connect("127.0.0.1", PORT, OnB)
 clientBad := sock_Connect("127.0.0.1", PORT, OnBad)
@@ -61,7 +62,7 @@ OnB(s, event, data) {
 }
 
 Handle(label, row, name, s, event, data) {
-	global seenBy, SECRET
+	global seenBy, SECRET, gotoField, fieldSent
 	local frame
 
 	if (event = "connect") {
@@ -75,8 +76,18 @@ Handle(label, row, name, s, event, data) {
 		return
 	if !(frame := fleet_Parse(data))
 		return
-	if (frame.verb = "ROSTER")
+	if (frame.verb = "ROSTER") {
 		seenBy[label][Integer(fleet_Field(frame, "row", 0))] := frame
+		;once the main can see the whole fleet, it reports the field it is
+		;farming - exactly what nm_GoGather does - and the coordinator should
+		;turn that into a GOTO for every resident
+		if ((label = "main") && seenBy["main"].Has(1) && seenBy["main"].Has(2) && !fieldSent) {
+			fieldSent := 1
+			sock_SendLine(s, fleet_Frame("FIELD", Map("name", "Sunflower")))
+		}
+	}
+	else if ((label = "fuzzy") && (frame.verb = "GOTO"))
+		gotoField := fleet_Field(frame, "field")
 }
 
 ;The connection that should not get in.
@@ -97,7 +108,7 @@ OnBad(s, event, data) {
 }
 
 Report(*) {
-	global seenBy, refused, coordPid, finished, clientA, clientB, clientBad, ROSTER
+	global seenBy, refused, coordPid, finished, clientA, clientB, clientBad, ROSTER, gotoField
 	local lines := [], allOk := 1, summary, path
 
 	if finished
@@ -112,6 +123,8 @@ Report(*) {
 		, seenBy["main"].Has(2) && (fleet_Field(seenBy["main"][2], "name") == "fuzzy 1")) && allOk
 	allOk := Check(lines, "a wrong secret was refused"
 		, refused != "") && allOk
+	allOk := Check(lines, "the main's field reaches the resident as a GOTO"
+		, gotoField == "Sunflower") && allOk
 
 	if seenBy["main"].Has(2)
 		lines.Push("", "row 2 as the main macro sees it:"

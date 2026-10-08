@@ -2730,6 +2730,9 @@ ext_fleetPeers := Map()
 ;Discovered rather than configured, which is the point: an address typed in
 ;is wrong as soon as a router hands out a new lease.
 ext_fleetFoundAt := "", ext_fleetBeaconSock := 0, ext_fleetTryAt := 0
+;field-following: the field we last told the fleet we are farming, and the
+;field a resident has been told to follow the main into
+ext_fleetMyField := "", ext_fleetFollowField := ""
 ;what the fleet has been doing, newest first, as the coordinator reports it
 ext_fleetEvents := []
 ;binding: the open fleets heard on the network, and the one conversation
@@ -16977,6 +16980,9 @@ nm_GoGather(){
 		FieldDriftCheck:=FieldDriftCheck%CurrentFieldNum%
 	}
 	nm_updateAction("Gather")
+	;a fleet resident follows the main here and nowhere else - this is the farm
+	;path, and a planter or booster trip is a different function entirely
+	ext_fleetReportField(FieldName)
 	;close all menus
 	nm_OpenMenu()
 	;reset
