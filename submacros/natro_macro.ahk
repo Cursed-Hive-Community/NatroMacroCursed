@@ -31,6 +31,14 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "nowUnix.ahk"
 #Include "ErrorHandling.ahk"
 #Include "HashFile.ahk"
+#Include "Socket.ahk"
+#Include "FleetProtocol.ahk"
+#Include "FleetRoster.ahk"
+;extension modules - features this fork adds on top of stock Natro, kept in
+;their own files so they stay legible against an upstream diff
+#Include "%A_ScriptDir%\extensions\boostlease.ahk"
+#Include "%A_ScriptDir%\extensions\interrupts.ahk"
+#Include "%A_ScriptDir%\extensions\fleet.ahk"
 
 #Warn VarUnset, Off
 
@@ -731,6 +739,8 @@ nm_importConfig()
 		, "LastWhirligig", 1
 		, "LastEnzymes", 1
 		, "LastGlitter", 1
+		, "LastBlueBoostUse", 1
+		, "PreGlitterStart", 0
 		, "LastMicroConverter", 1
 		, "LastGuid", 1
 		, "AutoFieldBoostActive", 0
@@ -920,6 +930,24 @@ nm_importConfig()
 		, "TimerX", 150
 		, "TimerY", 150
 		, "TimersOpen", 0)
+
+	config["Extensions"] := Map("PFieldBoosted", 0
+		, "EnzymesBoostedOnly", 0
+		, "BlueBoosterInterruptCheck", 0
+		, "PreGlitterCheck", 0
+		, "StickerStackInterruptCheck", 0
+		, "MondoInterruptCheck", 0)
+
+	config["Fleet"] := Map("FleetCheck", 0
+		, "FleetRow", 0
+		, "FleetHostRow", 1
+		, "FleetPort", 47600
+		, "FleetSecret", ""
+		, "FleetAddress", ""
+		, "FleetGraceSecs", 45
+		, "FleetServerMain", ""
+		, "FleetServerReserve", ""
+		, "FleetCapacity", 6)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
@@ -2686,12 +2714,38 @@ MainGui.Add("Button", "x5 y260 w65 h20 -Wrap Disabled vStartButton", " Start (" 
 MainGui.Add("Button", "x75 y260 w65 h20 -Wrap Disabled vPauseButton", " Pause (" PauseHotkey ")").OnEvent("Click", nm_PauseButton)
 MainGui.Add("Button", "x145 y260 w65 h20 -Wrap Disabled vStopButton", " Stop (" StopHotkey ")").OnEvent("Click", nm_StopButton)
 MainGui.Add("Button", "x215 y260 w60 h20 -Wrap vGitSyncButton", "Git Sync").OnEvent("Click", nm_GitSyncGUI)
-for k,v in ["PMondoGuid","PMondoGuidComplete","PFieldBoosted","PFieldGuidExtend","PFieldGuidExtendMins","PFieldBoostExtend","PPopStarExtend"]
+for k,v in ["PMondoGuid","PMondoGuidComplete","PFieldGuidExtend","PFieldGuidExtendMins","PFieldBoostExtend","PPopStarExtend"]
 	%v%:=0
+;a lease gets one renewal, and the flag that says so resets with the lease
+ext_boostLeaseRenewed := 0
+;sticker stack backoffs are deliberately not persisted - fifteen seconds and
+;one minute mean nothing across a restart
+ext_stickerStackFailedAt := 0, ext_stickerStackUsedAt := 0
+;the fleet as this macro currently sees it. All of it is rebuilt from the
+;coordinator on connect, so none of it is saved.
+ext_fleetSock := 0, ext_fleetTerm := 0, ext_fleetCoordRow := 0
+ext_fleetCoordSeen := 0, ext_fleetBackoff := 0, ext_fleetTrying := ""
+ext_fleetPeers := Map()
+;where the last beacon came from, and the socket that listens for them.
+;Discovered rather than configured, which is the point: an address typed in
+;is wrong as soon as a router hands out a new lease.
+ext_fleetFoundAt := "", ext_fleetBeaconSock := 0, ext_fleetTryAt := 0
+;field-following: the field we last told the fleet we are farming, and the
+;field a resident has been told to follow the main into
+ext_fleetMyField := "", ext_fleetFollowField := ""
+;what the fleet has been doing, newest first, as the coordinator reports it
+ext_fleetEvents := []
+;binding: the open fleets heard on the network, and the one conversation
+;that joins one. None of it survives a restart, because binding happens once
+;and what it produces - a row and a secret - is what gets saved.
+ext_fleetOpen := Map(), ext_fleetBindSock := 0, ext_fleetBindWith := ""
+ext_fleetBindResult := "", ext_fleetBindOpenUntil := 0
+;which account the roster editor is editing, and the order its list is in
+FleetEditRow := 0, FleetRosterOrder := []
 #include "*i %A_ScriptDir%\..\settings\personal.ahk"
 
 ; add tabs
-TabArr := ["Gather","Collect/Kill","Boost","Quests","Planters","Status","Settings","Misc","Credits"], (BuffDetectReset = 1) && TabArr.Push("Advanced")
+TabArr := ["Gather","Collect/Kill","Boost","Quests","Planters","Extensions","Status","Settings","Misc","Credits"], (BuffDetectReset = 1) && TabArr.Push("Advanced")
 (TabCtrl := MainGui.Add("Tab", "x0 y-1 w500 h240 -Wrap", TabArr)).OnEvent("Change", (*) => TabCtrl.Focus())
 SendMessage 0x1331, 0, 20, , TabCtrl ; set minimum tab width
 ; check for update
@@ -2917,6 +2971,45 @@ MainGui.Add("Button", "x340 y124 w150 h40 vNightAnnouncementGUI Disabled", "Nigh
 MainGui.Add("Button", "x340 y184 w150 h20 vReportBugButton Disabled", "Report Bugs").OnEvent("Click", nm_ReportBugButton)
 MainGui.Add("Button", "x340 y206 w150 h20 vMakeSuggestionButton Disabled", "Make Suggestions").OnEvent("Click", nm_MakeSuggestionButton)
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
+
+;EXTENSIONS TAB
+;------------------------
+;Everything this fork adds on top of stock Natro gathers here rather than
+;being scattered through the tabs it touches. Two reasons: the settings are
+;findable, and an upstream Natro diff stays readable because almost none of
+;it lands in the tabs upstream owns.
+TabCtrl.UseTab("Extensions")
+MainGui.SetFont("w700")
+MainGui.Add("GroupBox", "x10 y25 w235 h93", "Boost")
+MainGui.Add("GroupBox", "x255 y25 w235 h93", "Interrupts")
+MainGui.Add("GroupBox", "x10 y125 w480 h72", "Fleet")
+MainGui.SetFont("s8 cDefault Norm", "Tahoma")
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
+	, "Glitter Extend")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x172 y45 w14 h16", "?").OnEvent("Click", ext_GlitterExtendHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y68 w170 h18 vEnzymesBoostedOnly Checked" EnzymesBoostedOnly
+	, "Boosted Enzyme Only")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x192 y68 w14 h16", "?").OnEvent("Click", ext_EnzymesBoostedOnlyHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y91 w100 h18 vPreGlitterCheck Checked" PreGlitterCheck
+	, "Pre-Glitter")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x122 y91 w14 h16", "?").OnEvent("Click", ext_PreGlitterHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x265 y45 w160 h18 vBlueBoosterInterruptCheck Checked" BlueBoosterInterruptCheck
+	, "Blue Booster")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x427 y45 w14 h16", "?").OnEvent("Click", ext_BlueBoosterHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x265 y68 w160 h18 vStickerStackInterruptCheck Checked" StickerStackInterruptCheck
+	, "Sticker Stack")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x427 y68 w14 h16", "?").OnEvent("Click", ext_StickerStackHelp)
+(GuiCtrl := MainGui.Add("CheckBox", "x265 y91 w160 h18 vMondoInterruptCheck Checked" MondoInterruptCheck
+	, "Mondo")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x427 y91 w14 h16", "?").OnEvent("Click", ext_MondoInterruptHelp)
+;Two live lines on the main window, so the ordinary case is to open nothing
+;at all. The panel is for when these say there is something to look at.
+MainGui.Add("Text", "x20 y142 w350 vFleetStripSeats +BackgroundTrans", "")
+MainGui.Add("Text", "x20 y158 w350 vFleetStripNext +BackgroundTrans", "")
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y177 w180 h18 vFleetCheck Checked" FleetCheck
+	, "Talk to the other macros")).Section := "Fleet", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x202 y177 w14 h16", "?").OnEvent("Click", ext_FleetHelp)
+MainGui.Add("Button", "x380 y174 w100 h22", "Fleet panel").OnEvent("Click", ext_FleetGUI)
 
 ; STATUS TAB
 ; ------------------------
@@ -3644,6 +3737,12 @@ if (BuffDetectReset = 1)
 	nm_AdvancedGUI()
 SetCursor(0)
 SetLoadingProgress(100)
+
+;join the fleet, if this macro belongs to one. It happens here rather than at
+;Start, because the panel is worth watching while the macro sits idle - and a
+;macro that is paused is still a seat in the server.
+ext_fleetStart()
+SetTimer ext_fleetTabStatus, 2000
 
 ;unlock tabs
 nm_LockTabs(0)
@@ -4491,6 +4590,128 @@ nm_TabMiscUnLock(){
 	MainGui["AutoMutatorButton"].Enabled := 1
 }
 
+;What Glitter Extend does, in the words of someone who has to decide whether
+;to tick it.
+ext_GlitterExtendHelp(*){
+	MsgBox
+	(
+	"A field boost lasts 15 minutes. Glitter grants 15 minutes of its own.
+
+	Pressed in the closing seconds of a boost, glitter carries it straight on
+	into a second quarter of an hour, so one booster covers 30 minutes of
+	gathering instead of 15. Pressed any earlier it overlaps the boost already
+	running and throws the overlap away.
+
+	The macro waits for the last 30 seconds while it is gathering, and for the
+	last minute when it is about to leave and convert - a trip it would not
+	finish before the boost ran out otherwise.
+
+	Needs a glitter hotbar key set in the Boost tab."
+	), "Glitter Extend", 0x40040
+}
+;Why anyone would want enzymes held back.
+ext_EnzymesBoostedOnlyHelp(*){
+	MsgBox
+	(
+	"Enzymes multiply what a convert is worth, so one spent during a field
+	boost is worth several spent outside one. Ticked, the macro keeps them
+	for boosted converts; unticked, it uses one whenever the ten minute
+	cooldown is up.
+
+	This used to follow Glitter Extend, which is now a separate setting - so
+	turning one on no longer quietly changes the other."
+	), "Boosted Enzyme Only", 0x40040
+}
+;Why this is worth interrupting a trip for.
+ext_BlueBoosterHelp(*){
+	MsgBox
+	(
+	"The blue field booster comes off cooldown every 45 minutes. Natro only
+	looks between gathering trips, so one that came ready early in a trip
+	sits unused until the trip ends - often most of an hour wasted.
+
+	Ticked, the macro breaks off and walks to the booster 40 seconds before
+	the cooldown is up, which is roughly how long the walk takes, so it
+	arrives as the booster becomes available rather than waiting there.
+
+	The boost it presses starts a fresh Glitter Extend lease."
+	), "Blue Booster Interrupt", 0x40040
+}
+;What Pre-Glitter buys, and what it costs.
+ext_PreGlitterHelp(*){
+	MsgBox
+	(
+	"The blue booster is worth more than glitter, so the macro will not spend
+	glitter while one is nearly due - and the last ten minutes of every 45
+	minute cooldown are spent in an unboosted field.
+
+	Glitter lasts 15 minutes. Pressed when the booster is 10 to 11 minutes
+	away, it covers that wait and runs out shortly after the booster is
+	pressed, so almost none of it overlaps.
+
+	Pine Tree only. While a pre-glitter is running the macro still collects,
+	does quests and tends planters: shutting all of that out for 15 minutes
+	would cost more than the boost is worth.
+
+	Needs Blue Booster Interrupt on, which is what tracks the cooldown."
+	), "Pre-Glitter", 0x40040
+}
+;Why a stack is worth leaving a field for.
+ext_StickerStackHelp(*){
+	MsgBox
+	(
+	"A sticker stack is worth whatever gets converted underneath it, and it
+	runs on a timer. Natro places one only between gathering trips, so a
+	stack that came due early in a trip is spent on far less honey than it
+	could have been.
+
+	Ticked, the macro breaks off as soon as the timer is up, places the
+	stack, and returns to the hive to convert under it.
+
+	Needs Sticker Stack itself enabled in the Boost tab, which is where the
+	timer, the item and the skins are set."
+	), "Sticker Stack Interrupt", 0x40040
+}
+;What leaving at :59 buys.
+ext_MondoInterruptHelp(*){
+	MsgBox
+	(
+	"Mondo Chick spawns at the top of the hour at Mountain Top, and its buff
+	is worth more than the few minutes of gathering the trip costs.
+
+	Natro only goes once the hour has already turned, only while unboosted,
+	and only when it next looks between trips - so it often arrives to find
+	the spawn gone, or does not go at all.
+
+	Ticked, the macro leaves at :59 so it is standing there as the chick
+	appears, and renews the field boost before going rather than skipping
+	the trip to protect it. Arriving up to :14 still counts, for the times
+	it was mid-pattern with a full backpack when the hour turned.
+
+	Needs Mondo set to Buff in the Collect tab. Killing Mondo is a different
+	job and Natro already handles it."
+	), "Mondo Interrupt", 0x40040
+}
+;What joining a fleet buys, for someone deciding whether to tick it.
+ext_FleetHelp(*){
+	MsgBox
+	(
+	"Several macros, one plan.
+
+	Each macro reports what it sees - which field it is on, which server it
+	is in - to a coordinator, and receives the fleet's picture back. On its
+	own that is only a shared view; it is what later lets alts be scheduled
+	around each other.
+
+	One macro hosts the coordinator. If it goes down another takes over and
+	hands the job back when it returns, so no single macro can stop the
+	rest - and a macro that loses the fleet entirely simply carries on
+	farming alone.
+
+	Open the Fleet panel to set the row numbers, the shared secret and the
+	server links."
+	), "Fleet", 0x40040
+}
 ;update config
 nm_saveConfig(GuiCtrl, *){
 	global
@@ -10828,7 +11049,17 @@ nm_BugrunInterrupt() {
 			|| (RileyQuestCheck && RileyQuestGatherInterruptCheck && RileyAll))
 			&& ((now-LastBugrunWerewolf)>floor(3600*multiplier))))
 }
-nm_GatherBoostInterrupt() => (now := nowUnix(), ((now-GatherFieldBoostedStart<900) || (now-LastGlitter<900) || nm_boostBypassCheck()))
+;The boost is whatever the lease says it is. Asking the two start times
+;separately, as this used to, let a glitter press open a window of its own
+;that outlived the boost it was meant to extend.
+nm_GatherBoostInterrupt() {
+	ext_boostLeaseExpire()
+	;a pre-glitter covers the wait for the blue booster and is not worth
+	;shutting the errands out for - see ext_preGlitterDue
+	if ext_preGlitterActive()
+		return nm_boostBypassCheck()
+	return (nowUnix() < ext_boostLeaseDeadline()) || nm_boostBypassCheck()
+}
 nm_MemoryMatchInterrupt() {
 	global MemoryMatchInterruptCheck
 	now := nowUnix()
@@ -13826,6 +14057,9 @@ nm_toBooster(location){
 				LastCoconutDis:=nowUnix(), IniWrite(LastCoconutDis, "settings\nm_config.ini", "Collect", "LastCoconutDis")
 			else
 				Last%location%Boost:=nowUnix(), IniWrite(Last%location%Boost, "settings\nm_config.ini", "Collect", "Last" location "Boost")
+			;the blue booster is on a clock of its own, watched by the interrupt
+			if (location = "blue")
+				ext_blueBoosterUsed()
 			
 			nm_createWalk((location = "mountain") ? nm_Walk(8, LeftKey) : (location = "red") ? nm_Walk(8, BackKey) : nm_Walk(8, RightKey))
 			KeyWait "F14", "D T5 L"
@@ -13857,6 +14091,8 @@ nm_toBooster(location){
 			} else {
 				Last%location%Boost:=nowUnix()-1500
 				IniWrite Last%location%Boost, "settings\nm_config.ini", "Collect", "Last" location "Boost"
+				if (location = "blue")
+					ext_blueBoosterFailed()
 			}
 		}
 	}
@@ -16520,6 +16756,17 @@ nm_GoGather(){
 	;MONDO
 	if nm_MondoInterrupt()
 		return
+	;MONDO SPAWN
+	if ext_mondoInterrupt()
+		return
+	;STICKER STACK
+	if ext_stickerStackInterrupt()
+		return
+	;BLUE BOOSTER
+	if ext_blueBoosterReady() {
+		nm_toBooster("blue")
+		return
+	}
 	if !(nm_GatherBoostInterrupt()){
 		;BUGS GatherInterruptCheck
 		if nm_BugrunInterrupt()
@@ -16537,6 +16784,32 @@ nm_GoGather(){
 	;FIELD OVERRIDES
 	global fieldOverrideReason:="None"
 	loop 1 {
+		;fleet follow override: a resident gathers whatever field the main is
+		;farming, ahead of its own configured field and every other override -
+		;standing in the main's field is the whole of a resident's job. Picked
+		;up here, at the top of a gather trip, so the resident finishes the trip
+		;it is on before switching; that is the least disruptive hook and the
+		;only one that never cuts a pattern in half. fieldOverrideReason stays
+		;"None" on purpose: the resident then farms this field byte-for-byte
+		;like one of its own, boost detection and gather-start hotkeys included.
+		if (followField := ext_fleetFollowTarget()) {
+			FieldName:=followField
+			FieldPattern:=FieldDefault[FieldName]["pattern"]
+			FieldPatternSize:=FieldDefault[FieldName]["size"]
+			FieldPatternReps:=FieldDefault[FieldName]["width"]
+			FieldPatternShift:=FieldDefault[FieldName]["shiftlock"]
+			FieldPatternInvertFB:=FieldDefault[FieldName]["invertFB"]
+			FieldPatternInvertLR:=FieldDefault[FieldName]["invertLR"]
+			FieldUntilMins:=FieldDefault[FieldName]["gathertime"]
+			FieldUntilPack:=FieldDefault[FieldName]["percent"]
+			FieldReturnType:=FieldDefault[FieldName]["convert"]
+			FieldSprinklerLoc:=FieldDefault[FieldName]["sprinkler"]
+			FieldSprinklerDist:=FieldDefault[FieldName]["distance"]
+			FieldRotateDirection:=FieldDefault[FieldName]["camera"]
+			FieldRotateTimes:=FieldDefault[FieldName]["turns"]
+			FieldDriftCheck:=FieldDefault[FieldName]["drift"]
+			break
+		}
 		;boosted field override
 		if(BoostChaserCheck){
 
@@ -16733,6 +17006,9 @@ nm_GoGather(){
 		FieldDriftCheck:=FieldDriftCheck%CurrentFieldNum%
 	}
 	nm_updateAction("Gather")
+	;a fleet resident follows the main here and nowhere else - this is the farm
+	;path, and a planter or booster trip is a different function entirely
+	ext_fleetReportField(FieldName)
 	;close all menus
 	nm_OpenMenu()
 	;reset
@@ -16875,17 +17151,30 @@ nm_GoGather(){
 		while ((GetKeyState("F14") && (A_Index <= 3600)) || (A_Index = 1)) { ; timeout 3m
 			;use glitter
 			if (Mod(A_Index, 20) = 1) { ; every 1s
-				if(PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>525 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none" && fieldOverrideReason="None") { ;between 9 and 15 mins (-minus an extra 15 seconds)
-					Send "{" GlitterKey "}"
-					LastGlitter:=nowUnix()
-					IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
-				}
+				;standing in the field with nothing else to do, so wait for the last
+				;thirty seconds and carry the most boost forward
+				if ext_preGlitterDue(FieldName)
+					ext_preGlitterFire(FieldName)
+				else if ext_boostLeaseGatherWindow()
+					ext_boostLeaseRenew(FieldName, "Glitter Extend")
 				nm_autoFieldBoost(FieldName)
 				nm_fieldBoostGlitter()
 			}
 
 			;high priority interrupts
 			if (Mod(A_Index, 5) = 1) { ; every 250ms
+				if ext_mondoDue() {
+					interruptReason := "Mondo Spawning"
+					break
+				}
+				if ext_stickerStackDue() {
+					interruptReason := "Sticker Stack Ready"
+					break
+				}
+				if ext_blueBoosterReady() {
+					interruptReason := "Blue Booster Ready"
+					break
+				}
 				if DisconnectCheck() {
 					interruptReason := "Disconnect"
 					break
@@ -16909,11 +17198,10 @@ nm_GoGather(){
 					} else if ((nowUnix()-LastMicroConverter)>10) {
 						interruptReason := "Backpack exceeds " .  FieldUntilPack . " percent"
 						;use glitter early if boosted and close to glitter time
-						if(PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>600 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none" && (fieldOverrideReason="None" || fieldOverrideReason="Boost")){ ;between 10 and 15 mins
-							Send "{" GlitterKey "}"
-							LastGlitter:=nowUnix()
-							IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
-						}
+						;about to walk off to convert, so take the wider window: the
+						;lease would run out during the trip otherwise
+						if ext_boostLeaseConvertWindow()
+							ext_boostLeaseRenew(FieldName, "Glitter Extend")
 						break
 					}
 				}
@@ -17335,9 +17623,14 @@ nm_convert(){
 		, ConvertStartTime, TotalConvertTime, SessionConvertTime
 		, BackpackPercent, BackpackPercentFiltered
 		, PFieldBoosted, GatherFieldBoosted, GatherFieldBoostedStart, LastGlitter, GlitterKey
+		, EnzymesBoostedOnly
 		, GameFrozenCounter, LastConvertBalloon, ConvertBalloon, ConvertMins, HiveBees, ConvertGatherFlag
 
 	if (nm_NightInterrupt() || nm_MondoInterrupt())
+		return
+	;a balloon convert runs ten minutes and will straddle the hour sooner or
+	;later, so the spawn has to be checked here as well as before a trip
+	if ext_mondoInterrupt()
 		return
 
 	hwnd := GetRobloxHWND()
@@ -17370,7 +17663,9 @@ nm_convert(){
 			if (disconnectcheck()) {
 				return
 			}
-			if (PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)>780 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {
+			;breaking off a convert to renew the lease only pays while there is
+			;still a lease to renew - the window is the last minute of it
+			if ext_boostLeaseConvertWindow() {
 				nm_setStatus("Interrupted", "Field Boosted")
 				return
 			}
@@ -17429,10 +17724,19 @@ nm_convert(){
 					return
 				}
 				inactiveHoney := (nm_activeHoney() = 0) ? inactiveHoney + 1 : 0
-				if(((EnzymesKey!="none") && (!PFieldBoosted || (PFieldBoosted && GatherFieldBoosted))) && (nowUnix()-LastEnzymes)>600 && (inactiveHoney = 0)) {
+				;An enzyme is worth far more spent on a boosted convert than on a
+				;plain one, so holding it back until the field is boosted is the
+				;point of the switch. The boost is read through the lease rather
+				;than through GatherFieldBoosted, which is a detection flag and
+				;says nothing about a boost that Glitter Extend has renewed since.
+				if ((EnzymesKey != "none")
+					&& (!EnzymesBoostedOnly || nm_GatherBoostInterrupt())
+					&& ((nowUnix() - LastEnzymes) > 600)
+					&& (inactiveHoney = 0)) {
 					Send "{" EnzymesKey "}"
-					LastEnzymes:=nowUnix()
+					LastEnzymes := nowUnix()
 					IniWrite LastEnzymes, "settings\nm_config.ini", "Boost", "LastEnzymes"
+					nm_setStatus("Converting", "Balloon`nUsed Enzyme")
 				}
 				if (BalloonConvertTime>60 && inactiveHoney>30) {
 					nm_setStatus("Interrupted", "Inactive Honey")
@@ -17442,7 +17746,9 @@ nm_convert(){
 				if (disconnectcheck()) {
 					return
 				}
-				if ((PFieldBoosted = 1) && (nowUnix()-GatherFieldBoostedStart)>780 && (nowUnix()-GatherFieldBoostedStart)<900 && (nowUnix()-LastGlitter)>900 && GlitterKey!="none") {
+				;breaking off a convert to renew the lease only pays while there is
+				;still a lease to renew - the window is the last minute of it
+				if ext_boostLeaseConvertWindow() {
 					nm_setStatus("Interrupted", "Field Boosted")
 					return
 				}
