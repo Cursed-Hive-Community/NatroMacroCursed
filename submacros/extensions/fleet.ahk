@@ -731,7 +731,7 @@ ext_FleetWhoDraw() {
 		left := ext_fleetBindOpenUntil - nowUnix()
 		FleetSetupGui["FleetWho"].Text := me "`nThis macro hosts the fleet."
 		ext_FleetButton("FleetAct1", (left > 0)
-			? "Open for " Floor(left / 60) ":" Format("{:02}", Mod(left, 60))
+			? "Stop accepting (" Floor(left / 60) ":" Format("{:02}", Mod(left, 60)) ")"
 			: "Accept new macros")
 		ext_FleetButton("FleetAct2", "Leave the fleet")
 		return
@@ -758,8 +758,12 @@ ext_FleetAct1(*) {
 		return
 	}
 	if (FleetHostRow = FleetRow) {
-		;two minutes, which is the window the coordinator will honour anyway
-		if ext_fleetOpenDoor(120)
+		;toggle: an open door shuts, a shut one opens for two minutes - the
+		;window the coordinator will honour anyway
+		if (ext_fleetBindOpenUntil > nowUnix()) {
+			ext_fleetOpenDoor(0)
+			ext_fleetBindOpenUntil := 0
+		} else if ext_fleetOpenDoor(120)
 			ext_fleetBindOpenUntil := nowUnix() + 120
 		else
 			MsgBox "The coordinator is not reachable from here yet. Wait for the fleet to come up and try again.", "Fleet", 0x40030

@@ -326,6 +326,13 @@ fleet_OnOpen(s, frame) {
 
 	if (!row || (hostRow && (row != hostRow)))
 		return
+	;secs<=0 is the host shutting the door early rather than waiting it out -
+	;the toggle on its own button sends this
+	if (secs <= 0) {
+		bindUntil := 0
+		fleet_Event("stopped accepting new macros")
+		return
+	}
 	bindUntil := nowUnix() + Min(Max(secs, 10), 300)
 	fleet_Event("accepting new macros for " (bindUntil - nowUnix()) " seconds")
 }
