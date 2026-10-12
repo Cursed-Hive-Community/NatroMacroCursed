@@ -67,6 +67,12 @@ roster := roster_Load(rosterPath)
 ;network can walk into, so it shuts itself.
 bindUntil := 0
 rosterStamp := fleet_RosterStamp()
+;Outstanding pings, by id. How far away a macro is cannot be read off the
+;heartbeats - they say a macro is alive, not how long it takes to answer - so
+;the round trip is asked for explicitly and timed in ticks. Unix seconds would
+;report every hop on a local network as zero.
+pingId := 0
+pingAt := Map()
 
 fleet_Log("coordinator starting, port " port ", term " term ", row " hostRow)
 if !(listener := sock_Listen(port, fleet_OnSocket)) {
@@ -115,11 +121,13 @@ fleet_OnLine(s, line) {
 			fleet_OnOpen(s, frame)
 		case "BIND":
 			fleet_OnBind(s, frame)
+		case "LEAVE":
+			fleet_OnLeave(s)
 		case "FIELD", "GUIDING", "CHARGE", "MONDO_IN", "STATE":
 			fleet_OnReport(s, frame)
 		case "ACK", "FAIL":
 			fleet_Touch(s)
-			fleet_Log("row " fleet_RowOf(s) " " frame.verb " id=" fleet_Field(frame, "id"))
+			fleet_OnAck(s, frame)
 		default:
 			fleet_Log("unknown verb " frame.verb " from row " fleet_RowOf(s))
 	}
@@ -161,7 +169,10 @@ fleet_OnHello(s, frame) {
 		, user: roster[row].user, owner: roster[row].owner
 		, machine: fleet_Field(frame, "machine", "")
 		, socket: s, state: "online", lastSeen: nowUnix()
-		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: 0 }
+		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: 0
+		;-1 rather than 0: nothing has been measured yet, which is not the same
+		;as a macro that answered instantly
+		, rtt: -1, mondoIn: 0 }
 	bySocket[s] := row
 	fleet_Event("row " row " (" name ") joined")
 	;tell the newcomer who is in charge before anything else, so it knows which
@@ -228,28 +239,112 @@ fleet_OnClose(s) {
 	fleet_Broadcast()
 }
 
+;A macro saying it is leaving on purpose. This is the opposite of fleet_OnClose
+;above: a connection that drops leaves its row in place marked offline, because
+;a macro that crashed is still part of the fleet and will be back, whereas a
+;macro that was told to leave is not and its row goes - out of the roster file
+;as well, so it does not reappear on the next reload.
+fleet_OnLeave(s) {
+	global roster, rosterPath, rosterStamp
+	local row := fleet_RowOf(s)
+
+	if !row
+		return
+	if roster.Has(row) {
+		roster.Delete(row)
+		roster_Save(rosterPath, roster)
+		;our own write would otherwise look like an outside edit and cost a
+		;pointless reload on the next beat
+		rosterStamp := fleet_RosterStamp()
+	}
+	;no BYE: it is the macro's own decision and it is not being refused
+	fleet_Drop(row, "left the fleet", 0)
+	fleet_Broadcast()
+}
+
+;Take a row out of the fleet altogether. GONE is the only frame that removes
+;anything - every other change is carried by a ROSTER row whose state says what
+;happened, which is why an offline macro needs no deletion and this does.
+fleet_Drop(row, why, tell := 1) {
+	global peers, bySocket
+	local p
+
+	if !peers.Has(row)
+		return
+	p := peers[row]
+	if p.socket {
+		if tell
+			sock_SendLine(p.socket, fleet_Frame("BYE", Map("why", why)))
+		bySocket.Delete(p.socket)
+		sock_Close(p.socket)
+	}
+	peers.Delete(row)
+	fleet_Event(p.name " " why)
+	fleet_Send(fleet_Frame("GONE", Map("row", row)))
+}
+
+;An ACK that answers a ping is the only measurement of how far away a macro is.
+;Any other ACK keeps the old behaviour of simply being noted - and a ping reply
+;is deliberately not logged, since one per macro every five seconds would bury
+;everything worth reading.
+fleet_OnAck(s, frame) {
+	global peers, pingAt
+	local id := Integer(fleet_Field(frame, "id", 0)), waiting
+
+	if (id && pingAt.Has(id)) {
+		waiting := pingAt[id]
+		pingAt.Delete(id)
+		if peers.Has(waiting.row)
+			peers[waiting.row].rtt := A_TickCount - waiting.tick
+		return
+	}
+	fleet_Log("row " fleet_RowOf(s) " " frame.verb " id=" id)
+}
+
+;Ask every seated macro how long it takes to answer.
+fleet_Ping() {
+	global peers, pingId, pingAt
+	local p, id, stale := []
+
+	for _, p in peers {
+		if ((p.state != "online") || !p.socket)
+			continue
+		pingAt[++pingId] := { row: p.row, tick: A_TickCount }
+		sock_SendLine(p.socket, fleet_Frame("PING", Map("id", pingId)))
+	}
+	;a ping nobody answered would sit here for the life of the process
+	for id, p in pingAt
+		if ((A_TickCount - p.tick) > 60000)
+			stale.Push(id)
+	for _, id in stale
+		pingAt.Delete(id)
+}
+
 ;Say we are alive, and write off anyone who has not.
 fleet_Beat() {
 	global peers, term, hostRow, roster, rosterPath, rosterStamp
-	local changed := 0, p, stamp
+	local p, stamp
 
 	;pick up an edited roster without a restart
 	if ((stamp := fleet_RosterStamp()) != rosterStamp) {
 		roster := roster_Load(rosterPath), rosterStamp := stamp
 		fleet_Event("roster reloaded, " roster.Count " rows")
 		fleet_ApplyRoster()
-		changed := 1
 	}
 	for _, p in peers {
 		if ((p.state = "online") && ((nowUnix() - p.lastSeen) > FLEET_QUIET_SECS)) {
 			p.state := "stale"
-			changed := 1
 			fleet_Event("row " p.row " (" p.name ") went quiet")
 		}
 	}
 	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
-	if changed
-		fleet_Broadcast()
+	fleet_Ping()
+	;broadcast every beat, not only when something changed. The detail panel
+	;shows values that go stale on their own - how long ago a macro was last
+	;heard from, how long it took to answer - and a roster that only moves on
+	;a change would leave them frozen at whatever they were when it last did.
+	;It is one short line per row every five seconds.
+	fleet_Broadcast()
 }
 
 ;The roster, as one ROSTER frame per row. Sending each row on its own line means
@@ -264,7 +359,10 @@ fleet_Broadcast() {
 		f := Map("row", p.row, "name", p.name, "role", p.role, "state", p.state
 			, "machine", p.machine, "user", p.user, "owner", p.owner
 		, "server", p.server, "field", p.field
-			, "guiding", p.guidingField, "until", p.guidingUntil, "charge", p.charge)
+			, "guiding", p.guidingField, "until", p.guidingUntil, "charge", p.charge
+			;both are for the detail panel: how long this macro takes to answer,
+			;and when it last said anything at all
+			, "rtt", p.rtt, "seen", p.lastSeen)
 		fleet_Send(fleet_Frame("ROSTER", f))
 	}
 }
@@ -293,14 +391,22 @@ fleet_RosterStamp() {
 ;re-roled account does not have to reconnect for the change to be seen.
 fleet_ApplyRoster() {
 	global peers, roster
-	local row, p
+	local row, p, struck := []
 
 	for row, p in peers {
-		if !roster.Has(row)
+		;struck off the roster by hand. Leaving the row on screen would suggest
+		;its macro is still welcome, and it is not - the next HELLO is refused.
+		;Collected rather than deleted here, because dropping a row mid-loop
+		;mutates the map being walked.
+		if !roster.Has(row) {
+			struck.Push(row)
 			continue
+		}
 		p.name := roster[row].name, p.role := roster[row].role
 		p.user := roster[row].user, p.owner := roster[row].owner
 	}
+	for _, row in struck
+		fleet_Drop(row, "was removed from the roster")
 }
 
 ;Shout where we are. The fingerprint says which fleet this is without putting

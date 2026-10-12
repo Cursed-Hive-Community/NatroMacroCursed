@@ -2733,6 +2733,10 @@ ext_fleetFoundAt := "", ext_fleetBeaconSock := 0, ext_fleetTryAt := 0
 ;field-following: the field we last told the fleet we are farming, and the
 ;field a resident has been told to follow the main into
 ext_fleetMyField := "", ext_fleetFollowField := ""
+;which account each seat card currently shows. The cards are made once and
+;repainted, so a click has to be answered from here rather than from a handler
+;bound to a row that has since moved.
+ext_fleetSeatRow := Map()
 ;what the fleet has been doing, newest first, as the coordinator reports it
 ext_fleetEvents := []
 ;binding: the open fleets heard on the network, and the one conversation

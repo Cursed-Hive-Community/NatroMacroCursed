@@ -236,7 +236,7 @@ ext_fleetHello() {
 ;A frame from the coordinator.
 ext_fleetOnLine(line) {
 	global ext_fleetPeers, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
-	global ext_fleetEvents, ext_fleetFollowField
+	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -262,6 +262,20 @@ ext_fleetOnLine(line) {
 				. fleet_Field(frame, "text"))
 			while (ext_fleetEvents.Length > 80)
 				ext_fleetEvents.Pop()
+			ext_fleetCoordSeen := nowUnix()
+		case "PING":
+			;answered first and with nothing else done: the coordinator is
+			;timing the round trip, so any work here would be measured as
+			;distance to this machine
+			sock_SendLine(ext_fleetSock, fleet_Frame("ACK", Map("id", fleet_Field(frame, "id"))))
+			ext_fleetCoordSeen := nowUnix()
+		case "GONE":
+			;the one frame that removes an account. Everything else is a ROSTER
+			;row whose state says what happened, so this is how a macro that
+			;left for good stops being drawn.
+			row := Integer(fleet_Field(frame, "row", 0))
+			if (row && ext_fleetPeers.Has(row))
+				ext_fleetPeers.Delete(row)
 			ext_fleetCoordSeen := nowUnix()
 		case "GOTO":
 			;the main is farming this field and we are a resident. Store it;
@@ -302,6 +316,18 @@ ext_fleetFollowTarget() {
 	if !FieldDefault.Has(ext_fleetFollowField)
 		return ""
 	return ext_fleetFollowField
+}
+
+;Leaving on purpose, which the fleet cannot tell from a crash on its own - both
+;look like a socket closing. Saying so is what turns an offline row into no row
+;at all. sock_SendLine flushes as it writes, so the frame is on the wire before
+;the caller closes the socket a moment later.
+ext_fleetSayLeaving() {
+	global ext_fleetSock
+
+	if !ext_fleetSock
+		return 0
+	return sock_SendLine(ext_fleetSock, fleet_Frame("LEAVE"))
 }
 
 ;Say we are still here. Cheap, and it is what tells the coordinator apart from a
@@ -469,10 +495,16 @@ ext_fleetSummary() {
 ;repainted: rebuilding controls every second flickers and leaks window handles.
 FLEET_SEATS_MAIN := 12
 FLEET_SEATS_SPARE := 6
+;A card is three stacked labels, not one: the account name has to be the thing
+;the eye lands on, and a Text control carries a single font. 94 wide by 46 high
+;on a 98 by 54 pitch, so the 4px of window showing between cards is what
+;separates them - no border, because bordering each of the three labels would
+;draw three boxes where there is one card.
+FLEET_CARD_W := 94
 
 ext_FleetGUI(*) {
 	global FleetGui, FLEET_SEATS_MAIN, FLEET_SEATS_SPARE
-	local i, x, y
+	local i
 
 	if (IsSet(FleetGui) && IsObject(FleetGui)) {
 		FleetGui.Show()
@@ -487,27 +519,28 @@ ext_FleetGUI(*) {
 	FleetGui.SetFont("s8 cDefault Bold")
 	FleetGui.Add("Text", "x16 y34 w300 vFleetMainLabel", "MAIN SERVER")
 	FleetGui.Add("Text", "x404 y34 w200 Right vFleetMainCount", "")
-	FleetGui.Add("Text", "x16 y142 w300 vFleetSpareLabel", "RESERVE")
-	FleetGui.Add("Text", "x404 y142 w200 Right vFleetSpareCount", "")
+	FleetGui.Add("Text", "x16 y162 w300 vFleetSpareLabel", "RESERVE")
+	FleetGui.Add("Text", "x404 y162 w200 Right vFleetSpareCount", "")
 	FleetGui.SetFont("Norm")
 
 	;seat cards, six to a row
 	Loop FLEET_SEATS_MAIN {
 		i := A_Index - 1
-		x := 16 + Mod(i, 6) * 98, y := 54 + (i // 6) * 50
-		FleetGui.Add("Text", "x" x " y" y " w94 h44 Border Center vFleetSeatM" A_Index, "")
+		ext_FleetMakeCard("FleetSeatM" A_Index, 16 + Mod(i, 6) * 98, 52 + (i // 6) * 54)
 	}
 	Loop FLEET_SEATS_SPARE {
 		i := A_Index - 1
-		x := 16 + Mod(i, 6) * 98
-		FleetGui.Add("Text", "x" x " y162 w94 h44 Border Center vFleetSeatS" A_Index, "")
+		ext_FleetMakeCard("FleetSeatS" A_Index, 16 + Mod(i, 6) * 98, 180)
 	}
+	FleetGui.SetFont("s8 c808080 Norm", "Tahoma")
+	FleetGui.Add("Text", "x16 y232 w588", "Click an account for its details.")
+	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
 
 	;newest first, so the line that just appeared is the one on screen and
 	;nothing has to be scrolled
-	FleetGui.Add("Text", "x16 y216 w588 h1 +0x10")
+	FleetGui.Add("Text", "x16 y250 w588 h1 +0x10")
 	FleetGui.SetFont("s8", "Consolas")
-	FleetGui.Add("Edit", "x16 y224 w588 h166 ReadOnly -Wrap +VScroll vFleetLog", "")
+	FleetGui.Add("Edit", "x16 y258 w588 h132 ReadOnly -Wrap +VScroll vFleetLog", "")
 	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
 
 	FleetGui.Add("Button", "x16 y398 w100 h26", "Settings").OnEvent("Click", ext_FleetSetupGUI)
@@ -522,6 +555,8 @@ ext_FleetGUIClose(*) {
 	global FleetGui
 
 	SetTimer ext_FleetRefresh, 0
+	;the detail window belongs to a card in this one, so it goes too
+	ext_FleetPeerClose()
 	if (IsSet(FleetGui) && IsObject(FleetGui))
 		FleetGui.Destroy(), FleetGui := ""
 }
@@ -563,51 +598,86 @@ ext_FleetRefresh() {
 ;only drawn in the main server: an empty reserve is not a place waiting to be
 ;filled, it is simply nothing.
 ext_FleetPaintRow(prefix, pool, list, showFree) {
-	global FleetGui
-	local i, card, p, free := showFree ? ext_fleetCapacity() : 0
+	global ext_fleetSeatRow
+	local i, p, free := showFree ? ext_fleetCapacity() : 0
 
 	Loop pool {
 		i := A_Index
-		card := FleetGui[prefix i]
 		if (i <= list.Length) {
 			p := list[i]
-			card.Text := ext_FleetCell(p, "name") "`n" ext_FleetSeatLine(p)
-			card.Opt("Background" ext_FleetSeatColour(p))
-			card.Visible := true
+			ext_FleetSetCard(prefix i, ext_FleetSeatName(p), ext_FleetCell(p, "role")
+				, ext_FleetCell(p, "machine"), ext_FleetSeatColour(p), true)
+			ext_fleetSeatRow[prefix i] := ext_FleetNum(p, "row")
 		}
 		else if (i <= free) {
-			card.Text := "`nfree"
-			card.Opt("BackgroundF2F2F2")
-			card.Visible := true
+			ext_FleetSetCard(prefix i, "", "free", "", "E6E6E6", true)
+			ext_fleetSeatRow[prefix i] := 0
 		}
-		else
-			card.Visible := false
-		card.Redraw()
+		else {
+			ext_FleetSetCard(prefix i, "", "", "", "E6E6E6", false)
+			ext_fleetSeatRow[prefix i] := 0
+		}
 	}
 }
 
-;The second line of a card: whatever is most worth knowing about that macro
-;right now, which is not the same thing for every role.
-ext_FleetSeatLine(p) {
-	local left
+;One card: the account name large, then its role, then the machine it runs on.
+;That order is the point - the account is what a decision is made about, the
+;machine only matters once something has to be fixed.
+ext_FleetMakeCard(key, x, y) {
+	global FleetGui, FLEET_CARD_W
+	local suffix
 
-	if (ext_FleetCell(p, "state") != "online")
-		return ext_FleetCell(p, "state")
-	if (ext_FleetCell(p, "guiding") != "") {
-		left := Integer(ext_FleetCell(p, "until")) - nowUnix()
-		if (left > 0)
-			return "* " Floor(left / 60) ":" Format("{:02}", Mod(left, 60))
+	FleetGui.SetFont("s10 cDefault Bold", "Tahoma")
+	FleetGui.Add("Text", "x" x " y" y " w" FLEET_CARD_W " h20 Center v" key "n", "")
+	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
+	FleetGui.Add("Text", "x" x " y" (y + 20) " w" FLEET_CARD_W " h14 Center v" key "r", "")
+	FleetGui.SetFont("s7 c707070 Norm", "Tahoma")
+	FleetGui.Add("Text", "x" x " y" (y + 34) " w" FLEET_CARD_W " h12 Center v" key "m", "")
+	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
+	for _, suffix in ["n", "r", "m"]
+		FleetGui[key suffix].OnEvent("Click", ext_FleetSeatClick)
+}
+
+;The three labels of one card, painted as a block so they read as one.
+ext_FleetSetCard(key, name, role, machine, colour, shown) {
+	global FleetGui
+	local lines := Map("n", name, "r", role, "m", machine), suffix, text, ctrl
+
+	for suffix, text in lines {
+		try {
+			ctrl := FleetGui[key suffix]
+			ctrl.Text := text
+			ctrl.Opt("Background" colour)
+			ctrl.Visible := shown
+			ctrl.Redraw()
+		}
 	}
-	if (ext_FleetCell(p, "charge") > 0)
-		return ext_FleetCell(p, "charge") " / 250"
-	return ext_FleetCell(p, "field") ? ext_FleetCell(p, "field") : ext_FleetCell(p, "role")
+}
+
+;A card was clicked. The control's own name says which seat it is, which saves
+;binding a handler per row - the rows move between seats on every refresh, the
+;seats do not.
+ext_FleetSeatClick(ctrl, *) {
+	global ext_fleetSeatRow
+	local key := SubStr(ctrl.Name, 1, -1)
+
+	if (ext_fleetSeatRow.Has(key) && ext_fleetSeatRow[key])
+		ext_FleetPeerGUI(ext_fleetSeatRow[key])
+}
+
+;The title of a card. The row number stands in only when the roster has no name
+;at all, since an untitled card is unreadable.
+ext_FleetSeatName(p) {
+	local name := ext_FleetCell(p, "name")
+
+	return (name != "") ? name : "row " ext_FleetNum(p, "row")
 }
 
 ;Colour says state at a glance, which is the whole reason for drawing seats
 ;rather than listing rows.
 ext_FleetSeatColour(p) {
 	if (ext_FleetCell(p, "state") = "offline")
-		return "E4E4E4"
+		return "DCDCDC"
 	if (ext_FleetCell(p, "state") != "online")
 		return "F5E0D8"
 	if (ext_FleetCell(p, "guiding") != "")
@@ -634,6 +704,148 @@ ext_FleetJoin(arr) {
 ;is not there is normal rather than a fault.
 ext_FleetCell(fields, name) {
 	return fields.Has(name) ? fields[name] : ""
+}
+
+;The same, as a number. A frame carries text, and a field an older coordinator
+;never sent arrives empty rather than zero - Integer("") would throw.
+ext_FleetNum(fields, name) {
+	local v := ext_FleetCell(fields, name)
+
+	return (v != "") ? Integer(v) : 0
+}
+
+;--- one account, in detail ---------------------------------------------------
+;
+;A card is three lines because three is what can be read at a glance across
+;twelve of them. Everything else about a macro lives here, one click away.
+;
+;Some of these are deliberately placeholders. The queue that will report boost
+;tokens and guiding stars is not written yet, so those lines say they have not
+;been reported rather than showing a zero that reads as a measurement. When the
+;queue starts sending CHARGE and GUIDING, this panel shows it with no further
+;change - the protocol already carries both.
+
+ext_FleetPeerGUI(row) {
+	global FleetPeerGui, FleetPeerShown
+
+	FleetPeerShown := row
+	if (IsSet(FleetPeerGui) && IsObject(FleetPeerGui)) {
+		ext_FleetPeerDraw()
+		FleetPeerGui.Show()
+		return
+	}
+	FleetPeerGui := Gui("+AlwaysOnTop +Border", "Fleet - account")
+	FleetPeerGui.OnEvent("Close", ext_FleetPeerClose)
+
+	FleetPeerGui.SetFont("s12 cDefault Bold", "Tahoma")
+	FleetPeerGui.Add("Text", "x16 y12 w348 vPeerName", "")
+	FleetPeerGui.SetFont("s8 cDefault Norm", "Tahoma")
+	FleetPeerGui.Add("Text", "x16 y40 w348 vPeerSub", "")
+	FleetPeerGui.Add("Text", "x16 y62 w348 h1 +0x10")
+
+	;who and where
+	ext_FleetPeerLine("PeerWhere", 74, "Server")
+	ext_FleetPeerLine("PeerField", 96, "Field")
+	ext_FleetPeerLine("PeerMachine", 118, "Machine")
+	ext_FleetPeerLine("PeerUser", 140, "Roblox user")
+	FleetPeerGui.Add("Text", "x16 y166 w348 h1 +0x10")
+	;the queue, once it exists
+	ext_FleetPeerLine("PeerTokens", 178, "Boost tokens")
+	ext_FleetPeerLine("PeerGuiding", 200, "Guiding star")
+	FleetPeerGui.Add("Text", "x16 y226 w348 h1 +0x10")
+	;the link itself
+	ext_FleetPeerLine("PeerRtt", 238, "Response time")
+	ext_FleetPeerLine("PeerSeen", 260, "Last heard from")
+
+	FleetPeerGui.Add("Button", "x264 y296 w100 h26", "Close").OnEvent("Click", ext_FleetPeerClose)
+
+	ext_FleetPeerDraw()
+	SetTimer ext_FleetPeerDraw, 1000
+	FleetPeerGui.Show("w380 h334")
+}
+
+;Label left, value right. Every line the same shape reads faster than sentences.
+ext_FleetPeerLine(name, y, label) {
+	global FleetPeerGui
+
+	FleetPeerGui.SetFont("s8 c808080 Norm", "Tahoma")
+	FleetPeerGui.Add("Text", "x16 y" y " w110", label)
+	FleetPeerGui.SetFont("s8 cDefault Norm", "Tahoma")
+	FleetPeerGui.Add("Text", "x132 y" y " w232 v" name, "")
+}
+
+ext_FleetPeerClose(*) {
+	global FleetPeerGui
+
+	SetTimer ext_FleetPeerDraw, 0
+	if (IsSet(FleetPeerGui) && IsObject(FleetPeerGui))
+		FleetPeerGui.Destroy(), FleetPeerGui := ""
+}
+
+ext_FleetPeerDraw() {
+	global FleetPeerGui, FleetPeerShown, ext_fleetPeers
+	local p, guiding, left, rtt
+
+	if !(IsSet(FleetPeerGui) && IsObject(FleetPeerGui))
+		return
+	;the account can leave the fleet while its panel is open, and a panel
+	;showing the last thing it said would be a lie
+	if !ext_fleetPeers.Has(FleetPeerShown) {
+		try FleetPeerGui["PeerName"].Text := "Gone"
+		try FleetPeerGui["PeerSub"].Text := "This account is no longer in the fleet."
+		return
+	}
+	p := ext_fleetPeers[FleetPeerShown]
+	try FleetPeerGui["PeerName"].Text := ext_FleetSeatName(p)
+	try FleetPeerGui["PeerSub"].Text := ext_FleetCell(p, "role")
+		. " - " ext_FleetCell(p, "state")
+		. (ext_FleetNum(p, "owner") ? " - owns the private server" : "")
+
+	;no server field until the queue assigns one, so being seated is as much as
+	;can honestly be said
+	try FleetPeerGui["PeerWhere"].Text := (ext_FleetCell(p, "server") != "")
+		? ext_FleetCell(p, "server")
+		: ((ext_FleetCell(p, "state") = "online") ? "main server" : "not seated")
+	try FleetPeerGui["PeerField"].Text := ext_FleetOr(ext_FleetCell(p, "field"), "not farming")
+	try FleetPeerGui["PeerMachine"].Text := ext_FleetOr(ext_FleetCell(p, "machine"), "unknown")
+	try FleetPeerGui["PeerUser"].Text := ext_FleetOr(ext_FleetCell(p, "user"), "not set")
+
+	;250 is a full charge, which is what a guiding star costs
+	try FleetPeerGui["PeerTokens"].Text := (ext_FleetNum(p, "charge") > 0)
+		? ext_FleetNum(p, "charge") " / 250"
+		: "not reported yet"
+	guiding := ext_FleetCell(p, "guiding")
+	left := ext_FleetNum(p, "until") - nowUnix()
+	try FleetPeerGui["PeerGuiding"].Text := (guiding = "")
+		? "none"
+		: guiding . ((left > 0)
+			? " - " Floor(left / 60) ":" Format("{:02}", Mod(left, 60)) " left"
+			: " - over")
+
+	rtt := ext_FleetCell(p, "rtt")
+	try FleetPeerGui["PeerRtt"].Text := ((rtt != "") && (Integer(rtt) >= 0))
+		? Integer(rtt) " ms"
+		: "not measured yet"
+	try FleetPeerGui["PeerSeen"].Text := ext_FleetAgo(ext_FleetNum(p, "seen"))
+}
+
+ext_FleetOr(value, fallback) {
+	return (value != "") ? value : fallback
+}
+
+;"4s ago" rather than a clock time: what a reader wants to know is how stale
+;this is, not what time it was.
+ext_FleetAgo(stamp) {
+	local age
+
+	if (stamp <= 0)
+		return "never"
+	age := nowUnix() - stamp
+	if (age < 60)
+		return age "s ago"
+	if (age < 3600)
+		return Floor(age / 60) "m " Mod(age, 60) "s ago"
+	return Floor(age / 3600) "h " Mod(Floor(age / 60), 60) "m ago"
 }
 
 ;--- settings, in a window of their own --------------------------------------
@@ -697,6 +909,7 @@ ext_FleetSetupGUI(*) {
 	ext_FleetRosterDraw()
 	ext_FleetWhoDraw()
 	SetTimer ext_FleetWhoDraw, 1000
+	SetTimer ext_FleetRosterWatch, 1000
 	FleetSetupGui.Show("w600 h342")
 }
 
@@ -704,8 +917,28 @@ ext_FleetSetupClose(*) {
 	global FleetSetupGui
 
 	SetTimer ext_FleetWhoDraw, 0
+	SetTimer ext_FleetRosterWatch, 0
 	if (IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
 		FleetSetupGui.Destroy(), FleetSetupGui := ""
+}
+
+;The roster file changes underneath this window - a macro leaving takes its own
+;row out of it, and on the host that happens while the table is on screen. So
+;the table follows the file rather than only being read when the window opens.
+;Size and time together catch an edit that happens to keep the length the same.
+ext_FleetRosterWatch() {
+	global FleetSetupGui, FleetRoster, FleetRosterPath, FleetRosterStamp
+	local stamp := FileExist(FleetRosterPath)
+		? FileGetTime(FleetRosterPath, "M") "/" FileGetSize(FleetRosterPath)
+		: ""
+
+	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
+		return
+	if (IsSet(FleetRosterStamp) && (stamp = FleetRosterStamp))
+		return
+	FleetRosterStamp := stamp
+	FleetRoster := roster_Load(FleetRosterPath)
+	ext_FleetRosterDraw()
 }
 
 ;Section one says where this macro stands and offers the one or two things worth
@@ -783,6 +1016,9 @@ ext_FleetLeave() {
 	if (MsgBox("Leave the fleet?`n`nThis macro will stop talking to the others until it is set up again.",
 		"Fleet", 0x40024) != "Yes")
 		return
+	;said before the socket goes, so the fleet takes this row off the roster
+	;instead of listing it offline for ever
+	ext_fleetSayLeaving()
 	ext_fleetStop()
 	ext_FleetSave("FleetCheck", 0)
 	ext_FleetSave("FleetRow", 0)

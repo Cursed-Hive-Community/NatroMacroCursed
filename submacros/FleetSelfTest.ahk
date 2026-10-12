@@ -10,13 +10,20 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Four things are checked, each because it is a way the design could be wrong
+;Seven things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
 ;	2. each macro sees the other               it is broadcast, not just held
 ;	3. "fuzzy 1" keeps its space               field encoding survives the wire
 ;	4. a wrong secret is refused               the only door has a lock on it
+;	5. the main's field becomes a GOTO         residents can follow the main
+;	6. a ping is answered and timed            the panel can show a round trip
+;	7. a macro that leaves is removed          leaving differs from crashing
+;
+;Checks 6 and 7 need two coordinator beats to land - a round trip measured on
+;one beat is broadcast on the next - so the test runs for a few seconds longer
+;than the others would need.
 ;
 ;It leaves nothing running: the coordinator it started is closed at the end.
 
@@ -45,12 +52,28 @@ Sleep 1200
 
 seenBy["main"] := Map(), seenBy["fuzzy"] := Map()
 gotoField := "", fieldSent := 0
+pinged := 0                 ;did the fuzzy macro get asked how fast it answers
+goneRow := 0                ;which row the main was told had left
+bothSeen := Map("main", 0, "fuzzy", 0)   ;each client saw the whole roster, at some point
+row2 := ""                  ;the last ROSTER frame about row 2, kept for the report
+rttSeen := -1               ;a round trip the coordinator actually measured
 clientA := sock_Connect("127.0.0.1", PORT, OnA)
 clientB := sock_Connect("127.0.0.1", PORT, OnB)
 clientBad := sock_Connect("127.0.0.1", PORT, OnBad)
 
-SetTimer Report, -5000
+;the fuzzy macro leaves on purpose, late enough that its measured round trip
+;has already been broadcast and can be checked
+SetTimer Leave, -11500
+SetTimer Report, -14000
 return
+
+;What ext_FleetLeave does on the macro side: say so, then go. The coordinator
+;should strike the row rather than list it offline.
+Leave(*) {
+	global clientB
+
+	sock_SendLine(clientB, fleet_Frame("LEAVE"))
+}
 
 OnA(s, event, data) {
 	Handle("main", 1, "main", s, event, data)
@@ -62,7 +85,8 @@ OnB(s, event, data) {
 }
 
 Handle(label, row, name, s, event, data) {
-	global seenBy, SECRET, gotoField, fieldSent
+	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRow
+	global bothSeen, row2, rttSeen
 	local frame
 
 	if (event = "connect") {
@@ -78,6 +102,16 @@ Handle(label, row, name, s, event, data) {
 		return
 	if (frame.verb = "ROSTER") {
 		seenBy[label][Integer(fleet_Field(frame, "row", 0))] := frame
+		;noted as it goes past rather than read back at the end: row 2 is struck
+		;from the live view later in this test, and these checks still have to
+		;be able to say what was true while it was there
+		if (seenBy[label].Has(1) && seenBy[label].Has(2))
+			bothSeen[label] := 1
+		if (Integer(fleet_Field(frame, "row", 0)) = 2) {
+			row2 := frame
+			if (Integer(fleet_Field(frame, "rtt", -1)) >= 0)
+				rttSeen := Integer(fleet_Field(frame, "rtt", -1))
+		}
 		;once the main can see the whole fleet, it reports the field it is
 		;farming - exactly what nm_GoGather does - and the coordinator should
 		;turn that into a GOTO for every resident
@@ -88,6 +122,20 @@ Handle(label, row, name, s, event, data) {
 	}
 	else if ((label = "fuzzy") && (frame.verb = "GOTO"))
 		gotoField := fleet_Field(frame, "field")
+	else if (frame.verb = "PING") {
+		;answered the way a real macro does; without this there is nothing for
+		;the coordinator to time and the round trip stays unmeasured
+		if (label = "fuzzy")
+			pinged := 1
+		sock_SendLine(s, fleet_Frame("ACK", Map("id", fleet_Field(frame, "id"))))
+	}
+	else if ((label = "main") && (frame.verb = "GONE")) {
+		goneRow := Integer(fleet_Field(frame, "row", 0))
+		;GONE is the only frame that removes a row, so the panel's own view has
+		;to act on it - this is that, in miniature
+		if (seenBy["main"].Has(goneRow))
+			seenBy["main"].Delete(goneRow)
+	}
 }
 
 ;The connection that should not get in.
@@ -109,30 +157,43 @@ OnBad(s, event, data) {
 
 Report(*) {
 	global seenBy, refused, coordPid, finished, clientA, clientB, clientBad, ROSTER, gotoField
-	local lines := [], allOk := 1, summary, path
+	global bothSeen, row2, rttSeen, pinged, goneRow
+	local lines := [], allOk := 1, summary, path, leftRoster
 
 	if finished
 		return
 	finished := 1
 
+	;read before the file is deleted below: a row that left should be gone from
+	;the roster on disk too, which is what stops it coming back on a reload
+	leftRoster := FileExist(ROSTER) ? roster_Load(ROSTER) : Map()
+
 	allOk := Check(lines, "both rows reach the main macro"
-		, seenBy["main"].Has(1) && seenBy["main"].Has(2)) && allOk
+		, bothSeen["main"]) && allOk
 	allOk := Check(lines, "both rows reach the fuzzy macro"
-		, seenBy["fuzzy"].Has(1) && seenBy["fuzzy"].Has(2)) && allOk
+		, bothSeen["fuzzy"]) && allOk
 	allOk := Check(lines, "the space in `"fuzzy 1`" survived"
-		, seenBy["main"].Has(2) && (fleet_Field(seenBy["main"][2], "name") == "fuzzy 1")) && allOk
+		, IsObject(row2) && (fleet_Field(row2, "name") == "fuzzy 1")) && allOk
 	allOk := Check(lines, "a wrong secret was refused"
 		, refused != "") && allOk
 	allOk := Check(lines, "the main's field reaches the resident as a GOTO"
 		, gotoField == "Sunflower") && allOk
+	allOk := Check(lines, "a ping is answered and timed"
+		, pinged && (rttSeen >= 0)) && allOk
+	allOk := Check(lines, "a macro that leaves is struck from the fleet"
+		, (goneRow = 2) && !seenBy["main"].Has(2) && !leftRoster.Has(2)) && allOk
 
-	if seenBy["main"].Has(2)
-		lines.Push("", "row 2 as the main macro sees it:"
-			, "  name=" fleet_Field(seenBy["main"][2], "name")
-			. "  role=" fleet_Field(seenBy["main"][2], "role")
-			. "  state=" fleet_Field(seenBy["main"][2], "state"))
+	if IsObject(row2)
+		lines.Push("", "row 2 as the main macro last saw it:"
+			, "  name=" fleet_Field(row2, "name")
+			. "  role=" fleet_Field(row2, "role")
+			. "  state=" fleet_Field(row2, "state")
+			. "  rtt=" fleet_Field(row2, "rtt") "ms")
 	else
 		lines.Push("", "The main macro never heard about row 2.")
+	lines.Push("after it left: GONE row=" goneRow
+		. ", still in the live view=" (seenBy["main"].Has(2) ? "yes" : "no")
+		. ", still in the roster file=" (leftRoster.Has(2) ? "yes" : "no"))
 
 	sock_Close(clientA), sock_Close(clientB), sock_Close(clientBad)
 	if coordPid
