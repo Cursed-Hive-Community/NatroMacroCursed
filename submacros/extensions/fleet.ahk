@@ -227,8 +227,14 @@ ext_fleetOnSocket(s, event, data) {
 ;Announce ourselves. Only the row number and the secret matter: who row 2 is
 ;belongs to the roster file, not to whatever this macro believes about itself.
 ext_fleetHello() {
-	global ext_fleetSock, FleetRow, FleetSecret
+	global ext_fleetSock, ext_fleetPeers, FleetRow, FleetSecret
 
+	;Forget the old picture before asking for a new one. The coordinator answers
+	;a HELLO with the whole roster, and rows are merged by number rather than
+	;replaced wholesale - so anything that left while this macro was away would
+	;otherwise sit in the table for ever, still wearing the state and the colour
+	;it had at the moment the connection dropped.
+	ext_fleetPeers.Clear()
 	sock_SendLine(ext_fleetSock, fleet_Frame("HELLO", Map("row", FleetRow
 		, "secret", FleetSecret, "machine", A_ComputerName)))
 }
@@ -435,8 +441,10 @@ ext_fleetStart() {
 ;Stop talking to the fleet, without killing a coordinator that other macros may
 ;still be using.
 ext_fleetStop() {
-	global ext_fleetSock
+	global ext_fleetSock, ext_fleetPeers
 
+	;nothing known about the fleet survives not being connected to it
+	ext_fleetPeers.Clear()
 	SetTimer ext_fleetBeat, 0
 	SetTimer ext_fleetWatch, 0
 	SetTimer ext_fleetConnect, 0
@@ -494,16 +502,21 @@ ext_fleetSummary() {
 ;How many seat cards exist. They are made once and then shown, hidden and
 ;repainted: rebuilding controls every second flickers and leaks window handles.
 FLEET_SEATS_MAIN := 12
-FLEET_SEATS_SPARE := 6
-;A card is three stacked labels, not one: the account name has to be the thing
-;the eye lands on, and a Text control carries a single font. 94 wide by 46 high
-;on a 98 by 54 pitch, so the 4px of window showing between cards is what
-;separates them - no border, because bordering each of the three labels would
-;draw three boxes where there is one card.
+;Reserve and offline get a row each rather than sharing one. A macro parked in
+;the reserve server and a macro that is not running are opposite situations -
+;one is ready, one needs attention - and lining them up together invites
+;reading either as the other.
+FLEET_SEATS_RESERVE := 6
+FLEET_SEATS_OFFLINE := 6
+;A card is a bordered backing with three labels inset into it. Three, because
+;a Text control carries one font and the account has to be the thing the eye
+;lands on; a backing, because the border has to go round the card rather than
+;round each of its lines. 94 by 48 on a 98 by 54 pitch.
 FLEET_CARD_W := 94
+FLEET_CARD_H := 48
 
 ext_FleetGUI(*) {
-	global FleetGui, FLEET_SEATS_MAIN, FLEET_SEATS_SPARE
+	global FleetGui, FLEET_SEATS_MAIN, FLEET_SEATS_RESERVE, FLEET_SEATS_OFFLINE
 	local i
 
 	if (IsSet(FleetGui) && IsObject(FleetGui)) {
@@ -519,8 +532,10 @@ ext_FleetGUI(*) {
 	FleetGui.SetFont("s8 cDefault Bold")
 	FleetGui.Add("Text", "x16 y34 w300 vFleetMainLabel", "MAIN SERVER")
 	FleetGui.Add("Text", "x404 y34 w200 Right vFleetMainCount", "")
-	FleetGui.Add("Text", "x16 y162 w300 vFleetSpareLabel", "RESERVE")
-	FleetGui.Add("Text", "x404 y162 w200 Right vFleetSpareCount", "")
+	FleetGui.Add("Text", "x16 y162 w300 vFleetReserveLabel", "RESERVE")
+	FleetGui.Add("Text", "x404 y162 w200 Right vFleetReserveCount", "")
+	FleetGui.Add("Text", "x16 y236 w300 vFleetOfflineLabel", "OFFLINE")
+	FleetGui.Add("Text", "x404 y236 w200 Right vFleetOfflineCount", "")
 	FleetGui.SetFont("Norm")
 
 	;seat cards, six to a row
@@ -528,27 +543,31 @@ ext_FleetGUI(*) {
 		i := A_Index - 1
 		ext_FleetMakeCard("FleetSeatM" A_Index, 16 + Mod(i, 6) * 98, 52 + (i // 6) * 54)
 	}
-	Loop FLEET_SEATS_SPARE {
+	Loop FLEET_SEATS_RESERVE {
 		i := A_Index - 1
-		ext_FleetMakeCard("FleetSeatS" A_Index, 16 + Mod(i, 6) * 98, 180)
+		ext_FleetMakeCard("FleetSeatR" A_Index, 16 + Mod(i, 6) * 98, 180)
+	}
+	Loop FLEET_SEATS_OFFLINE {
+		i := A_Index - 1
+		ext_FleetMakeCard("FleetSeatO" A_Index, 16 + Mod(i, 6) * 98, 254)
 	}
 	FleetGui.SetFont("s8 c808080 Norm", "Tahoma")
-	FleetGui.Add("Text", "x16 y232 w588", "Click an account for its details.")
+	FleetGui.Add("Text", "x16 y310 w588", "Click an account for its details.")
 	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
 
 	;newest first, so the line that just appeared is the one on screen and
 	;nothing has to be scrolled
-	FleetGui.Add("Text", "x16 y250 w588 h1 +0x10")
+	FleetGui.Add("Text", "x16 y328 w588 h1 +0x10")
 	FleetGui.SetFont("s8", "Consolas")
-	FleetGui.Add("Edit", "x16 y258 w588 h132 ReadOnly -Wrap +VScroll vFleetLog", "")
+	FleetGui.Add("Edit", "x16 y336 w588 h112 ReadOnly -Wrap +VScroll vFleetLog", "")
 	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
 
-	FleetGui.Add("Button", "x16 y398 w100 h26", "Settings").OnEvent("Click", ext_FleetSetupGUI)
-	FleetGui.Add("Button", "x504 y398 w100 h26", "Close").OnEvent("Click", ext_FleetGUIClose)
+	FleetGui.Add("Button", "x16 y456 w100 h26", "Settings").OnEvent("Click", ext_FleetSetupGUI)
+	FleetGui.Add("Button", "x504 y456 w100 h26", "Close").OnEvent("Click", ext_FleetGUIClose)
 
 	ext_FleetRefresh()
 	SetTimer ext_FleetRefresh, 1000
-	FleetGui.Show("w620 h436")
+	FleetGui.Show("w620 h494")
 }
 
 ext_FleetGUIClose(*) {
@@ -564,30 +583,34 @@ ext_FleetGUIClose(*) {
 ;Repaint the seats and the log. Called every second, so it only ever changes
 ;text and colour on controls that already exist.
 ext_FleetRefresh() {
-	global FleetGui, ext_fleetEvents, FLEET_SEATS_MAIN, FLEET_SEATS_SPARE
-	local main := [], spare := [], p, seated := 0
+	global FleetGui, ext_fleetEvents
+	global FLEET_SEATS_MAIN, FLEET_SEATS_RESERVE, FLEET_SEATS_OFFLINE
+	local main := [], reserve := [], offline := [], p
 
 	if !(IsSet(FleetGui) && IsObject(FleetGui))
 		return
 	try FleetGui["FleetSummary"].Text := ext_fleetSummary()
 
-	;Until the queue exists there is no server field to sort by, so a macro that
-	;is online is shown in the main server and one that is not is shown apart.
-	;The moment the coordinator starts reporting servers this follows it.
+	;State decides first and the server only afterwards: a macro that is not
+	;running belongs under OFFLINE whatever server it was last seen in, since
+	;what it needs is attention rather than a place in a queue. Nothing reports
+	;a server yet, so RESERVE stays empty until the queue does - and an empty
+	;section says so rather than borrowing the offline macros to look busy.
 	for _, p in ext_fleetView() {
-		if (ext_FleetCell(p, "server") = "reserve")
-			spare.Push(p)
-		else if (ext_FleetCell(p, "state") = "online")
-			main.Push(p), seated++
+		if (ext_FleetCell(p, "state") != "online")
+			offline.Push(p)
+		else if (ext_FleetCell(p, "server") = "reserve")
+			reserve.Push(p)
 		else
-			spare.Push(p)
+			main.Push(p)
 	}
 
 	ext_FleetPaintRow("FleetSeatM", FLEET_SEATS_MAIN, main, 1)
-	ext_FleetPaintRow("FleetSeatS", FLEET_SEATS_SPARE, spare, 0)
-	try FleetGui["FleetMainCount"].Text := seated " / " ext_fleetCapacity()
-	try FleetGui["FleetSpareCount"].Text := spare.Length ? spare.Length : ""
-	try FleetGui["FleetSpareLabel"].Text := spare.Length ? "RESERVE AND OFFLINE" : ""
+	ext_FleetPaintRow("FleetSeatR", FLEET_SEATS_RESERVE, reserve, 0)
+	ext_FleetPaintRow("FleetSeatO", FLEET_SEATS_OFFLINE, offline, 0)
+	try FleetGui["FleetMainCount"].Text := main.Length " / " ext_fleetCapacity()
+	try FleetGui["FleetReserveCount"].Text := reserve.Length ? reserve.Length : "none"
+	try FleetGui["FleetOfflineCount"].Text := offline.Length ? offline.Length : "none"
 
 	try FleetGui["FleetLog"].Value := ext_fleetEvents.Length
 		? ext_FleetJoin(ext_fleetEvents)
@@ -606,7 +629,7 @@ ext_FleetPaintRow(prefix, pool, list, showFree) {
 		if (i <= list.Length) {
 			p := list[i]
 			ext_FleetSetCard(prefix i, ext_FleetSeatName(p), ext_FleetCell(p, "role")
-				, ext_FleetCell(p, "machine"), ext_FleetSeatColour(p), true)
+				, ext_FleetSeatFoot(p), ext_FleetSeatColour(p), true)
 			ext_fleetSeatRow[prefix i] := ext_FleetNum(p, "row")
 		}
 		else if (i <= free) {
@@ -620,37 +643,48 @@ ext_FleetPaintRow(prefix, pool, list, showFree) {
 	}
 }
 
-;One card: the account name large, then its role, then the machine it runs on.
-;That order is the point - the account is what a decision is made about, the
-;machine only matters once something has to be fixed.
+;One card: the account large, then its role, then the machine it runs on. That
+;order is the point - the account is what a decision is made about, the machine
+;only matters once something has to be fixed.
+;
+;Four controls, not three. The backing carries the border and the fill; the
+;labels are inset two pixels into it so the border reads as a frame round the
+;whole card instead of a line under each of its lines.
 ext_FleetMakeCard(key, x, y) {
-	global FleetGui, FLEET_CARD_W
-	local suffix
+	global FleetGui, FLEET_CARD_W, FLEET_CARD_H
+	local suffix, w := FLEET_CARD_W - 4
 
+	FleetGui.Add("Text", "x" x " y" y " w" FLEET_CARD_W " h" FLEET_CARD_H " Border v" key "b", "")
 	FleetGui.SetFont("s10 cDefault Bold", "Tahoma")
-	FleetGui.Add("Text", "x" x " y" y " w" FLEET_CARD_W " h20 Center v" key "n", "")
+	FleetGui.Add("Text", "x" (x + 2) " y" (y + 3) " w" w " h18 Center v" key "n", "")
 	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
-	FleetGui.Add("Text", "x" x " y" (y + 20) " w" FLEET_CARD_W " h14 Center v" key "r", "")
-	FleetGui.SetFont("s7 c707070 Norm", "Tahoma")
-	FleetGui.Add("Text", "x" x " y" (y + 34) " w" FLEET_CARD_W " h12 Center v" key "m", "")
+	FleetGui.Add("Text", "x" (x + 2) " y" (y + 21) " w" w " h13 Center v" key "r", "")
+	FleetGui.SetFont("s7 c606060 Norm", "Tahoma")
+	FleetGui.Add("Text", "x" (x + 2) " y" (y + 34) " w" w " h11 Center v" key "m", "")
 	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
-	for _, suffix in ["n", "r", "m"]
+	for _, suffix in ["b", "n", "r", "m"]
 		FleetGui[key suffix].OnEvent("Click", ext_FleetSeatClick)
 }
 
-;The three labels of one card, painted as a block so they read as one.
+;The four controls of one card, painted as a block so they read as one. The
+;backing is painted first and the labels over it, so a card never shows one
+;macro's name on another's colour even for a frame.
 ext_FleetSetCard(key, name, role, machine, colour, shown) {
 	global FleetGui
-	local lines := Map("n", name, "r", role, "m", machine), suffix, text, ctrl
+	local parts := [["b", ""], ["n", name], ["r", role], ["m", machine]], e, ctrl
 
-	for suffix, text in lines {
-		try {
-			ctrl := FleetGui[key suffix]
-			ctrl.Text := text
-			ctrl.Opt("Background" colour)
-			ctrl.Visible := shown
-			ctrl.Redraw()
-		}
+	for _, e in parts {
+		try ctrl := FleetGui[key e[1]]
+		catch
+			continue
+		;the fill is reapplied every time rather than only when it changes:
+		;Windows does not repaint a static control's background on its own, and
+		;a card that kept the colour of whoever sat there before is the bug this
+		;guards against
+		ctrl.Opt("Background" colour)
+		ctrl.Text := e[2]
+		ctrl.Visible := shown
+		ctrl.Redraw()
 	}
 }
 
@@ -665,12 +699,31 @@ ext_FleetSeatClick(ctrl, *) {
 		ext_FleetPeerGUI(ext_fleetSeatRow[key])
 }
 
-;The title of a card. The row number stands in only when the roster has no name
-;at all, since an untitled card is unreadable.
+;The title of a card, and of the detail window.
+;
+;The Roblox username comes first because that is the account - it is what the
+;fleet makes decisions about and what a person recognises. The roster's own
+;label is the fallback, and since the setup dialog fills that in with the
+;computer name, a fleet whose accounts have no username set showed a wall of
+;machine names with the machine repeated underneath. The row number is the last
+;resort, because an untitled card is unreadable.
 ext_FleetSeatName(p) {
-	local name := ext_FleetCell(p, "name")
+	local user := ext_FleetCell(p, "user"), name := ext_FleetCell(p, "name")
 
+	if (user != "")
+		return user
 	return (name != "") ? name : "row " ext_FleetNum(p, "row")
+}
+
+;The third line of a card. The machine, and the roster label beside it when
+;that label is saying something the headline is not - with no username set the
+;label *is* the headline, and repeating it under itself tells nobody anything.
+ext_FleetSeatFoot(p) {
+	local machine := ext_FleetCell(p, "machine"), name := ext_FleetCell(p, "name")
+
+	if ((name = "") || (name = machine) || (ext_FleetCell(p, "user") = ""))
+		return machine
+	return name " - " machine
 }
 
 ;Colour says state at a glance, which is the whole reason for drawing seats
@@ -746,22 +799,23 @@ ext_FleetPeerGUI(row) {
 	;who and where
 	ext_FleetPeerLine("PeerWhere", 74, "Server")
 	ext_FleetPeerLine("PeerField", 96, "Field")
-	ext_FleetPeerLine("PeerMachine", 118, "Machine")
-	ext_FleetPeerLine("PeerUser", 140, "Roblox user")
-	FleetPeerGui.Add("Text", "x16 y166 w348 h1 +0x10")
+	ext_FleetPeerLine("PeerUser", 118, "Roblox user")
+	ext_FleetPeerLine("PeerLabel", 140, "Roster label")
+	ext_FleetPeerLine("PeerMachine", 162, "Machine")
+	FleetPeerGui.Add("Text", "x16 y188 w348 h1 +0x10")
 	;the queue, once it exists
-	ext_FleetPeerLine("PeerTokens", 178, "Boost tokens")
-	ext_FleetPeerLine("PeerGuiding", 200, "Guiding star")
-	FleetPeerGui.Add("Text", "x16 y226 w348 h1 +0x10")
+	ext_FleetPeerLine("PeerTokens", 200, "Boost tokens")
+	ext_FleetPeerLine("PeerGuiding", 222, "Guiding star")
+	FleetPeerGui.Add("Text", "x16 y248 w348 h1 +0x10")
 	;the link itself
-	ext_FleetPeerLine("PeerRtt", 238, "Response time")
-	ext_FleetPeerLine("PeerSeen", 260, "Last heard from")
+	ext_FleetPeerLine("PeerRtt", 260, "Response time")
+	ext_FleetPeerLine("PeerSeen", 282, "Last heard from")
 
-	FleetPeerGui.Add("Button", "x264 y296 w100 h26", "Close").OnEvent("Click", ext_FleetPeerClose)
+	FleetPeerGui.Add("Button", "x264 y318 w100 h26", "Close").OnEvent("Click", ext_FleetPeerClose)
 
 	ext_FleetPeerDraw()
 	SetTimer ext_FleetPeerDraw, 1000
-	FleetPeerGui.Show("w380 h334")
+	FleetPeerGui.Show("w380 h356")
 }
 
 ;Label left, value right. Every line the same shape reads faster than sentences.
@@ -807,8 +861,10 @@ ext_FleetPeerDraw() {
 		? ext_FleetCell(p, "server")
 		: ((ext_FleetCell(p, "state") = "online") ? "main server" : "not seated")
 	try FleetPeerGui["PeerField"].Text := ext_FleetOr(ext_FleetCell(p, "field"), "not farming")
+	try FleetPeerGui["PeerUser"].Text := ext_FleetOr(ext_FleetCell(p, "user")
+		, "not set - the cards fall back to the label below")
+	try FleetPeerGui["PeerLabel"].Text := ext_FleetOr(ext_FleetCell(p, "name"), "none")
 	try FleetPeerGui["PeerMachine"].Text := ext_FleetOr(ext_FleetCell(p, "machine"), "unknown")
-	try FleetPeerGui["PeerUser"].Text := ext_FleetOr(ext_FleetCell(p, "user"), "not set")
 
 	;250 is a full charge, which is what a guiding star costs
 	try FleetPeerGui["PeerTokens"].Text := (ext_FleetNum(p, "charge") > 0)
@@ -1056,7 +1112,7 @@ ext_FleetJoinGUI(*) {
 	FleetJoinGui.Add("Text", "x18 y74 w40", "User:")
 	FleetJoinGui.Add("Edit", "x64 y72 w190 h18 vJoinUser")
 	FleetJoinGui.SetFont("c808080")
-	FleetJoinGui.Add("Text", "x262 y26 w142", "The Roblox username is only needed to force an account out of a server.")
+	FleetJoinGui.Add("Text", "x262 y26 w142", "The Roblox username is what the fleet window shows for this account. The name is only a label.")
 	FleetJoinGui.SetFont("cDefault")
 
 	FleetJoinGui.Add("Text", "x18 y128 w386 vJoinFound", "Listening for a fleet on your network...")
