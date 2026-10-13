@@ -947,7 +947,15 @@ nm_importConfig()
 		, "FleetGraceSecs", 45
 		, "FleetServerMain", ""
 		, "FleetServerReserve", ""
-		, "FleetCapacity", 6)
+		, "FleetCapacity", 6
+		;which of the main's gathering trips the residents are dragged along
+		;on - see ext_fleetFollowReport. Its own field and the boosted field
+		;are worth moving the hive for; a quest or a planter trip is the main's
+		;own errand and following it costs travel time for nothing.
+		, "FleetFollowOwn", 1
+		, "FleetFollowBoost", 1
+		, "FleetFollowQuest", 0
+		, "FleetFollowPlanter", 0)
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading

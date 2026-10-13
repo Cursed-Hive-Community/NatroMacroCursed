@@ -318,10 +318,40 @@ ext_fleetOnLine(line) {
 ext_fleetReportField(field) {
 	global ext_fleetSock, ext_fleetMyField
 
-	if (!ext_fleetSock || (field = "") || (field = ext_fleetMyField))
+	if (!ext_fleetSock || (field = "") || !ext_fleetFollowReport())
+		return 0
+	if (field = ext_fleetMyField)
 		return 0
 	ext_fleetMyField := field
 	return sock_SendLine(ext_fleetSock, fleet_Frame("FIELD", Map("name", field)))
+}
+
+;Is this trip one worth moving the whole hive for?
+;
+;Natro gathers in four kinds of field, and they are not equally worth
+;following. Its own field and the boosted field are: a fuzzy standing in the
+;boosted field is the entire point of having one. A quest field is a trip the
+;main makes for itself, and a planter field is one it makes for a planter -
+;dragging five accounts along for either is movement for its own sake, which
+;costs travel time and gains nothing.
+;
+;Which is a judgement about a particular setup rather than a fact, so it is
+;four switches in Advanced. They are read on the main and nowhere else, since
+;the main is what announces; on a resident they do nothing at all.
+;
+;A suppressed trip leaves the last announcement standing rather than cancelling
+;it: the residents stay in the field the main will come back to, which is
+;where they would have to walk anyway.
+ext_fleetFollowReport() {
+	global fieldOverrideReason
+	global FleetFollowOwn, FleetFollowBoost, FleetFollowQuest, FleetFollowPlanter
+
+	switch fieldOverrideReason {
+		case "Boost":   return FleetFollowBoost
+		case "Quest":   return FleetFollowQuest
+		case "Planter": return FleetFollowPlanter
+	}
+	return FleetFollowOwn
 }
 
 ;The field a resident should gather to stay with the main, or "" when this
@@ -1323,6 +1353,7 @@ ext_FleetRosterRemove(*) {
 ;once is a window nobody reads.
 ext_FleetAdvanced(*) {
 	global FleetSetupGui, FleetAdvGui, FleetPort, FleetGraceSecs, FleetAddress
+	global FleetFollowOwn, FleetFollowBoost, FleetFollowQuest, FleetFollowPlanter
 	local GuiCtrl
 
 	if (IsSet(FleetAdvGui) && IsObject(FleetAdvGui)) {
@@ -1356,8 +1387,33 @@ ext_FleetAdvanced(*) {
 		, "Leave this empty. The coordinator is found by beacon, and an address typed`nhere would be wrong the moment the router hands out a new lease. Fill it in`nonly if broadcasts are blocked on your network.")
 	FleetAdvGui.SetFont("cDefault")
 
-	FleetAdvGui.Add("Button", "x292 y200 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)
-	FleetAdvGui.Show("w384 h238")
+	;Which trips the residents are dragged along on - see ext_fleetFollowReport.
+	;Here rather than in the Fleet tab because it is a decision taken once for
+	;a whole setup, and because only one macro in the fleet is affected by it.
+	FleetAdvGui.SetFont("s8 cDefault Bold", "Tahoma")
+	FleetAdvGui.Add("GroupBox", "x12 y222 w360 h62", "Residents follow the main into")
+	FleetAdvGui.SetFont("s8 cDefault Norm", "Tahoma")
+	ext_FleetFollowBox("FleetFollowOwn", 24, 240, "Its own field", FleetFollowOwn)
+	ext_FleetFollowBox("FleetFollowBoost", 196, 240, "The boosted field", FleetFollowBoost)
+	ext_FleetFollowBox("FleetFollowQuest", 24, 260, "A quest field", FleetFollowQuest)
+	ext_FleetFollowBox("FleetFollowPlanter", 196, 260, "A planter field", FleetFollowPlanter)
+	FleetAdvGui.SetFont("c808080")
+	FleetAdvGui.Add("Text", "x12 y290 w360"
+		, "Set this on the macro that leads the fleet - it is the one that says`nwhere it is farming. On a resident it does nothing.")
+	FleetAdvGui.SetFont("cDefault")
+
+	FleetAdvGui.Add("Button", "x292 y326 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)
+	FleetAdvGui.Show("w384 h364")
+}
+
+;One of the four, saved the way every other setting in the macro is.
+ext_FleetFollowBox(name, x, y, caption, value) {
+	global FleetAdvGui
+	local GuiCtrl
+
+	(GuiCtrl := FleetAdvGui.Add("CheckBox", "x" x " y" y " w160 h18 v" name
+		" Checked" value, caption)).Section := "Fleet"
+	GuiCtrl.OnEvent("Click", nm_saveConfig)
 }
 
 ext_FleetAdvClose(*) {
