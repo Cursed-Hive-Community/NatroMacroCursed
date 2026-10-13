@@ -358,7 +358,7 @@ ext_fleetReportField(field) {
 ;
 ;Which is a judgement about a particular setup rather than a fact, so it is
 ;four switches in Advanced. They are read on the main and nowhere else, since
-;the main is what announces; on a resident they do nothing at all.
+;the main is what announces; on any other macro they do nothing at all.
 ;
 ;A suppressed trip leaves the last announcement standing rather than cancelling
 ;it: the residents stay in the field the main will come back to, which is
@@ -375,8 +375,8 @@ ext_fleetFollowReport() {
 	return FleetFollowOwn
 }
 
-;The field a resident should gather to stay with the main, or "" when this
-;macro is not following one. GOTO reaches only fuzzy/tad residents, so a set
+;The field this macro should gather to stay with the main, or "" when it is
+;not following one. GOTO reaches only the roles roster_Follows admits, so a set
 ;follow field already means "I was told to follow"; the FieldDefault guard just
 ;refuses a name this build has no pattern for rather than letting the gather
 ;loop throw on the lookup. The name round-trips unchanged from the main, which
@@ -397,7 +397,7 @@ ext_fleetFollowTarget() {
 	;would walk the macro back and forth for nothing.
 	if ext_fleetPeers.Has(FleetRow) {
 		mine := ext_FleetCell(ext_fleetPeers[FleetRow], "role")
-		if ((mine != "") && (mine != "fuzzy") && (mine != "tad")) {
+		if ((mine != "") && !roster_Follows(mine)) {
 			ext_fleetFollowField := ""
 			return ""
 		}
@@ -1757,11 +1757,15 @@ ext_FleetAdvanced(*) {
 		, "Leave this empty. The coordinator is found by beacon, and an address typed`nhere would be wrong the moment the router hands out a new lease. Fill it in`nonly if broadcasts are blocked on your network.")
 	FleetAdvGui.SetFont("cDefault")
 
-	;Which trips the residents are dragged along on - see ext_fleetFollowReport.
+	;Which trips the followers are dragged along on - see ext_fleetFollowReport.
 	;Here rather than in the Fleet tab because it is a decision taken once for
 	;a whole setup, and because only one macro in the fleet is affected by it.
+	;
+	;The title names the two roles instead of saying "residents", which read as
+	;every account that is not the main - and guid and atk never follow.
 	FleetAdvGui.SetFont("s8 cDefault Bold", "Tahoma")
-	FleetAdvGui.Add("GroupBox", "x12 y222 w360 h62", "Residents follow the main into")
+	FleetAdvGui.Add("GroupBox", "x12 y222 w360 h62"
+		, "Fuzzy and tad accounts follow the main into")
 	FleetAdvGui.SetFont("s8 cDefault Norm", "Tahoma")
 	ext_FleetFollowBox("FleetFollowOwn", 24, 240, "Its own field", FleetFollowOwn)
 	ext_FleetFollowBox("FleetFollowBoost", 196, 240, "The boosted field", FleetFollowBoost)
@@ -1769,7 +1773,7 @@ ext_FleetAdvanced(*) {
 	ext_FleetFollowBox("FleetFollowPlanter", 196, 260, "A planter field", FleetFollowPlanter)
 	FleetAdvGui.SetFont("c808080")
 	FleetAdvGui.Add("Text", "x12 y290 w360"
-		, "Set this on the macro that leads the fleet - it is the one that says`nwhere it is farming. On a resident it does nothing.")
+		, "A guid or an atk never follows - it has work of its own.`nSet this on the macro that leads; nothing else reads it.")
 	FleetAdvGui.SetFont("cDefault")
 
 	FleetAdvGui.Add("Button", "x292 y326 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)

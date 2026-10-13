@@ -28,8 +28,30 @@
 ;account and given its old row back instead of a new one.
 
 ;Every role the fleet knows, in the order the panel offers them.
+;
+;	main   leads: it farms to its own plan and the fleet follows it
+;	fuzzy  improves the field it stands in, so it stands where the main is
+;	tad    the same, by a different bee
+;	guid   carries the guiding star, which is a job of its own
+;	atk    fights, which happens somewhere the main is not
 roster_Roles() {
 	return ["main", "fuzzy", "tad", "guid", "atk"]
+}
+
+;Does an account of this role follow the main into the field it farms?
+;
+;Fuzzy and tad, and nothing else. Both of them improve the field they are
+;standing in, so standing where the main stands is the whole of the job; a
+;guid or an atk has work of its own somewhere else, and dragging it along
+;would cost it that work.
+;
+;Here rather than in the two places that ask, because this was written out
+;twice - once in the coordinator and once in the macro - and the window that
+;offered the setting ended up calling them all "residents", which reads as
+;every account that is not the main. A rule with one name cannot drift from
+;the label on the switch that controls it.
+roster_Follows(role) {
+	return (role = "fuzzy") || (role = "tad")
 }
 
 ;Read the roster. Returns a Map of row number to its entry, empty if the file is

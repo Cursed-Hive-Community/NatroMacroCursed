@@ -4736,8 +4736,13 @@ ext_FleetHelp(*){
 	rest - and a macro that loses the fleet entirely simply carries on
 	farming alone.
 
-	Open the Fleet panel to set the row numbers, the shared secret and the
-	server links."
+	Fuzzy and tad accounts also follow the main into the field it farms,
+	since the field they stand in is the one they improve. A guid or an atk
+	has work of its own and stays where it is.
+
+	Open the Fleet panel, then Settings, to set a macro up. Nothing has to
+	be typed on two machines: the host opens its door, the macro walks in,
+	and the row number and the shared word are handed over."
 	), "Fleet", 0x40040
 }
 ;update config

@@ -606,8 +606,9 @@ fleet_NextRow() {
 	return best + 1
 }
 
-;Point the residents at the field the main is farming. Fuzzy and tad alts
-;improve the field they stand in, so they go where the main goes - but only
+;Point the followers at the field the main is farming - fuzzy and tad, and
+;only those, which is what roster_Follows says. They improve the field they
+;stand in, so they go where the main goes - but only
 ;to farm, which is all a FIELD report ever means. Forwarded once per change:
 ;the main re-enters nm_GoGather every trip, and moving the whole hive on an
 ;unchanged field would be pure churn.
@@ -621,7 +622,7 @@ fleet_LeadField(field) {
 	for _, p in peers
 		sent += fleet_FollowOne(p)
 	if sent
-		fleet_Event("main farming " field " - " sent " resident(s) following")
+		fleet_Event("main farming " field " - " sent " fuzzy/tad following")
 	return sent
 }
 
@@ -632,7 +633,7 @@ fleet_FollowOne(p) {
 
 	if ((leadField = "") || !p.socket || (p.state != "online"))
 		return 0
-	if ((p.role != "fuzzy") && (p.role != "tad"))
+	if !roster_Follows(p.role)
 		return 0
 	return sock_SendLine(p.socket, fleet_Frame("GOTO", Map("field", leadField))) ? 1 : 0
 }
