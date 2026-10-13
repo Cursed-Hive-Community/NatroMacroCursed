@@ -191,7 +191,7 @@ ext_fleetStartFleet(name, role, user) {
 
 	rows := roster_Load(path)
 	rows[1] := { row: 1, name: name, role: role, user: user
-		, machine: A_ComputerName, owner: 1 }
+		, machine: A_ComputerName }
 	roster_Save(path, rows)
 	if (FleetSecret = "")
 		ext_FleetSave("FleetSecret", fleet_NewSecret())
@@ -229,6 +229,7 @@ ext_fleetOnSocket(s, event, data) {
 ;belongs to the roster file, not to whatever this macro believes about itself.
 ext_fleetHello() {
 	global ext_fleetSock, ext_fleetPeers, FleetRow, FleetSecret, ext_fleetMyField
+	global ext_fleetServers, ext_fleetServerGen
 
 	;Forget the old picture before asking for a new one. The coordinator answers
 	;a HELLO with the whole roster, and rows are merged by number rather than
@@ -236,6 +237,10 @@ ext_fleetHello() {
 	;otherwise sit in the table for ever, still wearing the state and the colour
 	;it had at the moment the connection dropped.
 	ext_fleetPeers.Clear()
+	;the servers too, and their generation with them - a coordinator we have not
+	;met may be reading a different file, and an empty generation guarantees the
+	;first SERVER frame rebuilds rather than merges
+	ext_fleetServers.Clear(), ext_fleetServerGen := ""
 	;and the field we last said we were farming. A coordinator we are meeting
 	;for the first time - or one that has just been started by a takeover - has
 	;no record of it, so the next gather trip has to say so again instead of
@@ -249,6 +254,7 @@ ext_fleetHello() {
 ext_fleetOnLine(line) {
 	global ext_fleetPeers, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
 	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock, ext_fleetRefused
+	global ext_fleetServers, ext_fleetServerGen
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -280,6 +286,21 @@ ext_fleetOnLine(line) {
 			;timing the round trip, so any work here would be measured as
 			;distance to this machine
 			sock_SendLine(ext_fleetSock, fleet_Frame("ACK", Map("id", fleet_Field(frame, "id"))))
+			ext_fleetCoordSeen := nowUnix()
+		case "SERVER":
+			;One generation of the list at a time. A generation this macro has
+			;not seen means the list changed somehow - an edit, a deletion, a
+			;different coordinator - and the only safe answer is to drop what
+			;we have and take the frames that follow. Compared for difference
+			;rather than for being newer: two coordinators reading the same
+			;file produce the same generation, and that is correct, there being
+			;nothing to rebuild.
+			if (fleet_Field(frame, "gen") != ext_fleetServerGen) {
+				ext_fleetServers.Clear()
+				ext_fleetServerGen := fleet_Field(frame, "gen")
+			}
+			if (row := Integer(fleet_Field(frame, "slot", 0)))
+				ext_fleetServers[row] := frame.fields
 			ext_fleetCoordSeen := nowUnix()
 		case "GONE":
 			;the one frame that removes an account. Everything else is a ROSTER
@@ -506,10 +527,11 @@ ext_fleetStart() {
 ;Stop talking to the fleet, without killing a coordinator that other macros may
 ;still be using.
 ext_fleetStop() {
-	global ext_fleetSock, ext_fleetPeers
+	global ext_fleetSock, ext_fleetPeers, ext_fleetServers, ext_fleetServerGen
 
 	;nothing known about the fleet survives not being connected to it
 	ext_fleetPeers.Clear()
+	ext_fleetServers.Clear(), ext_fleetServerGen := ""
 	SetTimer ext_fleetBeat, 0
 	SetTimer ext_fleetWatch, 0
 	SetTimer ext_fleetConnect, 0
@@ -872,20 +894,24 @@ ext_FleetPeerGUI(row) {
 	ext_FleetPeerLine("PeerUser", 118, "Roblox user")
 	ext_FleetPeerLine("PeerLabel", 140, "Roster label")
 	ext_FleetPeerLine("PeerMachine", 162, "Machine")
-	FleetPeerGui.Add("Text", "x16 y188 w348 h1 +0x10")
+	;read off the server list rather than off a flag on this account: an
+	;account can own more than one server, which is the whole reason the flag
+	;was taken off the roster
+	ext_FleetPeerLine("PeerOwns", 184, "Owns")
+	FleetPeerGui.Add("Text", "x16 y210 w348 h1 +0x10")
 	;the queue, once it exists
-	ext_FleetPeerLine("PeerTokens", 200, "Boost tokens")
-	ext_FleetPeerLine("PeerGuiding", 222, "Guiding star")
-	FleetPeerGui.Add("Text", "x16 y248 w348 h1 +0x10")
+	ext_FleetPeerLine("PeerTokens", 222, "Boost tokens")
+	ext_FleetPeerLine("PeerGuiding", 244, "Guiding star")
+	FleetPeerGui.Add("Text", "x16 y270 w348 h1 +0x10")
 	;the link itself
-	ext_FleetPeerLine("PeerRtt", 260, "Response time")
-	ext_FleetPeerLine("PeerSeen", 282, "Last heard from")
+	ext_FleetPeerLine("PeerRtt", 282, "Response time")
+	ext_FleetPeerLine("PeerSeen", 304, "Last heard from")
 
-	FleetPeerGui.Add("Button", "x264 y318 w100 h26", "Close").OnEvent("Click", ext_FleetPeerClose)
+	FleetPeerGui.Add("Button", "x264 y340 w100 h26", "Close").OnEvent("Click", ext_FleetPeerClose)
 
 	ext_FleetPeerDraw()
 	SetTimer ext_FleetPeerDraw, 1000
-	FleetPeerGui.Show("w380 h356")
+	FleetPeerGui.Show("w380 h378")
 }
 
 ;Label left, value right. Every line the same shape reads faster than sentences.
@@ -923,7 +949,6 @@ ext_FleetPeerDraw() {
 	try FleetPeerGui["PeerName"].Text := ext_FleetSeatName(p)
 	try FleetPeerGui["PeerSub"].Text := ext_FleetCell(p, "role")
 		. " - " ext_FleetCell(p, "state")
-		. (ext_FleetNum(p, "owner") ? " - owns the private server" : "")
 
 	;no server field until the queue assigns one, so being seated is as much as
 	;can honestly be said
@@ -935,6 +960,8 @@ ext_FleetPeerDraw() {
 		, "not set - the cards fall back to the label below")
 	try FleetPeerGui["PeerLabel"].Text := ext_FleetOr(ext_FleetCell(p, "name"), "none")
 	try FleetPeerGui["PeerMachine"].Text := ext_FleetOr(ext_FleetCell(p, "machine"), "unknown")
+	try FleetPeerGui["PeerOwns"].Text := ext_FleetOr(ext_fleetOwnedBy(FleetPeerShown)
+		, "no server")
 
 	;250 is a full charge, which is what a guiding star costs
 	try FleetPeerGui["PeerTokens"].Text := (ext_FleetNum(p, "charge") > 0)
@@ -983,8 +1010,7 @@ ext_FleetAgo(stamp) {
 ;building the directory before anything can talk. Binding turns it round: the
 ;two sides find each other, and the table fills itself in as macros arrive.
 ext_FleetSetupGUI(*) {
-	global FleetSetupGui, FleetRoster, FleetRosterPath
-	global FleetServerMain, FleetServerReserve
+	global FleetSetupGui, FleetRoster, FleetRosterPath, FleetServersPath
 	local GuiCtrl
 
 	if (IsSet(FleetSetupGui) && IsObject(FleetSetupGui)) {
@@ -993,12 +1019,15 @@ ext_FleetSetupGUI(*) {
 	}
 	FleetRosterPath := A_WorkingDir "\settings\fleet_roster.ini"
 	FleetRoster := roster_Load(FleetRosterPath)
+	;the coordinator derives this from whatever roster it was handed, so the two
+	;names have to agree - see fleet_ServersStamp
+	FleetServersPath := A_WorkingDir "\settings\fleet_roster_servers.ini"
 
 	FleetSetupGui := Gui("+AlwaysOnTop +Border", "Fleet - settings")
 	FleetSetupGui.OnEvent("Close", ext_FleetSetupClose)
 	FleetSetupGui.SetFont("s8 cDefault Bold", "Tahoma")
 	FleetSetupGui.Add("GroupBox", "x8 y4 w584 h68", "1 - this macro")
-	FleetSetupGui.Add("GroupBox", "x8 y76 w584 h66", "2 - the servers, the same on every macro")
+	FleetSetupGui.Add("GroupBox", "x8 y76 w584 h66", "2 - the servers, shared with the fleet")
 	FleetSetupGui.Add("GroupBox", "x8 y146 w584 h150", "3 - the accounts")
 	FleetSetupGui.SetFont("Norm")
 
@@ -1006,18 +1035,20 @@ ext_FleetSetupGUI(*) {
 	FleetSetupGui.Add("Button", "x446 y20 w136 h22 vFleetAct1", "").OnEvent("Click", ext_FleetAct1)
 	FleetSetupGui.Add("Button", "x446 y44 w136 h22 vFleetAct2", "").OnEvent("Click", ext_FleetAct2)
 
-	FleetSetupGui.Add("Text", "x18 y96 w60", "Main:")
-	(GuiCtrl := FleetSetupGui.Add("Edit", "x82 y94 w500 h18 vFleetServerMain", FleetServerMain)).Section := "Fleet"
-	GuiCtrl.OnEvent("Change", nm_saveConfig)
-	FleetSetupGui.Add("Text", "x18 y118 w60", "Reserve:")
-	(GuiCtrl := FleetSetupGui.Add("Edit", "x82 y116 w500 h18 vFleetServerReserve", FleetServerReserve)).Section := "Fleet"
-	GuiCtrl.OnEvent("Change", nm_saveConfig)
+	;Two edit boxes used to sit here, one main and one reserve, typed again on
+	;every machine. There can be any number of reserves now and each one names
+	;the account that owns it, which is a table rather than a pair of fields -
+	;so it has a window, and this says what is in it.
+	FleetSetupGui.Add("Text", "x18 y94 w460 h40 vFleetServerSummary", "")
+	FleetSetupGui.Add("Button", "x486 y96 w96 h22", "Servers").OnEvent("Click", ext_FleetServersGUI)
 
 	;no row column: the numbers are assigned at binding and nobody needs to see
 	;them. They are still in Advanced for the day something has to be matched up
 	;against a log.
+	;no Owner column either: owning a server is a fact about the server, and it
+	;is set beside the server's own link
 	FleetSetupGui.Add("ListView", "x16 y164 w340 h122 -Multi vFleetRosterList"
-		, ["Name", "Role", "Roblox user", "Owner"])
+		, ["Name", "Role", "Roblox user"])
 	FleetSetupGui["FleetRosterList"].OnEvent("ItemSelect", ext_FleetRosterSelect)
 	FleetSetupGui.Add("Text", "x364 y168 w36", "Name:")
 	FleetSetupGui.Add("Edit", "x404 y166 w178 h18 vFleetEditName")
@@ -1025,7 +1056,6 @@ ext_FleetSetupGUI(*) {
 	FleetSetupGui.Add("DropDownList", "x404 y192 w100 vFleetEditRole", roster_Roles())
 	FleetSetupGui.Add("Text", "x364 y220 w36", "User:")
 	FleetSetupGui.Add("Edit", "x404 y218 w178 h18 vFleetEditUser")
-	FleetSetupGui.Add("CheckBox", "x404 y244 w178 vFleetEditOwner", "Owns the private server")
 	FleetSetupGui.Add("Button", "x364 y268 w104 h24", "Update").OnEvent("Click", ext_FleetRosterSave)
 	FleetSetupGui.Add("Button", "x478 y268 w104 h24", "Remove").OnEvent("Click", ext_FleetRosterRemove)
 
@@ -1034,6 +1064,7 @@ ext_FleetSetupGUI(*) {
 
 	ext_FleetRosterDraw()
 	ext_FleetWhoDraw()
+	ext_FleetServerSummary()
 	SetTimer ext_FleetWhoDraw, 1000
 	SetTimer ext_FleetRosterWatch, 1000
 	FleetSetupGui.Show("w600 h342")
@@ -1271,6 +1302,353 @@ ext_FleetSave(name, value) {
 	IniWrite value, "settings\nm_config.ini", "Fleet", name
 }
 
+;--- the servers -------------------------------------------------------------
+;
+;One main private server and as many reserves as a setup needs: somewhere to
+;park an account that has to leave the main, somewhere to stage a guiding star,
+;somewhere to put a macro that is between jobs.
+;
+;Each one names the account that owns it, because only the owner's /kick clears
+;anybody out - so "who can empty this server" is a fact about the server. One
+;flag on one roster row could not say that two servers have two different
+;owners, which is why that flag is gone from the roster editor.
+;
+;A window of its own, because it is a table and the setup window already has
+;three sections stacked in it.
+
+;Is this the macro whose server file the fleet actually uses?
+;
+;The coordinator reads the file on the machine it runs on, so on every other
+;macro the local file is a leftover nobody reads. A macro with no row yet
+;counts as well: it has nothing to join and its file is the one it will host
+;with.
+ext_fleetServerHost() {
+	global FleetRow, FleetHostRow
+
+	return (FleetRow <= 0) || (FleetRow = FleetHostRow)
+}
+
+;The list this window shows.
+;
+;On the host, the file - which is also what gets edited. Anywhere else, what
+;was broadcast, read only: a window where you can type a link that silently
+;does nothing is worse than no window.
+ext_fleetServerList() {
+	global FleetServers, FleetServersPath, ext_fleetServers
+	local slot, f, out := Map()
+
+	if ext_fleetServerHost() {
+		FleetServers := servers_Load(FleetServersPath)
+		return FleetServers
+	}
+	for slot, f in ext_fleetServers
+		out[slot] := { slot: slot
+			, name: ext_FleetCell(f, "name")
+			, link: ext_FleetCell(f, "link")
+			, owner: ext_FleetNum(f, "owner")
+			, kind: (ext_FleetCell(f, "kind") = "main") ? "main" : "reserve" }
+	FleetServers := out
+	return out
+}
+
+;Bring the old pair of settings across, once.
+;
+;They were two edit boxes in the settings window, retyped on every machine, and
+;somebody may well have pasted real links into them. Losing a link in silence
+;is rude. Done on the first open rather than at startup because it writes a
+;file, and a macro that is not hosting has no business writing one.
+ext_fleetSeedServers() {
+	global FleetServersPath, FleetServerMain, FleetServerReserve
+	local list
+
+	if (FileExist(FleetServersPath) || !ext_fleetServerHost())
+		return 0
+	if ((FleetServerMain = "") && (FleetServerReserve = ""))
+		return 0
+	list := Map()
+	list[1] := { slot: 1, name: "Main", link: FleetServerMain, owner: 0, kind: "main" }
+	if (FleetServerReserve != "")
+		list[2] := { slot: 2, name: "Reserve", link: FleetServerReserve
+			, owner: 0, kind: "reserve" }
+	return servers_Save(FleetServersPath, list)
+}
+
+ext_FleetServersGUI(*) {
+	global FleetServersGui, FleetServerSlot
+
+	if (IsSet(FleetServersGui) && IsObject(FleetServersGui)) {
+		FleetServersGui.Show()
+		return
+	}
+	ext_fleetSeedServers()
+	FleetServerSlot := 0
+
+	FleetServersGui := Gui("+AlwaysOnTop +Border", "Fleet - servers")
+	FleetServersGui.OnEvent("Close", ext_FleetServersClose)
+	FleetServersGui.SetFont("s8 c808080 Norm", "Tahoma")
+	FleetServersGui.Add("Text", "x16 y12 w588 vFleetServerNote", "")
+	FleetServersGui.SetFont("s8 cDefault Norm", "Tahoma")
+
+	FleetServersGui.Add("ListView", "x16 y44 w588 h150 -Multi vFleetServerList"
+		, ["Server", "Link", "Owner"])
+	FleetServersGui["FleetServerList"].OnEvent("ItemSelect", ext_FleetServerSelect)
+
+	FleetServersGui.Add("Text", "x16 y206 w44", "Name:")
+	FleetServersGui.Add("Edit", "x64 y204 w170 h18 vFleetServerName")
+	FleetServersGui.Add("Text", "x248 y206 w44", "Owner:")
+	FleetServersGui.Add("DropDownList", "x296 y204 w220 vFleetServerOwner"
+		, ext_fleetOwnerChoices())
+	FleetServersGui.Add("Text", "x16 y232 w44", "Link:")
+	FleetServersGui.Add("Edit", "x64 y230 w540 h18 vFleetServerLink")
+
+	FleetServersGui.Add("Button", "x16 y260 w104 h26 vFleetServerUpdate", "Update")
+		.OnEvent("Click", ext_FleetServerSave)
+	FleetServersGui.Add("Button", "x128 y260 w104 h26 vFleetServerAdd", "Add reserve")
+		.OnEvent("Click", ext_FleetServerAdd)
+	FleetServersGui.Add("Button", "x240 y260 w104 h26 vFleetServerDel", "Remove")
+		.OnEvent("Click", ext_FleetServerRemove)
+
+	FleetServersGui.SetFont("s8 c808080 Norm", "Tahoma")
+	FleetServersGui.Add("Text", "x16 y296 w588"
+		, "The main server is where the fleet works and cannot be removed. An owner`nmatters because only that account's /kick does anything.")
+	FleetServersGui.SetFont("s8 cDefault Norm", "Tahoma")
+	FleetServersGui.Add("Button", "x504 y334 w100 h26", "Close").OnEvent("Click", ext_FleetServersClose)
+
+	ext_FleetServerDraw()
+	SetTimer ext_FleetServerWatch, 1000
+	FleetServersGui.Show("w620 h372")
+}
+
+ext_FleetServersClose(*) {
+	global FleetServersGui
+
+	SetTimer ext_FleetServerWatch, 0
+	if (IsSet(FleetServersGui) && IsObject(FleetServersGui))
+		FleetServersGui.Destroy(), FleetServersGui := ""
+}
+
+;The list changes underneath this window - the coordinator rewrites the file
+;when it reloads, and on a resident the broadcast is the only source there is.
+;Redrawn only when it has actually changed, because a redraw loses whichever
+;line was selected.
+ext_FleetServerWatch() {
+	global FleetServersGui, FleetServersPath, FleetServerStamp, ext_fleetServerGen
+	local stamp
+
+	if !(IsSet(FleetServersGui) && IsObject(FleetServersGui))
+		return
+	stamp := ext_fleetServerHost()
+		? (FileExist(FleetServersPath)
+			? FileGetTime(FleetServersPath, "M") "/" FileGetSize(FleetServersPath)
+			: "none")
+		: ext_fleetServerGen
+	if (stamp = FleetServerStamp)
+		return
+	FleetServerStamp := stamp
+	ext_FleetServerDraw()
+}
+
+ext_FleetServerDraw() {
+	global FleetServersGui, FleetServers, FleetServerSlot
+	local list, keys := [], slot, e, editable := ext_fleetServerHost()
+
+	if !(IsSet(FleetServersGui) && IsObject(FleetServersGui))
+		return
+	list := ext_fleetServerList()
+	FleetServersGui["FleetServerList"].Delete()
+	for slot, _ in list
+		keys.Push(slot)
+	roster_Sort(keys)
+	for _, slot in keys {
+		e := list[slot]
+		;the main says so in the table rather than being sorted to the top: the
+		;slot order is what the file shows, and two orders would not match
+		FleetServersGui["FleetServerList"].Add(
+			, e.name ((e.kind = "main") ? "  (main)" : "")
+			, ext_FleetOr(e.link, "no link set")
+			, ext_fleetOwnerName(e.owner))
+	}
+	Loop 3
+		FleetServersGui["FleetServerList"].ModifyCol(A_Index, "AutoHdr")
+
+	try FleetServersGui["FleetServerNote"].Text := editable
+		? "Set here once. The coordinator hands the list to every macro in the fleet."
+		: "Shown as the fleet broadcast it. Change it on the macro that hosts the fleet."
+	for _, slot in ["FleetServerName", "FleetServerLink", "FleetServerOwner"
+		, "FleetServerUpdate", "FleetServerAdd", "FleetServerDel"]
+		try FleetServersGui[slot].Enabled := editable
+	;a line that is no longer there must not stay in the edit fields, where
+	;Update would write it back
+	if !list.Has(FleetServerSlot)
+		ext_FleetServerFields("", "", 0)
+}
+
+;The three controls that describe one server, filled or emptied together.
+ext_FleetServerFields(name, link, owner) {
+	global FleetServersGui, FleetServerOwnerRows
+	local i, row
+
+	try FleetServersGui["FleetServerName"].Value := name
+	try FleetServersGui["FleetServerLink"].Value := link
+	for i, row in FleetServerOwnerRows
+		if (row = owner) {
+			try FleetServersGui["FleetServerOwner"].Value := i
+			return
+		}
+	try FleetServersGui["FleetServerOwner"].Value := 1
+}
+
+ext_FleetServerSelect(ctrl, item, selected) {
+	global FleetServers, FleetServerSlot, FleetServersGui
+	local keys := [], slot, e
+
+	if (!selected || !item)
+		return
+	for slot, _ in FleetServers
+		keys.Push(slot)
+	roster_Sort(keys)
+	if (item > keys.Length)
+		return
+	FleetServerSlot := keys[item]
+	e := FleetServers[FleetServerSlot]
+	;the dropdown is rebuilt here because accounts arrive while this window is
+	;open - a server cannot be given to an account the list has never offered
+	try FleetServersGui["FleetServerOwner"].Delete()
+	try FleetServersGui["FleetServerOwner"].Add(ext_fleetOwnerChoices())
+	ext_FleetServerFields(e.name, e.link, e.owner)
+}
+
+ext_FleetServerSave(*) {
+	global FleetServersGui, FleetServers, FleetServersPath, FleetServerSlot
+	global FleetServerOwnerRows
+	local pick
+
+	if (!FleetServerSlot || !FleetServers.Has(FleetServerSlot)) {
+		MsgBox "Pick a server in the list first.", "Fleet", 0x40030
+		return
+	}
+	FleetServers[FleetServerSlot].name := Trim(FleetServersGui["FleetServerName"].Value)
+	FleetServers[FleetServerSlot].link := Trim(FleetServersGui["FleetServerLink"].Value)
+	pick := FleetServersGui["FleetServerOwner"].Value
+	FleetServers[FleetServerSlot].owner := ((pick >= 1) && (pick <= FleetServerOwnerRows.Length))
+		? FleetServerOwnerRows[pick]
+		: 0
+	if (FleetServers[FleetServerSlot].name = "")
+		FleetServers[FleetServerSlot].name := "server " FleetServerSlot
+	servers_Save(FleetServersPath, FleetServers)
+	ext_FleetServerDraw()
+	ext_FleetServerSummary()
+}
+
+ext_FleetServerAdd(*) {
+	global FleetServers, FleetServersPath
+	local slot
+
+	slot := servers_NextSlot(FleetServers)
+	FleetServers[slot] := { slot: slot, name: "Reserve " servers_Reserves(FleetServers) + 1
+		, link: "", owner: 0, kind: "reserve" }
+	servers_Save(FleetServersPath, FleetServers)
+	ext_FleetServerDraw()
+	ext_FleetServerSummary()
+}
+
+ext_FleetServerRemove(*) {
+	global FleetServers, FleetServersPath, FleetServerSlot
+
+	if (!FleetServerSlot || !FleetServers.Has(FleetServerSlot))
+		return
+	if (FleetServers[FleetServerSlot].kind = "main") {
+		MsgBox "The main server cannot be removed - a fleet has to work somewhere."
+			. "`n`nPaste a different link into it instead.", "Fleet", 0x40030
+		return
+	}
+	if (MsgBox("Remove " FleetServers[FleetServerSlot].name "?", "Fleet", 0x40024) != "Yes")
+		return
+	FleetServers.Delete(FleetServerSlot)
+	FleetServerSlot := 0
+	servers_Save(FleetServersPath, FleetServers)
+	ext_FleetServerDraw()
+	ext_FleetServerSummary()
+}
+
+;The accounts the owner dropdown offers, and the row each entry means.
+;
+;"nobody" first, because no owner named is the normal state until somebody says
+;so - and a dropdown whose first entry is an account makes that account look
+;chosen when nothing has been.
+;
+;From the roster file where there is one, and from what was broadcast where
+;there is not: the file is only populated on the machine that hosts.
+ext_fleetOwnerChoices() {
+	global FleetRoster, ext_fleetPeers, FleetServerOwnerRows
+	local row, e, names := ["nobody"], keys := [], source
+
+	FleetServerOwnerRows := [0]
+	source := (IsSet(FleetRoster) && FleetRoster.Count) ? FleetRoster : ext_fleetPeers
+	for row, _ in source
+		keys.Push(row)
+	roster_Sort(keys)
+	for _, row in keys {
+		names.Push(ext_fleetOwnerName(row))
+		FleetServerOwnerRows.Push(row)
+	}
+	return names
+}
+
+;What to call the account that owns a server. In one place, so the table, the
+;dropdown and the detail panel never disagree about an account's name.
+ext_fleetOwnerName(row) {
+	global FleetRoster, ext_fleetPeers
+
+	if !row
+		return "nobody"
+	if (IsSet(FleetRoster) && FleetRoster.Has(row))
+		return (FleetRoster[row].user != "") ? FleetRoster[row].user : FleetRoster[row].name
+	if ext_fleetPeers.Has(row)
+		return ext_FleetSeatName(ext_fleetPeers[row])
+	return "row " row
+}
+
+;The servers one account owns, named. An account can own several, which is the
+;thing the roster flag was unable to say.
+ext_fleetOwnedBy(row) {
+	global ext_fleetServers
+	local slot, f, out := ""
+
+	for slot, f in ext_fleetServers
+		if (row && (ext_FleetNum(f, "owner") = row))
+			out .= (out != "" ? ", " : "") ext_FleetOr(ext_FleetCell(f, "name"), "server " slot)
+	return out
+}
+
+;Section two of the setup window, in two lines: where the main is, and how many
+;reserves there are. The link is shown rather than hidden, because a link that
+;is wrong is the thing that goes wrong and it has to be recognisable at a
+;glance.
+ext_FleetServerSummary() {
+	global FleetSetupGui
+	local list, main, n
+
+	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
+		return
+	list := ext_fleetServerList(), main := servers_Main(list), n := servers_Reserves(list)
+	try FleetSetupGui["FleetServerSummary"].Text := "Main: "
+		. ((main && (main.link != "")) ? ext_FleetShort(main.link, 72) : "no link set")
+		. "`n" (n ? n " reserve" ((n > 1) ? "s" : "") : "No reserves")
+		. ((main && main.owner) ? "  -  main owned by " ext_fleetOwnerName(main.owner) : "")
+}
+
+;A private server link is longer than any space it is given, and the half worth
+;recognising is the end - the link code. So the middle goes, never the tail.
+ext_FleetShort(text, n) {
+	local half
+
+	if (StrLen(text) <= n)
+		return text
+	half := (n // 2) - 3
+	return SubStr(text, 1, half) " ... " SubStr(text, -half)
+}
+
 ;--- the roster editor -------------------------------------------------------
 
 ext_FleetRosterDraw() {
@@ -1288,9 +1666,9 @@ ext_FleetRosterDraw() {
 	FleetRosterOrder := keys
 	for _, row in keys {
 		e := FleetRoster[row]
-		FleetSetupGui["FleetRosterList"].Add(, e.name, e.role, e.user, e.owner ? "yes" : "")
+		FleetSetupGui["FleetRosterList"].Add(, e.name, e.role, e.user)
 	}
-	Loop 4
+	Loop 3
 		FleetSetupGui["FleetRosterList"].ModifyCol(A_Index, "AutoHdr")
 }
 
@@ -1306,28 +1684,20 @@ ext_FleetRosterSelect(ctrl, item, selected) {
 	FleetSetupGui["FleetEditName"].Value := FleetRoster[row].name
 	FleetSetupGui["FleetEditRole"].Text := FleetRoster[row].role
 	FleetSetupGui["FleetEditUser"].Value := FleetRoster[row].user
-	FleetSetupGui["FleetEditOwner"].Value := FleetRoster[row].owner
 }
 
 ;Editing only. Accounts arrive by binding, so there is no Add here - a row this
 ;list has never seen would be a row no macro answers to.
 ext_FleetRosterSave(*) {
 	global FleetSetupGui, FleetRoster, FleetRosterPath, FleetEditRow
-	local other
 
 	if (!FleetEditRow || !FleetRoster.Has(FleetEditRow)) {
 		MsgBox "Pick an account in the list first.", "Fleet", 0x40030
 		return
 	}
-	;only one account can own the private server, so ticking it here clears it
-	;elsewhere rather than leaving two and choosing one silently later
-	if FleetSetupGui["FleetEditOwner"].Value
-		for other, _ in FleetRoster
-			FleetRoster[other].owner := 0
 	FleetRoster[FleetEditRow].name := Trim(FleetSetupGui["FleetEditName"].Value)
 	FleetRoster[FleetEditRow].role := FleetSetupGui["FleetEditRole"].Text
 	FleetRoster[FleetEditRow].user := Trim(FleetSetupGui["FleetEditUser"].Value)
-	FleetRoster[FleetEditRow].owner := FleetSetupGui["FleetEditOwner"].Value ? 1 : 0
 	if (FleetRoster[FleetEditRow].name = "")
 		FleetRoster[FleetEditRow].name := "row " FleetEditRow
 	roster_Save(FleetRosterPath, FleetRoster)

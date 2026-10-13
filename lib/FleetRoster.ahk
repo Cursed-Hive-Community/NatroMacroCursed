@@ -14,11 +14,13 @@
 ;	Role=fuzzy
 ;	User=SomeRobloxName
 ;	Machine=LAPTOP-TIROU
-;	Owner=0
 ;
 ;Role is one of main, fuzzy, tad, guid, atk. User is the exact Roblox username,
-;needed only to force a kick. Owner marks the account that owns the private
-;server, since it is the only one whose /kick does anything.
+;needed only to force a kick.
+;
+;Who owns a private server is not here. It was one flag on one row, and one
+;flag cannot say that two servers have two different owners - it lives on the
+;server now, in fleet_servers.ini.
 ;
 ;Machine is not edited and is not what the panel displays - a macro says where
 ;it is running every time it connects, and that is the live truth. It is here
@@ -47,7 +49,7 @@ roster_Load(path) {
 			section := Integer(Trim(SubStr(line, 2, StrLen(line) - 2)))
 			if (section > 0)
 				rows[section] := { row: section, name: "row " section, role: "guid"
-					, user: "", machine: "", owner: 0 }
+					, user: "", machine: "" }
 			continue
 		}
 		if (!section || !rows.Has(section) || !(at := InStr(line, "=")))
@@ -60,27 +62,17 @@ roster_Load(path) {
 			case "role":  entry.role := StrLower(v)
 			case "user":  entry.user := v
 			case "machine": entry.machine := v
-			case "owner": entry.owner := (v = "1") ? 1 : 0
 		}
 	}
 	return rows
 }
 
-;Write it back, rows in order so the file stays readable after an edit.
-;
-;Through a temporary file and a move, rather than a delete and an append. Two
-;processes write this one file - the coordinator when a macro binds or leaves,
-;and the roster editor in any macro's settings window - and both of them are
-;read on a one second timer. A delete followed by an append leaves a moment
-;when the file is missing or half written, and a reader landing in that moment
-;sees a fleet with nobody in it; on the coordinator's side that used to mean
-;striking every account off at once.
-;
-;The header line is there so the file is never zero bytes long, which is the
-;one case a move cannot be told apart from a failure.
+;Write it back, rows in order so the file stays readable after an edit. The
+;header line is there so the file is never zero bytes long - see
+;fleet_WriteWhole, which does the writing, for why that matters.
 roster_Save(path, rows) {
 	local out := ";the fleet roster - written by the macro, safe to read by hand`r`n`r`n"
-	local keys := [], r, tmp := path ".tmp"
+	local keys := [], r
 
 	for r, _ in rows
 		keys.Push(r)
@@ -90,15 +82,32 @@ roster_Save(path, rows) {
 		out .= "Name=" rows[r].name "`r`n"
 		out .= "Role=" rows[r].role "`r`n"
 		out .= "User=" rows[r].user "`r`n"
-		out .= "Machine=" rows[r].machine "`r`n"
-		out .= "Owner=" rows[r].owner "`r`n`r`n"
+		out .= "Machine=" rows[r].machine "`r`n`r`n"
 	}
+	return fleet_WriteWhole(path, out)
+}
+
+;Replace a whole shared configuration file in one step.
+;
+;Both files here - the roster and the servers - are written by two processes and
+;read by both on a one second timer: the coordinator writes when a macro binds
+;or leaves, and the editor in a macro's settings window writes when somebody
+;changes something. A delete followed by an append leaves a moment when the
+;file is missing or half written, and a reader landing in that moment sees a
+;fleet with nobody in it; on the coordinator's side that used to mean striking
+;every account off at once.
+;
+;So: a temporary file, then a move over the target. A reader sees either the
+;old file whole or the new one whole, and never the gap.
+fleet_WriteWhole(path, text) {
+	local tmp := path ".tmp"
+
 	try FileDelete tmp
-	try FileAppend out, tmp, "UTF-8"
+	try FileAppend text, tmp, "UTF-8"
+	;an empty file is the one case a move cannot be told apart from a failure,
+	;which is why every caller writes a header line
 	if !FileExist(tmp)
 		return 0
-	;overwrite, so the swap is one rename and a reader sees either the old file
-	;whole or the new one whole
 	try FileMove tmp, path, 1
 	return !FileExist(tmp)
 }

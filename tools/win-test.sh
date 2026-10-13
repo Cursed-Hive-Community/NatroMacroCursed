@@ -44,10 +44,10 @@ source "$CONFIG"
 # changed file selects every entry/test whose list contains it. Update these
 # when an #Include changes - nm-check.py's own file list is the full set.
 
-COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk"
-COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk"
+COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk"
+COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk"
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
-COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk submacros/Fleet.ahk"
+COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
 
 # entry point -> coverage var
 ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest"
@@ -57,7 +57,7 @@ TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest
 # every owned file, for the full-run default
 ALL_FILES=(
   submacros/natro_macro.ahk
-  lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk
+  lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk
   submacros/Fleet.ahk submacros/FleetSelfTest.ahk submacros/SocketSelfTest.ahk
   submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk
 )

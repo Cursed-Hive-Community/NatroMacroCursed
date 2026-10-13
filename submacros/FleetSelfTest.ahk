@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Eleven things are checked, each because it is a way the design could be wrong
+;Thirteen things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -24,6 +24,15 @@
 ;	9. a macro that leaves is removed          leaving differs from crashing
 ;	10. a second coordinator is refused        the port is the lock
 ;	11. a second setup reuses its own row      no ghost rows in the roster
+;	12. the server list reaches a macro        servers are shared, not retyped
+;	13. a deleted server disappears            a list that shrinks still converges
+;
+;Thirteen is the one worth spelling out. Nothing in the protocol says "delete a
+;server": each frame carries the generation the list is on, and a macro that
+;sees a generation it has not seen throws its copy away before taking the
+;frames that follow. So a list that shrank converges in one beat, with no
+;transaction to be caught half-applied - the same reason the roster broadcasts
+;state rather than deletions.
 ;
 ;Ten is the one that was never going to be noticed by reading the code. Windows
 ;lets two processes listen on one port when SO_REUSEADDR is set, so both
@@ -49,6 +58,7 @@
 #Include "Socket.ahk"
 #Include "FleetProtocol.ahk"
 #Include "FleetRoster.ahk"
+#Include "FleetServers.ahk"
 
 PORT := 47655
 SECRET := "selftest"
@@ -65,18 +75,31 @@ ROSTER := A_ScriptDir "\..\settings\fleet_roster_selftest.ini"
 ;built-in logarithm. The collision is not only with functions of our own.
 LOGFILE := RegExReplace(ROSTER, "i)\.ini$", ".log")
 try FileDelete LOGFILE
+;and its own server list, derived from the roster path exactly as the
+;coordinator derives it - two of them, so one is left after a deletion
+SERVERS := RegExReplace(ROSTER, "i)\.ini$", "_servers.ini")
+;the link carries a space, a percent and an equals sign on purpose: all three
+;are characters the wire protocol has to survive, and a real private server
+;link contains at least the last of them
+servers_Save(SERVERS, Map(1, { slot: 1, name: "Main", kind: "main", owner: 2
+		, link: "https://roblox.test/main?code=a b%c" }
+	, 2, { slot: 2, name: "Reserve", kind: "reserve", owner: 3
+		, link: "https://roblox.test/reserve" }))
 ;row 3 exists in the roster from the start but does not connect until the main
 ;has already reported its field - which is what a resident restarting looks like
 roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
-		, machine: "selftest", owner: 1 }
+		, machine: "selftest" }
 	, 2, { row: 2, name: "fuzzy 1", role: "fuzzy", user: ""
-		, machine: "selftest", owner: 0 }
+		, machine: "selftest" }
 	, 3, { row: 3, name: "fuzzy 2", role: "fuzzy", user: "fuzzy2"
-		, machine: "selftest", owner: 0 }))
+		, machine: "selftest" }))
 
 coordPid := 0, rivalPid := 0, finished := 0
 boundRow := -1              ;which row a second setup of row 3 was handed back
 clientD := 0
+srvGen := ""                ;the generation of the server list last seen
+srv := Map()                ;the server list as the main macro holds it
+srvMainLink := "", srvMainOwner := -1
 seenBy := Map()             ;client label -> Map of row -> roster frame it received
 refused := ""               ;what the bad-secret connection was told
 
@@ -107,6 +130,8 @@ SetTimer Rival, -6500
 ;the host opens its door, and an account that already has a row asks for one
 SetTimer Open, -6000
 SetTimer Rebind, -6800
+;a server deleted, late enough that the first list has certainly arrived
+SetTimer DropServer, -9000
 ;the roster file as a reader catches it mid-write
 SetTimer Blank, -8000
 ;the fuzzy macro leaves on purpose, late enough that its measured round trip
@@ -166,6 +191,17 @@ Rival(*) {
 		, , "Hide", &rivalPid
 }
 
+;One server deleted. The macro's copy has to end up holding one and not two,
+;and no frame says "delete" - the generation riding on the frames is the whole
+;of the mechanism.
+DropServer(*) {
+	global SERVERS
+	local list := servers_Load(SERVERS)
+
+	list.Delete(2)
+	servers_Save(SERVERS, list)
+}
+
 ;The roster file as it looks for the instant between a delete and a write, or
 ;on a read that failed. The coordinator must not read this as "every account
 ;has been removed" - doing so struck the whole fleet off and refused all of it.
@@ -199,6 +235,7 @@ OnC(s, event, data) {
 Handle(label, row, name, s, event, data) {
 	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRows
 	global bothSeen, row2, rttSeen, lateField
+	global srv, srvGen, srvMainLink, srvMainOwner
 	local frame
 
 	if (event = "connect") {
@@ -238,6 +275,20 @@ Handle(label, row, name, s, event, data) {
 		else if (label = "late")
 			lateField := fleet_Field(frame, "field")
 	}
+	else if ((label = "main") && (frame.verb = "SERVER")) {
+		;the generation logic the extension does for real, in miniature. A
+		;generation never seen before means the list changed somehow, and the
+		;old copy is thrown away rather than merged into.
+		if (fleet_Field(frame, "gen") != srvGen) {
+			srv := Map()
+			srvGen := fleet_Field(frame, "gen")
+		}
+		srv[Integer(fleet_Field(frame, "slot", 0))] := frame
+		if (fleet_Field(frame, "kind") = "main") {
+			srvMainLink := fleet_Field(frame, "link")
+			srvMainOwner := Integer(fleet_Field(frame, "owner", -1))
+		}
+	}
 	else if (frame.verb = "PING") {
 		;answered the way a real macro does; without this there is nothing for
 		;the coordinator to time and the round trip stays unmeasured
@@ -273,7 +324,8 @@ OnBad(s, event, data) {
 
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
-	global clientC, clientD, boundRow
+	global clientC, clientD, boundRow, SERVERS
+	global srv, srvMainLink, srvMainOwner
 	global ROSTER, gotoField
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
@@ -320,6 +372,11 @@ Report(*) {
 	;itself up again lands on the row it already had
 	allOk := Check(lines, "a second setup of one account reuses its row"
 		, boundRow = 3) && allOk
+	allOk := Check(lines, "the server list reaches a macro, link and owner intact"
+		, (srvMainLink == "https://roblox.test/main?code=a b%c")
+			&& (srvMainOwner = 2)) && allOk
+	allOk := Check(lines, "a deleted server disappears from the macro's copy"
+		, (srv.Count = 1) && srv.Has(1)) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -335,6 +392,8 @@ Report(*) {
 	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing"))
 	lines.Push("row 3 set itself up again and was handed row "
 		. ((boundRow >= 0) ? boundRow : "nothing at all"))
+	lines.Push("servers held after one of two was deleted: " srv.Count
+		. ", main link=" (srvMainLink != "" ? srvMainLink : "never sent"))
 
 	sock_Close(clientA), sock_Close(clientB), sock_Close(clientBad)
 	if clientC
@@ -349,6 +408,7 @@ Report(*) {
 	if rivalPid
 		try ProcessClose(rivalPid)
 	try FileDelete ROSTER
+	try FileDelete SERVERS
 
 	;the coordinator's own log is the half of the story this script cannot
 	;see, so it travels with the verdict rather than being looked up after

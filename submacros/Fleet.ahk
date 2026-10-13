@@ -24,6 +24,7 @@
 #Include "Socket.ahk"
 #Include "FleetProtocol.ahk"
 #Include "FleetRoster.ahk"
+#Include "FleetServers.ahk"
 #Include "nowUnix.ahk"
 
 ;How often the coordinator says it is alive, and how long a silent macro has
@@ -67,12 +68,23 @@ if (A_Args.Length >= 5)
 ;seven machines, and re-read when it changes so editing the panel does not
 ;mean restarting the coordinator.
 roster := roster_Load(rosterPath)
+;where the accounts sit, and who owns each of those places. Beside the roster
+;rather than inside it: one flag on one row could not say that two servers have
+;two different owners, and the owner is the only account whose /kick works.
+serversPath := RegExReplace(rosterPath, "i)\.ini$", "_servers.ini")
+servers := servers_Load(serversPath)
 ;Binding. The door is shut by default and opens for a couple of minutes when
 ;the host asks, which is the only moment a macro can be let in without
 ;already knowing the secret. A fleet left open is a fleet anything on the
 ;network can walk into, so it shuts itself.
 bindUntil := 0
 rosterStamp := fleet_RosterStamp()
+;The server list travels with its own stamp as a generation number, which is
+;what lets a deleted server disappear without a frame that means "delete".
+;A macro that sees a generation it has not seen before throws its copy away
+;and rebuilds from the frames that follow - so the list converges in one beat
+;however it changed, and there is no half-applied update to end up in.
+serversStamp := fleet_ServersStamp()
 ;Outstanding pings, by id. How far away a macro is cannot be read off the
 ;heartbeats - they say a macro is alive, not how long it takes to answer - so
 ;the round trip is asked for explicitly and timed in ticks. Unix seconds would
@@ -189,7 +201,7 @@ fleet_OnHello(s, frame) {
 	name := roster[row].name
 	peers[row] := { row: row, name: name
 		, role: roster[row].role
-		, user: roster[row].user, owner: roster[row].owner
+		, user: roster[row].user
 		, machine: fleet_Field(frame, "machine", "")
 		, socket: s, state: "online", lastSeen: nowUnix()
 		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: 0
@@ -202,6 +214,10 @@ fleet_OnHello(s, frame) {
 	;term to obey, then bring everyone's picture up to date
 	sock_SendLine(s, fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	fleet_Broadcast()
+	;the server list is not in fleet_Broadcast, which runs on every report a
+	;macro makes. It changes when somebody edits it, so it goes out on a join
+	;and on the beat and not five times a minute per macro.
+	fleet_BroadcastServers()
 	;a resident arriving mid-session is told where the main is standing. Without
 	;this it farms its own field until the main next changes, which on a macro
 	;left on one field never happens - so a fuzzy that merely restarted would
@@ -351,6 +367,7 @@ fleet_Ping() {
 ;Say we are alive, and write off anyone who has not.
 fleet_Beat() {
 	global peers, term, hostRow, roster, rosterPath, rosterStamp
+	global servers, serversPath, serversStamp
 	local p, stamp, fresh
 
 	;pick up an edited roster without a restart
@@ -375,8 +392,16 @@ fleet_Beat() {
 			fleet_Event("row " p.row " (" p.name ") went quiet")
 		}
 	}
+	;the servers, picked up the same way. No guard against an empty read is
+	;needed here and none would mean anything: servers_Load answers a missing
+	;or unreadable file with one unfilled main rather than with nothing.
+	if ((stamp := fleet_ServersStamp()) != serversStamp) {
+		servers := servers_Load(serversPath), serversStamp := stamp
+		fleet_Event("servers reloaded, " servers.Count " of them")
+	}
 	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	fleet_Ping()
+	fleet_BroadcastServers()
 	;broadcast every beat, not only when something changed. The detail panel
 	;shows values that go stale on their own - how long ago a macro was last
 	;heard from, how long it took to answer - and a roster that only moves on
@@ -395,7 +420,7 @@ fleet_Broadcast() {
 
 	for _, p in peers {
 		f := Map("row", p.row, "name", p.name, "role", p.role, "state", p.state
-			, "machine", p.machine, "user", p.user, "owner", p.owner
+			, "machine", p.machine, "user", p.user
 		, "server", p.server, "field", p.field
 			, "guiding", p.guidingField, "until", p.guidingUntil, "charge", p.charge
 			;both are for the detail panel: how long this macro takes to answer,
@@ -403,6 +428,20 @@ fleet_Broadcast() {
 			, "rtt", p.rtt, "seen", p.lastSeen)
 		fleet_Send(fleet_Frame("ROSTER", f))
 	}
+}
+
+;The servers, one SERVER frame per slot, each carrying the generation the
+;list is on. A macro keeps its copy only as long as the generation matches, so
+;a server somebody deleted stops being drawn without any frame having to say
+;it was deleted - the same trick the roster uses to avoid half-applied updates,
+;applied to a list that can shrink.
+fleet_BroadcastServers() {
+	global servers, serversStamp
+	local s, e
+
+	for s, e in servers
+		fleet_Send(fleet_Frame("SERVER", Map("gen", serversStamp, "slot", e.slot
+			, "name", e.name, "link", e.link, "owner", e.owner, "kind", e.kind)))
 }
 
 ;To every macro that is still connected.
@@ -425,6 +464,17 @@ fleet_RosterStamp() {
 	return FileGetTime(rosterPath, "M") "/" FileGetSize(rosterPath)
 }
 
+;The server file as it stands. "none" rather than an empty string when there is
+;no file: the generation has to be a value a macro can compare, and the absence
+;of a file is a state the list can be in and come back from.
+fleet_ServersStamp() {
+	global serversPath
+
+	if !FileExist(serversPath)
+		return "none"
+	return FileGetTime(serversPath, "M") "/" FileGetSize(serversPath)
+}
+
 ;Carry an edited roster into the peers already connected, so a renamed or
 ;re-roled account does not have to reconnect for the change to be seen.
 fleet_ApplyRoster() {
@@ -441,7 +491,7 @@ fleet_ApplyRoster() {
 			continue
 		}
 		p.name := roster[row].name, p.role := roster[row].role
-		p.user := roster[row].user, p.owner := roster[row].owner
+		p.user := roster[row].user
 		;re-roled by hand into a resident, so it is owed the field the hive is
 		;on - the same reason a resident gets one when it joins
 		fleet_FollowOne(p)
@@ -492,7 +542,7 @@ fleet_OnOpen(s, frame) {
 ;and uses it for every reconnection afterwards.
 fleet_OnBind(s, frame) {
 	global roster, rosterPath, rosterStamp, bindUntil, secret
-	local row, again, owner
+	local row, again
 
 	if (nowUnix() > bindUntil) {
 		fleet_Log("refused a bind: the door is shut")
@@ -500,18 +550,13 @@ fleet_OnBind(s, frame) {
 		return
 	}
 	again := (row := fleet_RowFor(frame)) ? 1 : 0
-	;Owner survives a rebind. Which account owns the private server is a fact
-	;about the server, and nothing a macro's own setup dialog knows or should
-	;be able to forget on its behalf.
-	owner := again ? roster[row].owner : 0
 	if !again
 		row := fleet_NextRow()
 	roster[row] := { row: row
 		, name: fleet_Field(frame, "name", "row " row)
 		, role: fleet_Field(frame, "role", "guid")
 		, user: fleet_Field(frame, "user", "")
-		, machine: fleet_Field(frame, "machine", "")
-		, owner: owner }
+		, machine: fleet_Field(frame, "machine", "") }
 	roster_Save(rosterPath, roster)
 	rosterStamp := fleet_RosterStamp()
 	fleet_Event((again ? "rebound " : "bound ") roster[row].name

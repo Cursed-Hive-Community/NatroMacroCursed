@@ -34,6 +34,7 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "Socket.ahk"
 #Include "FleetProtocol.ahk"
 #Include "FleetRoster.ahk"
+#Include "FleetServers.ahk"
 ;extension modules - features this fork adds on top of stock Natro, kept in
 ;their own files so they stay legible against an upstream diff
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
@@ -945,6 +946,9 @@ nm_importConfig()
 		, "FleetSecret", ""
 		, "FleetAddress", ""
 		, "FleetGraceSecs", 45
+		;legacy: the two links that used to be typed on every machine. They are
+		;kept only so the first open of the servers window can carry whatever
+		;was in them into fleet_roster_servers.ini - see ext_fleetSeedServers.
 		, "FleetServerMain", ""
 		, "FleetServerReserve", ""
 		, "FleetCapacity", 6
@@ -2744,6 +2748,15 @@ ext_fleetMyField := "", ext_fleetFollowField := ""
 ;why the fleet turned this macro away, when it did. A refusal is final, so it
 ;is kept rather than retried - see the BYE case in extensions\fleet.ahk
 ext_fleetRefused := ""
+;the fleet's servers as the coordinator last described them, and the generation
+;that copy is on. Thrown away and rebuilt whenever the generation changes,
+;which is how a deleted server stops being drawn - see fleet_BroadcastServers.
+ext_fleetServers := Map(), ext_fleetServerGen := ""
+;the server editor: the list it is working on, which slot is selected, the
+;accounts its owner dropdown offers in the order it lists them, and the stamp
+;that says whether the list has changed under the window
+FleetServers := Map(), FleetServersPath := "", FleetServerSlot := 0
+FleetServerOwnerRows := [], FleetServerStamp := ""
 ;which account each seat card currently shows. The cards are made once and
 ;repainted, so a click has to be answered from here rather than from a handler
 ;bound to a row that has since moved.

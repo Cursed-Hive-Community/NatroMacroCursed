@@ -33,6 +33,7 @@ BASELINE = {"submacros/natro_macro.ahk": 4}
 
 OWNED = (["submacros/natro_macro.ahk",
           "lib/Socket.ahk", "lib/FleetProtocol.ahk", "lib/FleetRoster.ahk",
+          "lib/FleetServers.ahk",
           "submacros/Fleet.ahk", "submacros/FleetSelfTest.ahk",
           "submacros/SocketSelfTest.ahk"]
          + sorted(glob.glob("submacros/extensions/*.ahk")))
