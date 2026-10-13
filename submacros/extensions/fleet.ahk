@@ -190,7 +190,8 @@ ext_fleetStartFleet(name, role, user) {
 	local path := A_WorkingDir "\settings\fleet_roster.ini", rows
 
 	rows := roster_Load(path)
-	rows[1] := { row: 1, name: name, role: role, user: user, owner: 1 }
+	rows[1] := { row: 1, name: name, role: role, user: user
+		, machine: A_ComputerName, owner: 1 }
 	roster_Save(path, rows)
 	if (FleetSecret = "")
 		ext_FleetSave("FleetSecret", fleet_NewSecret())

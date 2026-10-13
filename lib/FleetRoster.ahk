@@ -13,11 +13,17 @@
 ;	Name=fuzzy 1
 ;	Role=fuzzy
 ;	User=SomeRobloxName
+;	Machine=LAPTOP-TIROU
 ;	Owner=0
 ;
 ;Role is one of main, fuzzy, tad, guid, atk. User is the exact Roblox username,
 ;needed only to force a kick. Owner marks the account that owns the private
 ;server, since it is the only one whose /kick does anything.
+;
+;Machine is not edited and is not what the panel displays - a macro says where
+;it is running every time it connects, and that is the live truth. It is here
+;only so a second setup of the same account can be recognised as the same
+;account and given its old row back instead of a new one.
 
 ;Every role the fleet knows, in the order the panel offers them.
 roster_Roles() {
@@ -41,7 +47,7 @@ roster_Load(path) {
 			section := Integer(Trim(SubStr(line, 2, StrLen(line) - 2)))
 			if (section > 0)
 				rows[section] := { row: section, name: "row " section, role: "guid"
-					, user: "", owner: 0 }
+					, user: "", machine: "", owner: 0 }
 			continue
 		}
 		if (!section || !rows.Has(section) || !(at := InStr(line, "=")))
@@ -53,6 +59,7 @@ roster_Load(path) {
 			case "name":  entry.name := v
 			case "role":  entry.role := StrLower(v)
 			case "user":  entry.user := v
+			case "machine": entry.machine := v
 			case "owner": entry.owner := (v = "1") ? 1 : 0
 		}
 	}
@@ -83,6 +90,7 @@ roster_Save(path, rows) {
 		out .= "Name=" rows[r].name "`r`n"
 		out .= "Role=" rows[r].role "`r`n"
 		out .= "User=" rows[r].user "`r`n"
+		out .= "Machine=" rows[r].machine "`r`n"
 		out .= "Owner=" rows[r].owner "`r`n`r`n"
 	}
 	try FileDelete tmp

@@ -492,24 +492,61 @@ fleet_OnOpen(s, frame) {
 ;and uses it for every reconnection afterwards.
 fleet_OnBind(s, frame) {
 	global roster, rosterPath, rosterStamp, bindUntil, secret
-	local row
+	local row, again, owner
 
 	if (nowUnix() > bindUntil) {
 		fleet_Log("refused a bind: the door is shut")
 		sock_SendLine(s, fleet_Frame("BYE", Map("why", "this fleet is not accepting new macros")))
 		return
 	}
-	row := fleet_NextRow()
+	again := (row := fleet_RowFor(frame)) ? 1 : 0
+	;Owner survives a rebind. Which account owns the private server is a fact
+	;about the server, and nothing a macro's own setup dialog knows or should
+	;be able to forget on its behalf.
+	owner := again ? roster[row].owner : 0
+	if !again
+		row := fleet_NextRow()
 	roster[row] := { row: row
 		, name: fleet_Field(frame, "name", "row " row)
 		, role: fleet_Field(frame, "role", "guid")
 		, user: fleet_Field(frame, "user", "")
-		, owner: 0 }
+		, machine: fleet_Field(frame, "machine", "")
+		, owner: owner }
 	roster_Save(rosterPath, roster)
 	rosterStamp := fleet_RosterStamp()
-	fleet_Event("bound " roster[row].name " (" roster[row].role ") from "
+	fleet_Event((again ? "rebound " : "bound ") roster[row].name
+		. " (" roster[row].role ") from "
 		. fleet_Field(frame, "machine", "somewhere"))
 	sock_SendLine(s, fleet_Frame("BOUND", Map("row", row, "secret", secret)))
+}
+
+;The row this account already has, or 0.
+;
+;A second setup of the same macro - after a settings reset, a reinstall, a move
+;to another machine - should land back on its own row. Minting a new one leaves
+;the old listed offline for ever, and an offline row is a row somebody goes
+;looking for a reason behind.
+;
+;The Roblox username is the identity when it is set: one account is one row,
+;and the account is what the whole fleet makes decisions about. Without one
+;there is only the machine and the label, which together are as close as this
+;gets - two macros on one machine have to be given different names anyway, or
+;nothing in the fleet view can tell them apart either.
+fleet_RowFor(frame) {
+	global roster
+	local user := fleet_Field(frame, "user"), machine := fleet_Field(frame, "machine")
+	local name := fleet_Field(frame, "name"), r, e
+
+	if (user != "")
+		for r, e in roster
+			if (e.user = user)
+				return r
+	if ((machine = "") || (name = ""))
+		return 0
+	for r, e in roster
+		if ((e.machine = machine) && (e.name = name))
+			return r
+	return 0
 }
 
 ;The next free row. Rows are never reused: a number that once meant one

@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Ten things are checked, each because it is a way the design could be wrong
+;Eleven things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -23,6 +23,7 @@
 ;	8. a ping is answered and timed            the panel can show a round trip
 ;	9. a macro that leaves is removed          leaving differs from crashing
 ;	10. a second coordinator is refused        the port is the lock
+;	11. a second setup reuses its own row      no ghost rows in the roster
 ;
 ;Ten is the one that was never going to be noticed by reading the code. Windows
 ;lets two processes listen on one port when SO_REUSEADDR is set, so both
@@ -66,11 +67,16 @@ LOGFILE := RegExReplace(ROSTER, "i)\.ini$", ".log")
 try FileDelete LOGFILE
 ;row 3 exists in the roster from the start but does not connect until the main
 ;has already reported its field - which is what a resident restarting looks like
-roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: "", owner: 1 }
-	, 2, { row: 2, name: "fuzzy 1", role: "fuzzy", user: "", owner: 0 }
-	, 3, { row: 3, name: "fuzzy 2", role: "fuzzy", user: "", owner: 0 }))
+roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
+		, machine: "selftest", owner: 1 }
+	, 2, { row: 2, name: "fuzzy 1", role: "fuzzy", user: ""
+		, machine: "selftest", owner: 0 }
+	, 3, { row: 3, name: "fuzzy 2", role: "fuzzy", user: "fuzzy2"
+		, machine: "selftest", owner: 0 }))
 
 coordPid := 0, rivalPid := 0, finished := 0
+boundRow := -1              ;which row a second setup of row 3 was handed back
+clientD := 0
 seenBy := Map()             ;client label -> Map of row -> roster frame it received
 refused := ""               ;what the bad-secret connection was told
 
@@ -98,6 +104,9 @@ SetTimer Late, -5000
 ;seconds of retrying, so it is started early enough to have finished by the
 ;time the report is written.
 SetTimer Rival, -6500
+;the host opens its door, and an account that already has a row asks for one
+SetTimer Open, -6000
+SetTimer Rebind, -6800
 ;the roster file as a reader catches it mid-write
 SetTimer Blank, -8000
 ;the fuzzy macro leaves on purpose, late enough that its measured round trip
@@ -113,6 +122,38 @@ Late(*) {
 	global clientC
 
 	clientC := sock_Connect("127.0.0.1", PORT, OnC)
+}
+
+;Only the host may open the door, and clientA is the host - row 1 is what the
+;coordinator was started with.
+Open(*) {
+	global clientA
+
+	sock_SendLine(clientA, fleet_Frame("OPEN", Map("secs", 60)))
+}
+
+;Row 3 setting itself up a second time, which is what a settings reset or a
+;reinstall looks like from here. It should be handed row 3 back. Minting a
+;fourth row would leave row 3 in the roster offline for ever, and an offline
+;row is a row somebody goes looking for a reason behind.
+Rebind(*) {
+	global clientD
+
+	clientD := sock_Connect("127.0.0.1", PORT, OnRebind)
+}
+
+OnRebind(s, event, data) {
+	global boundRow
+	local frame
+
+	if (event = "connect") {
+		if (data = "")
+			sock_SendLine(s, fleet_Frame("BIND", Map("name", "fuzzy 2"
+				, "role", "fuzzy", "user", "fuzzy2", "machine", "a new machine")))
+		return
+	}
+	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BOUND"))
+		boundRow := Integer(fleet_Field(frame, "row", 0))
 }
 
 ;A second coordinator on the same port, which is what every handover starts.
@@ -231,7 +272,8 @@ OnBad(s, event, data) {
 }
 
 Report(*) {
-	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad, clientC
+	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
+	global clientC, clientD, boundRow
 	global ROSTER, gotoField
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
@@ -274,6 +316,10 @@ Report(*) {
 	;the roster it was handed. "listening" twice would be the bug itself.
 	allOk := Check(lines, "a second coordinator is refused the port"
 		, InStr(logText, "another coordinator already has it")) && allOk
+	;3, not 4: the Roblox username is the identity, so the same account setting
+	;itself up again lands on the row it already had
+	allOk := Check(lines, "a second setup of one account reuses its row"
+		, boundRow = 3) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -287,10 +333,14 @@ Report(*) {
 		. ", still in the live view=" (seenBy["main"].Has(2) ? "yes" : "no")
 		. ", still in the roster file=" (leftRoster.Has(2) ? "yes" : "no"))
 	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing"))
+	lines.Push("row 3 set itself up again and was handed row "
+		. ((boundRow >= 0) ? boundRow : "nothing at all"))
 
 	sock_Close(clientA), sock_Close(clientB), sock_Close(clientBad)
 	if clientC
 		sock_Close(clientC)
+	if clientD
+		sock_Close(clientD)
 	if coordPid
 		try ProcessClose(coordPid)
 	;it should have exited on its own, having been refused the port. Closed
