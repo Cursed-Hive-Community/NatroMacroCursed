@@ -33,7 +33,11 @@
 ;	fuzzy  improves the field it stands in, so it stands where the main is
 ;	tad    the same, by a different bee
 ;	guid   carries the guiding star, which is a job of its own
-;	atk    fights, which happens somewhere the main is not
+;	atk    kills Mondo Chick. It leaves for Mountain Top a minute before the
+;	       hour so that it is standing on the spawn when the chick appears,
+;	       and the main arrives at the same place at the same moment - the
+;	       whole point being to put the chick down between them as fast as
+;	       it can be done
 roster_Roles() {
 	return ["main", "fuzzy", "tad", "guid", "atk"]
 }
@@ -41,9 +45,13 @@ roster_Roles() {
 ;Does an account of this role follow the main into the field it farms?
 ;
 ;Fuzzy and tad, and nothing else. Both of them improve the field they are
-;standing in, so standing where the main stands is the whole of the job; a
-;guid or an atk has work of its own somewhere else, and dragging it along
-;would cost it that work.
+;standing in, so standing where the main stands is the whole of the job.
+;
+;A guid and an atk are not idle, and an atk's work is in fact alongside the
+;main - on the Mondo spawn at the top of the hour. But neither of them trails
+;the main around the fields it farms, which is all this question is about: a
+;rendezvous at a fixed time and place is a different kind of order from "stand
+;wherever the main is standing", and it needs no field to be forwarded at all.
 ;
 ;Here rather than in the two places that ask, because this was written out
 ;twice - once in the coordinator and once in the macro - and the window that

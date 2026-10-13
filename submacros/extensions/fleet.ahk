@@ -1773,7 +1773,7 @@ ext_FleetAdvanced(*) {
 	ext_FleetFollowBox("FleetFollowPlanter", 196, 260, "A planter field", FleetFollowPlanter)
 	FleetAdvGui.SetFont("c808080")
 	FleetAdvGui.Add("Text", "x12 y290 w360"
-		, "A guid or an atk never follows - it has work of its own.`nSet this on the macro that leads; nothing else reads it.")
+		, "Only fuzzy and tad follow - a guid and an atk have their`nown work at their own times. Set this on the macro that leads.")
 	FleetAdvGui.SetFont("cDefault")
 
 	FleetAdvGui.Add("Button", "x292 y326 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)

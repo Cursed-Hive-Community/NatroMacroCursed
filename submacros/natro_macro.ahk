@@ -4737,8 +4737,10 @@ ext_FleetHelp(*){
 	farming alone.
 
 	Fuzzy and tad accounts also follow the main into the field it farms,
-	since the field they stand in is the one they improve. A guid or an atk
-	has work of its own and stays where it is.
+	since the field they stand in is the one they improve. A guid and an
+	atk do not - they have their own work at their own times. An atk's is
+	to be standing on the Mondo spawn as the hour turns, which the main
+	comes to as well.
 
 	Open the Fleet panel, then Settings, to set a macro up. Nothing has to
 	be typed on two machines: the host opens its door, the macro walks in,
