@@ -179,16 +179,22 @@ fleet_OnHello(s, frame) {
 	global peers, bySocket, secret, term, hostRow, roster, leadField
 	local row, name, previous
 
+	;final says whether the macro being turned away can do anything about it.
+	;A wrong secret it cannot: nothing will change from knocking again. An
+	;unknown row it might - a coordinator that has just taken over without a
+	;configuration refuses everybody, and a macro that gave up permanently on
+	;that would turn a failure which heals itself within a beat into a fleet
+	;nobody can get back into.
 	if (fleet_Field(frame, "secret") != secret) {
 		fleet_Log("rejected a connection: wrong secret")
-		sock_SendLine(s, fleet_Frame("BYE", Map("why", "bad secret")))
+		sock_SendLine(s, fleet_Frame("BYE", Map("why", "bad secret", "final", 1)))
 		sock_Close(s)
 		return
 	}
 	row := Integer(fleet_Field(frame, "row", 0))
 	if ((row <= 0) || !roster.Has(row)) {
 		fleet_Log("rejected a connection: row " row " is not in the roster")
-		sock_SendLine(s, fleet_Frame("BYE", Map("why", "unknown row")))
+		sock_SendLine(s, fleet_Frame("BYE", Map("why", "unknown row", "final", 0)))
 		sock_Close(s)
 		return
 	}
@@ -214,9 +220,10 @@ fleet_OnHello(s, frame) {
 	;term to obey, then bring everyone's picture up to date
 	sock_SendLine(s, fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	fleet_Broadcast()
-	;the server list is not in fleet_Broadcast, which runs on every report a
-	;macro makes. It changes when somebody edits it, so it goes out on a join
-	;and on the beat and not five times a minute per macro.
+	;neither list is in fleet_Broadcast, which runs on every report a macro
+	;makes. They change when somebody edits them, so they go out on a join and
+	;on the beat and not five times a minute per macro.
+	fleet_BroadcastRoster()
 	fleet_BroadcastServers()
 	;a resident arriving mid-session is told where the main is standing. Without
 	;this it farms its own field until the main next changes, which on a macro
@@ -317,8 +324,10 @@ fleet_Drop(row, why, tell := 1) {
 		return
 	p := peers[row]
 	if p.socket {
+		;final: a row taken out of the roster by hand was meant to go, and
+		;reconnecting would only be refused again
 		if tell
-			sock_SendLine(p.socket, fleet_Frame("BYE", Map("why", why)))
+			sock_SendLine(p.socket, fleet_Frame("BYE", Map("why", why, "final", 1)))
 		bySocket.Delete(p.socket)
 		sock_Close(p.socket)
 	}
@@ -401,6 +410,7 @@ fleet_Beat() {
 	}
 	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	fleet_Ping()
+	fleet_BroadcastRoster()
 	fleet_BroadcastServers()
 	;broadcast every beat, not only when something changed. The detail panel
 	;shows values that go stale on their own - how long ago a macro was last
@@ -430,6 +440,32 @@ fleet_Broadcast() {
 	}
 }
 
+;The roster as configured, one ROW frame per entry.
+;
+;Different from the ROSTER frames above, which say what a macro is doing right
+;now - a row only gets one of those once it has connected at least once. This
+;is the configuration: every account the fleet knows, running or not. It has to
+;travel for two reasons. A row nobody has ever seen cannot otherwise be shown
+;or edited anywhere but on this machine, and a macro cannot keep a replica of a
+;configuration it is never sent.
+;
+;n says how many frames this generation has, so a reader knows when it holds
+;all of them. Without it there is no moment at which a replica is safe to
+;write, and half a roster written over a whole one loses accounts.
+;
+;An empty roster sends nothing at all, which is the right thing rather than an
+;omission: a coordinator that has come up without a configuration must not be
+;able to talk every macro into replacing a good replica with nothing.
+fleet_BroadcastRoster() {
+	global roster, rosterStamp
+	local r, e
+
+	for r, e in roster
+		fleet_Send(fleet_Frame("ROW", Map("gen", rosterStamp, "n", roster.Count
+			, "row", e.row, "name", e.name, "role", e.role
+			, "user", e.user, "machine", e.machine)))
+}
+
 ;The servers, one SERVER frame per slot, each carrying the generation the
 ;list is on. A macro keeps its copy only as long as the generation matches, so
 ;a server somebody deleted stops being drawn without any frame having to say
@@ -440,8 +476,9 @@ fleet_BroadcastServers() {
 	local s, e
 
 	for s, e in servers
-		fleet_Send(fleet_Frame("SERVER", Map("gen", serversStamp, "slot", e.slot
-			, "name", e.name, "link", e.link, "owner", e.owner, "kind", e.kind)))
+		fleet_Send(fleet_Frame("SERVER", Map("gen", serversStamp, "n", servers.Count
+			, "slot", e.slot, "name", e.name, "link", e.link
+			, "owner", e.owner, "kind", e.kind)))
 }
 
 ;To every macro that is still connected.
@@ -456,11 +493,16 @@ fleet_Send(line) {
 
 ;The roster file as it stands, so a change can be noticed. Size and time
 ;together catch an edit that happens to keep the length the same.
+;
+;"none" rather than an empty string when the file is absent: the stamp rides on
+;every broadcast as the generation number, and a generation has to be a value a
+;macro can compare. The absence of a file is a state the roster can be in and
+;come back from.
 fleet_RosterStamp() {
 	global rosterPath
 
 	if !FileExist(rosterPath)
-		return ""
+		return "none"
 	return FileGetTime(rosterPath, "M") "/" FileGetSize(rosterPath)
 }
 

@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Thirteen things are checked, each because it is a way the design could be wrong
+;Fifteen things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -26,6 +26,16 @@
 ;	11. a second setup reuses its own row      no ghost rows in the roster
 ;	12. the server list reaches a macro        servers are shared, not retyped
 ;	13. a deleted server disappears            a list that shrinks still converges
+;	14. a row nobody has seen is broadcast     every macro can hold a replica
+;	15. a refusal says whose problem it is     a recoverable one is retried
+;
+;Fourteen and fifteen are the two halves of surviving the loss of the machine
+;that coordinates. The configuration used to live only in that machine's
+;settings folder, so electing a replacement produced a coordinator with an
+;empty roster, which refused every macro - and a refusal was treated as final,
+;so the whole fleet left for good. Now the configuration is broadcast, every
+;macro writes a replica of it, and a refusal that a coordinator might recover
+;from is marked as one.
 ;
 ;Thirteen is the one worth spelling out. Nothing in the protocol says "delete a
 ;server": each frame carries the generation the list is on, and a macro that
@@ -96,10 +106,18 @@ roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
 
 coordPid := 0, rivalPid := 0, finished := 0
 boundRow := -1              ;which row a second setup of row 3 was handed back
-clientD := 0
+clientD := 0, clientE := 0
 srvGen := ""                ;the generation of the server list last seen
 srv := Map()                ;the server list as the main macro holds it
 srvMainLink := "", srvMainOwner := -1
+cfg := Map()                ;the roster as configured, as the main macro holds it
+cfgGen := "", cfgWant := 0
+;noted as they go past rather than read back at the end: row 2 leaves the fleet
+;later in this test and the roster legitimately shrinks, so what was true while
+;three accounts were configured has to be caught while it is true
+cfgMost := 0                ;the most rows a single generation ever promised
+cfgUnseen := ""             ;a configured row that had not connected when it arrived
+byeFinal := Map()           ;what each refusal said about being final
 seenBy := Map()             ;client label -> Map of row -> roster frame it received
 refused := ""               ;what the bad-secret connection was told
 
@@ -132,6 +150,9 @@ SetTimer Open, -6000
 SetTimer Rebind, -6800
 ;a server deleted, late enough that the first list has certainly arrived
 SetTimer DropServer, -9000
+;a macro with the right secret and a row that is not in the roster, which is
+;what every macro looks like to a coordinator that came up without one
+SetTimer Stranger, -9500
 ;the roster file as a reader catches it mid-write
 SetTimer Blank, -8000
 ;the fuzzy macro leaves on purpose, late enough that its measured round trip
@@ -191,6 +212,30 @@ Rival(*) {
 		, , "Hide", &rivalPid
 }
 
+;The good secret, an unknown row. This is not the intruder below - it is what
+;an ordinary macro looks like to a coordinator that has just taken over without
+;a configuration, and it has to be told the refusal is one it can come back
+;from. Treating it as final is how losing one machine used to empty the fleet.
+Stranger(*) {
+	global clientE
+
+	clientE := sock_Connect("127.0.0.1", PORT, OnStranger)
+}
+
+OnStranger(s, event, data) {
+	global SECRET, byeFinal
+	local frame
+
+	if (event = "connect") {
+		if (data = "")
+			sock_SendLine(s, fleet_Frame("HELLO", Map("row", 77, "name", "nobody"
+				, "secret", SECRET, "machine", A_ComputerName)))
+		return
+	}
+	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BYE"))
+		byeFinal["unknown row"] := fleet_Field(frame, "final", "missing")
+}
+
 ;One server deleted. The macro's copy has to end up holding one and not two,
 ;and no frame says "delete" - the generation riding on the frames is the whole
 ;of the mechanism.
@@ -236,6 +281,7 @@ Handle(label, row, name, s, event, data) {
 	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRows
 	global bothSeen, row2, rttSeen, lateField
 	global srv, srvGen, srvMainLink, srvMainOwner
+	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen
 	local frame
 
 	if (event = "connect") {
@@ -275,6 +321,24 @@ Handle(label, row, name, s, event, data) {
 		else if (label = "late")
 			lateField := fleet_Field(frame, "field")
 	}
+	else if ((label = "main") && (frame.verb = "ROW")) {
+		;the configured roster, collected the way the extension collects it -
+		;a generation never seen before replaces the copy rather than merging
+		if (fleet_Field(frame, "gen") != cfgGen) {
+			cfg := Map()
+			cfgGen := fleet_Field(frame, "gen")
+			cfgWant := Integer(fleet_Field(frame, "n", 0))
+			if (cfgWant > cfgMost)
+				cfgMost := cfgWant
+		}
+		cfg[Integer(fleet_Field(frame, "row", 0))] := frame
+		;the whole point of these frames: an account that is configured but has
+		;never connected has no ROSTER frame and is invisible everywhere else,
+		;so it could neither be shown nor replicated
+		if !seenBy["main"].Has(Integer(fleet_Field(frame, "row", 0)))
+			cfgUnseen := fleet_Field(frame, "name")
+				. " (" fleet_Field(frame, "machine") ")"
+	}
 	else if ((label = "main") && (frame.verb = "SERVER")) {
 		;the generation logic the extension does for real, in miniature. A
 		;generation never seen before means the list changed somehow, and the
@@ -307,7 +371,7 @@ Handle(label, row, name, s, event, data) {
 
 ;The connection that should not get in.
 OnBad(s, event, data) {
-	global refused
+	global refused, byeFinal
 	local frame
 
 	if (event = "connect") {
@@ -318,14 +382,16 @@ OnBad(s, event, data) {
 	}
 	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BYE"))
 		refused := fleet_Field(frame, "why")
+		, byeFinal["bad secret"] := fleet_Field(frame, "final", "missing")
 	else if (event = "close")
 		refused := refused ? refused : "closed"
 }
 
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
-	global clientC, clientD, boundRow, SERVERS
+	global clientC, clientD, clientE, boundRow, SERVERS
 	global srv, srvMainLink, srvMainOwner
+	global cfg, cfgWant, cfgMost, cfgUnseen, byeFinal
 	global ROSTER, gotoField
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
@@ -377,6 +443,16 @@ Report(*) {
 			&& (srvMainOwner = 2)) && allOk
 	allOk := Check(lines, "a deleted server disappears from the macro's copy"
 		, (srv.Count = 1) && srv.Has(1)) && allOk
+	;Row 3 is configured from the start and does not connect for five seconds,
+	;so for those five seconds it exists in the roster and nowhere else. The
+	;count matters as much as the rows: without it a macro never knows when
+	;its replica is whole enough to write, and half a roster written over a
+	;whole one loses accounts.
+	allOk := Check(lines, "a configured row that has never connected is broadcast"
+		, (cfgUnseen == "fuzzy 2 (selftest)") && (cfgMost = 3)) && allOk
+	allOk := Check(lines, "a bad secret is final and an unknown row is not"
+		, (byeFinal.Has("bad secret") && (byeFinal["bad secret"] = 1))
+			&& (byeFinal.Has("unknown row") && (byeFinal["unknown row"] = 0))) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -392,6 +468,14 @@ Report(*) {
 	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing"))
 	lines.Push("row 3 set itself up again and was handed row "
 		. ((boundRow >= 0) ? boundRow : "nothing at all"))
+	lines.Push("configured rows: " cfgMost " promised at the fullest, "
+		. cfg.Count " of " cfgWant " after row 2 left")
+	lines.Push("seen configured before it ever connected: "
+		. (cfgUnseen != "" ? cfgUnseen : "nothing"))
+	lines.Push("refusals: bad secret final="
+		. (byeFinal.Has("bad secret") ? byeFinal["bad secret"] : "no BYE")
+		. ", unknown row final="
+		. (byeFinal.Has("unknown row") ? byeFinal["unknown row"] : "no BYE"))
 	lines.Push("servers held after one of two was deleted: " srv.Count
 		. ", main link=" (srvMainLink != "" ? srvMainLink : "never sent"))
 
@@ -400,6 +484,8 @@ Report(*) {
 		sock_Close(clientC)
 	if clientD
 		sock_Close(clientD)
+	if clientE
+		sock_Close(clientE)
 	if coordPid
 		try ProcessClose(coordPid)
 	;it should have exited on its own, having been refused the port. Closed

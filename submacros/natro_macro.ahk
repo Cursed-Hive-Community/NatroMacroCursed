@@ -2748,10 +2748,16 @@ ext_fleetMyField := "", ext_fleetFollowField := ""
 ;why the fleet turned this macro away, when it did. A refusal is final, so it
 ;is kept rather than retried - see the BYE case in extensions\fleet.ahk
 ext_fleetRefused := ""
-;the fleet's servers as the coordinator last described them, and the generation
-;that copy is on. Thrown away and rebuilt whenever the generation changes,
-;which is how a deleted server stops being drawn - see fleet_BroadcastServers.
+;the fleet's configuration as the coordinator last described it - the roster as
+;configured, and the servers - each with the generation that copy is on, how
+;many entries that generation promised, and which generation has been written
+;to disk. Thrown away and rebuilt whenever the generation changes, which is how
+;a deleted entry stops being drawn; written out once whole, which is how a macro
+;that has to take over already holds a configuration. See ext_fleetReplicate.
 ext_fleetServers := Map(), ext_fleetServerGen := ""
+ext_fleetServerWant := 0, ext_fleetServerSaved := ""
+ext_fleetRoster := Map(), ext_fleetRosterGen := ""
+ext_fleetRosterWant := 0, ext_fleetRosterSaved := ""
 ;the server editor: the list it is working on, which slot is selected, the
 ;accounts its owner dropdown offers in the order it lists them, and the stamp
 ;that says whether the list has changed under the window

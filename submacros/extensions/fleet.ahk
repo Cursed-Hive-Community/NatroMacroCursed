@@ -209,7 +209,7 @@ ext_fleetBound(row, newSecret) {
 ;empty roster, and take row one.
 ext_fleetStartFleet(name, role, user) {
 	global FleetSecret
-	local path := A_WorkingDir "\settings\fleet_roster.ini", rows
+	local path := ext_fleetRosterFile(), rows
 
 	rows := roster_Load(path)
 	rows[1] := { row: 1, name: name, role: role, user: user
@@ -243,15 +243,35 @@ ext_fleetOnSocket(s, event, data) {
 		ext_fleetOnLine(data)
 	else if (event = "close") {
 		ext_fleetSock := 0
+		ext_fleetLostCoord()
 		ext_fleetRetryLater()
 	}
+}
+
+;The coordinator's connection has gone, so stop counting its row as alive.
+;
+;This is the whole of why failover never fired. The broadcast that said the
+;coordinator was "online" is the last thing it ever said, and nothing cleared
+;it - so every survivor kept electing the dead row as the successor, found that
+;it was not itself, and waited. Nobody ever took over, and the fleet sat
+;retrying for ever.
+;
+;We have better evidence than that broadcast: we were talking to it a moment
+;ago and now we are not. Recorded against our own copy only, which is all a
+;macro can honestly claim.
+ext_fleetLostCoord() {
+	global ext_fleetPeers, ext_fleetCoordRow
+
+	if (ext_fleetCoordRow && ext_fleetPeers.Has(ext_fleetCoordRow))
+		ext_fleetPeers[ext_fleetCoordRow]["state"] := "offline"
+	return 1
 }
 
 ;Announce ourselves. Only the row number and the secret matter: who row 2 is
 ;belongs to the roster file, not to whatever this macro believes about itself.
 ext_fleetHello() {
 	global ext_fleetSock, ext_fleetPeers, FleetRow, FleetSecret, ext_fleetMyField
-	global ext_fleetServers, ext_fleetServerGen
+	global ext_fleetServers, ext_fleetServerGen, ext_fleetRoster, ext_fleetRosterGen
 
 	;Forget the old picture before asking for a new one. The coordinator answers
 	;a HELLO with the whole roster, and rows are merged by number rather than
@@ -263,6 +283,7 @@ ext_fleetHello() {
 	;met may be reading a different file, and an empty generation guarantees the
 	;first SERVER frame rebuilds rather than merges
 	ext_fleetServers.Clear(), ext_fleetServerGen := ""
+	ext_fleetRoster.Clear(), ext_fleetRosterGen := ""
 	;and the field we last said we were farming. A coordinator we are meeting
 	;for the first time - or one that has just been started by a takeover - has
 	;no record of it, so the next gather trip has to say so again instead of
@@ -276,7 +297,8 @@ ext_fleetHello() {
 ext_fleetOnLine(line) {
 	global ext_fleetPeers, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
 	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock, ext_fleetRefused
-	global ext_fleetServers, ext_fleetServerGen
+	global ext_fleetServers, ext_fleetServerGen, ext_fleetServerWant
+	global ext_fleetRoster, ext_fleetRosterGen, ext_fleetRosterWant
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -320,9 +342,25 @@ ext_fleetOnLine(line) {
 			if (fleet_Field(frame, "gen") != ext_fleetServerGen) {
 				ext_fleetServers.Clear()
 				ext_fleetServerGen := fleet_Field(frame, "gen")
+				ext_fleetServerWant := Integer(fleet_Field(frame, "n", 0))
 			}
 			if (row := Integer(fleet_Field(frame, "slot", 0)))
 				ext_fleetServers[row] := frame.fields
+			ext_fleetReplicate()
+			ext_fleetCoordSeen := nowUnix()
+		case "ROW":
+			;the roster as configured, which is not the same as the roster as it
+			;is behaving - ROSTER above only describes accounts that have
+			;connected at least once. Collected exactly like the servers, and
+			;for the extra reason that this is what a macro taking over needs.
+			if (fleet_Field(frame, "gen") != ext_fleetRosterGen) {
+				ext_fleetRoster.Clear()
+				ext_fleetRosterGen := fleet_Field(frame, "gen")
+				ext_fleetRosterWant := Integer(fleet_Field(frame, "n", 0))
+			}
+			if (row := Integer(fleet_Field(frame, "row", 0)))
+				ext_fleetRoster[row] := frame.fields
+			ext_fleetReplicate()
 			ext_fleetCoordSeen := nowUnix()
 		case "GONE":
 			;the one frame that removes an account. Everything else is a ROSTER
@@ -338,19 +376,107 @@ ext_fleetOnLine(line) {
 			ext_fleetFollowField := fleet_Field(frame, "field")
 			ext_fleetCoordSeen := nowUnix()
 		case "BYE":
-			;A refusal is final: the secret is wrong, the row is not in the
-			;roster, or this account has been taken out of the fleet. None of
-			;them improves by knocking again, and the backoff would knock all
-			;night and be refused every time - so the fleet is let go here and
-			;the macro carries on farming alone, which is the rule this whole
-			;file is written to. The reason is kept for the panel to show
-			;rather than put in the status line, since being refused by the
-			;fleet says nothing about what the macro itself is doing.
-			ext_fleetRefused := fleet_Field(frame, "why", "refused")
+			;Two kinds of refusal, and treating them alike was a mistake worth
+			;not repeating. A wrong secret, or an account deliberately taken out
+			;of the fleet, is final: knocking again is refused every time, all
+			;night, and the fleet is let go here so the macro carries on farming
+			;alone - which is the rule this whole file is written to. An unknown
+			;row is not final. A coordinator that has just taken over without a
+			;configuration refuses everybody, and giving up on that permanently
+			;turns a failure that heals itself within a beat into a fleet nobody
+			;can get back into. The coordinator says which it is.
+			;
+			;The reason is kept for the panel rather than put in the status
+			;line: being turned away by the fleet says nothing about what this
+			;macro itself is doing.
 			ext_fleetEvents.InsertAt(1, FormatTime(A_Now, "HH:mm:ss")
-				. "  the fleet refused this macro: " ext_fleetRefused)
-			ext_fleetStop()
+				. "  the fleet turned this macro away: "
+				. fleet_Field(frame, "why", "refused"))
+			while (ext_fleetEvents.Length > 80)
+				ext_fleetEvents.Pop()
+			;absent means final, so an older coordinator behaves as it used to
+			if (Integer(fleet_Field(frame, "final", 1))) {
+				ext_fleetRefused := fleet_Field(frame, "why", "refused")
+				ext_fleetStop()
+			}
 	}
+}
+
+;Keep a copy of the fleet's configuration on this machine.
+;
+;This is the answer to the hole in a coordinator that reads its configuration
+;out of its own settings folder: if that machine is the only one holding the
+;files, losing it loses the fleet, and no amount of electing a replacement
+;helps - the replacement comes up with nothing and refuses everybody. There is
+;no master copy. There is one on every machine, and whichever macro coordinates
+;serves its own.
+;
+;Written only when a generation is whole. The frames of a generation arrive one
+;per entry with nothing marking the last, so each says how many there are;
+;saving half a roster over a whole one loses accounts, and on the machine that
+;coordinates it would be read straight back as a deletion.
+;
+;And never on the machine that coordinates. Its files are the originals, not
+;copies - writing them would move their timestamp, which it reads as an edit,
+;which it broadcasts as a new generation, which every macro writes again.
+ext_fleetReplicate() {
+	global ext_fleetRoster, ext_fleetRosterGen, ext_fleetRosterWant, ext_fleetRosterSaved
+	global ext_fleetServers, ext_fleetServerGen, ext_fleetServerWant, ext_fleetServerSaved
+
+	if ext_fleetServerHost()
+		return 0
+	if (ext_fleetReplicaWhole(ext_fleetRoster, ext_fleetRosterGen
+		, ext_fleetRosterWant, ext_fleetRosterSaved)
+		&& roster_Save(ext_fleetRosterFile(), ext_fleetRosterRows()))
+		ext_fleetRosterSaved := ext_fleetRosterGen
+	if (ext_fleetReplicaWhole(ext_fleetServers, ext_fleetServerGen
+		, ext_fleetServerWant, ext_fleetServerSaved)
+		&& servers_Save(ext_fleetServersFile(), ext_fleetServerRows()))
+		ext_fleetServerSaved := ext_fleetServerGen
+	return 1
+}
+
+;Is this generation complete, and not the one already on disk?
+ext_fleetReplicaWhole(store, gen, want, saved) {
+	return (gen != "") && (gen != saved) && want && (store.Count = want)
+}
+
+;The two files the fleet's configuration lives in on this machine. Named here
+;rather than wherever a window happens to want them, because the replica is
+;written whether or not anybody has a window open - and because the coordinator
+;derives the second name from the first in exactly this way.
+ext_fleetRosterFile() {
+	return A_WorkingDir "\settings\fleet_roster.ini"
+}
+ext_fleetServersFile() {
+	return A_WorkingDir "\settings\fleet_roster_servers.ini"
+}
+
+;The replicas as roster_Save and servers_Save want them: a frame is a Map of
+;wire fields, and these files are written from objects.
+ext_fleetRosterRows() {
+	global ext_fleetRoster
+	local row, f, out := Map()
+
+	for row, f in ext_fleetRoster
+		out[row] := { row: row
+			, name: ext_FleetCell(f, "name")
+			, role: ext_FleetCell(f, "role")
+			, user: ext_FleetCell(f, "user")
+			, machine: ext_FleetCell(f, "machine") }
+	return out
+}
+ext_fleetServerRows() {
+	global ext_fleetServers
+	local slot, f, out := Map()
+
+	for slot, f in ext_fleetServers
+		out[slot] := { slot: slot
+			, name: ext_FleetCell(f, "name")
+			, link: ext_FleetCell(f, "link")
+			, owner: ext_FleetNum(f, "owner")
+			, kind: (ext_FleetCell(f, "kind") = "main") ? "main" : "reserve" }
+	return out
 }
 
 ;Tell the coordinator which field we are farming, when it changes. Called from
@@ -474,10 +600,21 @@ ext_fleetRetryLater() {
 ext_fleetWatch() {
 	global ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen, ext_fleetSock
 	global FleetRow, FleetHostRow, FleetGraceSecs
-	local silent := (nowUnix() - ext_fleetCoordSeen)
+	local silent := (nowUnix() - ext_fleetCoordSeen), passedOver
 
 	if (silent > FleetGraceSecs) {
-		if (ext_fleetSuccessor() = FleetRow)
+		;Escalating, because one machine can carry several macros and losing it
+		;takes all of their rows at once - so the obvious successor is often on
+		;the machine that just died. One candidate is passed over per grace
+		;period, which gives each a whole period to answer before the next is
+		;asked, and it terminates: eventually every candidate ahead of us has
+		;been passed over and we take the job ourselves.
+		;
+		;Counted off the silence rather than kept in a variable, because this
+		;runs every five seconds and a counter incremented here would escalate
+		;nine times a period.
+		passedOver := (silent // FleetGraceSecs) - 1
+		if (ext_fleetSuccessor(passedOver) = FleetRow)
 			ext_fleetTakeOver("no coordinator for " silent "s")
 		return
 	}
@@ -487,20 +624,26 @@ ext_fleetWatch() {
 		ext_fleetTakeOver("host reclaiming from row " ext_fleetCoordRow)
 }
 
-;The lowest row that was alive when we last heard. Ours counts even when the
-;roster is empty - a macro that has never reached a coordinator is still allowed
-;to become one, otherwise the first one started would wait forever.
-ext_fleetSuccessor() {
+;Whose turn it is to coordinate. Ours counts even when the roster is empty - a
+;macro that has never reached a coordinator is still allowed to become one,
+;otherwise the first one started would wait for ever.
+;
+;skip passes over that many candidates ahead of us, which is how the election
+;gets past a successor that was on the same dead machine as the coordinator.
+;Every macro holds the same roster and counts the same way, so they all reach
+;the same answer without a message being sent about it.
+ext_fleetSuccessor(skip := 0) {
 	global ext_fleetPeers, FleetRow
-	local best := FleetRow, row, p
+	local row, p, ahead := []
 
 	for row, p in ext_fleetPeers {
 		if (p.Has("state") && (p["state"] != "online"))
 			continue
-		if (row < best)
-			best := row
+		if (row < FleetRow)
+			ahead.Push(row)
 	}
-	return best
+	roster_Sort(ahead)
+	return (skip < ahead.Length) ? ahead[skip + 1] : FleetRow
 }
 
 ;Start a coordinator here, one term above whatever we last saw, and reconnect to
@@ -550,10 +693,12 @@ ext_fleetStart() {
 ;still be using.
 ext_fleetStop() {
 	global ext_fleetSock, ext_fleetPeers, ext_fleetServers, ext_fleetServerGen
+	global ext_fleetRoster, ext_fleetRosterGen
 
 	;nothing known about the fleet survives not being connected to it
 	ext_fleetPeers.Clear()
 	ext_fleetServers.Clear(), ext_fleetServerGen := ""
+	ext_fleetRoster.Clear(), ext_fleetRosterGen := ""
 	SetTimer ext_fleetBeat, 0
 	SetTimer ext_fleetWatch, 0
 	SetTimer ext_fleetConnect, 0
@@ -1042,11 +1187,9 @@ ext_FleetSetupGUI(*) {
 		FleetSetupGui.Show()
 		return
 	}
-	FleetRosterPath := A_WorkingDir "\settings\fleet_roster.ini"
+	FleetRosterPath := ext_fleetRosterFile()
 	FleetRoster := roster_Load(FleetRosterPath)
-	;the coordinator derives this from whatever roster it was handed, so the two
-	;names have to agree - see fleet_ServersStamp
-	FleetServersPath := A_WorkingDir "\settings\fleet_roster_servers.ini"
+	FleetServersPath := ext_fleetServersFile()
 
 	FleetSetupGui := Gui("+AlwaysOnTop +Border", "Fleet - settings")
 	FleetSetupGui.OnEvent("Close", ext_FleetSetupClose)
@@ -1081,8 +1224,13 @@ ext_FleetSetupGUI(*) {
 	FleetSetupGui.Add("DropDownList", "x404 y192 w100 vFleetEditRole", roster_Roles())
 	FleetSetupGui.Add("Text", "x364 y220 w36", "User:")
 	FleetSetupGui.Add("Edit", "x404 y218 w178 h18 vFleetEditUser")
-	FleetSetupGui.Add("Button", "x364 y268 w104 h24", "Update").OnEvent("Click", ext_FleetRosterSave)
-	FleetSetupGui.Add("Button", "x478 y268 w104 h24", "Remove").OnEvent("Click", ext_FleetRosterRemove)
+	FleetSetupGui.SetFont("c808080")
+	FleetSetupGui.Add("Text", "x364 y244 w218 vFleetRosterNote", "")
+	FleetSetupGui.SetFont("cDefault")
+	FleetSetupGui.Add("Button", "x364 y268 w104 h24 vFleetRosterUpdate", "Update")
+		.OnEvent("Click", ext_FleetRosterSave)
+	FleetSetupGui.Add("Button", "x478 y268 w104 h24 vFleetRosterRemove", "Remove")
+		.OnEvent("Click", ext_FleetRosterRemove)
 
 	FleetSetupGui.Add("Button", "x8 y304 w100 h26", "Advanced").OnEvent("Click", ext_FleetAdvanced)
 	FleetSetupGui.Add("Button", "x492 y304 w100 h26", "Close").OnEvent("Click", ext_FleetSetupClose)
@@ -1127,8 +1275,8 @@ ext_FleetRosterWatch() {
 ;doing from there. Three states, and each gets different buttons rather than a
 ;row of buttons that are mostly greyed out.
 ext_FleetWhoDraw() {
-	global FleetSetupGui, FleetRoster, FleetRow, FleetHostRow, ext_fleetBindOpenUntil
-	local me, left
+	global FleetSetupGui, FleetRoster, FleetRow, ext_fleetBindOpenUntil
+	local me, left, who
 
 	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
 		return
@@ -1142,9 +1290,13 @@ ext_FleetWhoDraw() {
 	me := FleetRoster.Has(FleetRow)
 		? FleetRoster[FleetRow].name " (" FleetRoster[FleetRow].role ")"
 		: "row " FleetRow
-	if (FleetHostRow = FleetRow) {
+	;Against who is coordinating, not who was named as host. The two differ
+	;after a takeover, and this said "hosts the fleet" on a macro that did not -
+	;then offered it a door to open that the coordinator would refuse, because
+	;the coordinator only obeys the row that started it.
+	if ext_fleetCoordinating() {
 		left := ext_fleetBindOpenUntil - nowUnix()
-		FleetSetupGui["FleetWho"].Text := me "`nThis macro hosts the fleet."
+		FleetSetupGui["FleetWho"].Text := me "`nThis macro is running the fleet."
 		ext_FleetButton("FleetAct1", (left > 0)
 			? "Stop accepting (" Floor(left / 60) ":" Format("{:02}", Mod(left, 60)) ")"
 			: "Accept new macros")
@@ -1152,6 +1304,7 @@ ext_FleetWhoDraw() {
 		return
 	}
 	FleetSetupGui["FleetWho"].Text := me "`nJoined this fleet."
+		. ((who := ext_fleetCoordWho()) != "" ? "  Run by " who "." : "")
 	ext_FleetButton("FleetAct1", "Leave the fleet")
 	ext_FleetButton("FleetAct2", "")
 }
@@ -1166,13 +1319,13 @@ ext_FleetButton(name, caption) {
 }
 
 ext_FleetAct1(*) {
-	global FleetRow, FleetHostRow, ext_fleetBindOpenUntil
+	global FleetRow, ext_fleetBindOpenUntil
 
 	if (FleetRow <= 0) {
 		ext_FleetJoinGUI()
 		return
 	}
-	if (FleetHostRow = FleetRow) {
+	if ext_fleetCoordinating() {
 		;toggle: an open door shuts, a shut one opens for two minutes - the
 		;window the coordinator will honour anyway
 		if (ext_fleetBindOpenUntil > nowUnix()) {
@@ -1355,9 +1508,21 @@ ext_FleetSave(name, value) {
 ;A macro with no row yet counts too: it has nothing to join, and its file is
 ;the one it will host with.
 ext_fleetServerHost() {
+	global FleetRow
+
+	return (FleetRow <= 0) || ext_fleetCoordinating()
+}
+
+;Is this macro the one running the coordinator right now?
+;
+;Not FleetHostRow, which is only the macro the panel named as host and which
+;stops being the coordinator the moment somebody stands in for it. Everything
+;that asks "may I do the coordinator's job" has to ask this instead, and more
+;than one thing had been asking the other.
+ext_fleetCoordinating() {
 	global FleetRow, ext_fleetCoordRow
 
-	return (FleetRow <= 0) || (FleetRow = ext_fleetCoordRow)
+	return (FleetRow > 0) && (FleetRow = ext_fleetCoordRow)
 }
 
 ;The list this window shows.
@@ -1366,21 +1531,14 @@ ext_fleetServerHost() {
 ;was broadcast, read only: a window where you can type a link that silently
 ;does nothing is worse than no window.
 ext_fleetServerList() {
-	global FleetServers, FleetServersPath, ext_fleetServers
-	local slot, f, out := Map()
+	global FleetServers, FleetServersPath
 
 	if ext_fleetServerHost() {
 		FleetServers := servers_Load(FleetServersPath)
 		return FleetServers
 	}
-	for slot, f in ext_fleetServers
-		out[slot] := { slot: slot
-			, name: ext_FleetCell(f, "name")
-			, link: ext_FleetCell(f, "link")
-			, owner: ext_FleetNum(f, "owner")
-			, kind: (ext_FleetCell(f, "kind") = "main") ? "main" : "reserve" }
-	FleetServers := out
-	return out
+	FleetServers := ext_fleetServerRows()
+	return FleetServers
 }
 
 ;Bring the old pair of settings across, once.
@@ -1685,7 +1843,7 @@ ext_FleetShort(text, n) {
 
 ext_FleetRosterDraw() {
 	global FleetSetupGui, FleetRoster, FleetRosterOrder
-	local keys := [], row, e
+	local keys := [], row, e, name
 
 	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
 		return
@@ -1702,6 +1860,20 @@ ext_FleetRosterDraw() {
 	}
 	Loop 3
 		FleetSetupGui["FleetRosterList"].ModifyCol(A_Index, "AutoHdr")
+
+	;The table is live on every macro now - it is read from the replica, which
+	;the coordinator keeps up to date. Editing is not: an edit here writes the
+	;local file, and the next generation of the replica writes straight over it.
+	;Better to refuse than to accept a change and quietly lose it. Routing the
+	;edit to the coordinator is what makes this editable everywhere, and that
+	;is not written yet.
+	for _, name in ["FleetEditName", "FleetEditRole", "FleetEditUser"]
+		try FleetSetupGui[name].Enabled := ext_fleetServerHost()
+	for _, name in ["FleetRosterUpdate", "FleetRosterRemove"]
+		try FleetSetupGui[name].Enabled := ext_fleetServerHost()
+	try FleetSetupGui["FleetRosterNote"].Text := ext_fleetServerHost()
+		? ""
+		: "Changed on " ext_FleetOr(ext_fleetCoordWho(), "whichever macro coordinates")
 }
 
 ext_FleetRosterSelect(ctrl, item, selected) {
