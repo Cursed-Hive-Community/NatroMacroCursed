@@ -2733,6 +2733,9 @@ ext_fleetFoundAt := "", ext_fleetBeaconSock := 0, ext_fleetTryAt := 0
 ;field-following: the field we last told the fleet we are farming, and the
 ;field a resident has been told to follow the main into
 ext_fleetMyField := "", ext_fleetFollowField := ""
+;why the fleet turned this macro away, when it did. A refusal is final, so it
+;is kept rather than retried - see the BYE case in extensions\fleet.ahk
+ext_fleetRefused := ""
 ;which account each seat card currently shows. The cards are made once and
 ;repainted, so a click has to be answered from here rather than from a handler
 ;bound to a row that has since moved.

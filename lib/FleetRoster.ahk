@@ -60,8 +60,20 @@ roster_Load(path) {
 }
 
 ;Write it back, rows in order so the file stays readable after an edit.
+;
+;Through a temporary file and a move, rather than a delete and an append. Two
+;processes write this one file - the coordinator when a macro binds or leaves,
+;and the roster editor in any macro's settings window - and both of them are
+;read on a one second timer. A delete followed by an append leaves a moment
+;when the file is missing or half written, and a reader landing in that moment
+;sees a fleet with nobody in it; on the coordinator's side that used to mean
+;striking every account off at once.
+;
+;The header line is there so the file is never zero bytes long, which is the
+;one case a move cannot be told apart from a failure.
 roster_Save(path, rows) {
-	local out := "", keys := [], r
+	local out := ";the fleet roster - written by the macro, safe to read by hand`r`n`r`n"
+	local keys := [], r, tmp := path ".tmp"
 
 	for r, _ in rows
 		keys.Push(r)
@@ -73,9 +85,14 @@ roster_Save(path, rows) {
 		out .= "User=" rows[r].user "`r`n"
 		out .= "Owner=" rows[r].owner "`r`n`r`n"
 	}
-	try FileDelete path
-	try FileAppend out, path, "UTF-8"
-	return 1
+	try FileDelete tmp
+	try FileAppend out, tmp, "UTF-8"
+	if !FileExist(tmp)
+		return 0
+	;overwrite, so the swap is one rename and a reader sees either the old file
+	;whole or the new one whole
+	try FileMove tmp, path, 1
+	return !FileExist(tmp)
 }
 
 ;Row numbers ascending. Small arrays, so the simplest sort that is obviously

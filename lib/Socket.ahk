@@ -21,6 +21,7 @@
 ;
 ;Usage:
 ;	sock_Listen(7777, handler)          ;handler(sock, event, data)
+;	sock_Listen(7777, handler, 1)       ;and refuse a second listener - see below
 ;	sock_Connect("192.168.1.9", 7777, handler)
 ;	sock_SendLine(sock, "HELLO main")
 ;	sock_Close(sock)
@@ -94,7 +95,21 @@ sock_Track(s, callback, udp := 0) {
 }
 
 ;Open a listening socket. Returns its handle, or 0.
-sock_Listen(port, callback) {
+;
+;exclusive asks Windows to refuse a second binding of this port, and a service
+;that is handed over between processes must ask for it. Windows is not Linux
+;here: with SO_REUSEADDR two processes can listen on one port at the same
+;time - both binds succeed, both report listening, and arriving connections are
+;split between them arbitrarily. That is fatal for a coordinator, because a
+;handover is exactly the moment two of them are alive, and a term number
+;cannot arbitrate between coordinators that no macro can see at once: half the
+;fleet talks to the old process and never hears the new one's term at all.
+;
+;SO_EXCLUSIVEADDRUSE makes the port itself the lock, which is the only lock
+;that works between processes without inventing one. It is off by default
+;because the plain reuse is what a lone listener wants: without it, restarting
+;inside the TIME_WAIT window cannot rebind.
+sock_Listen(port, callback, exclusive := 0) {
 	global sock_state
 	local s, addr, opt
 
@@ -102,10 +117,11 @@ sock_Listen(port, callback) {
 		return 0
 	if ((s := DllCall("ws2_32\socket", "Int", 2, "Int", 1, "Int", 6, "Ptr")) = -1)
 		return 0
-	;without SO_REUSEADDR, restarting inside the TIME_WAIT window cannot rebind -
-	;which is exactly what a coordinator handing over and coming back does
+	;-5 is SO_EXCLUSIVEADDRUSE, which Winsock defines as ~SO_REUSEADDR and
+	;which is therefore spelt as the bitwise complement of 4
 	opt := Buffer(4, 0), NumPut("Int", 1, opt)
-	DllCall("ws2_32\setsockopt", "Ptr", s, "Int", 0xFFFF, "Int", 4, "Ptr", opt, "Int", 4)
+	DllCall("ws2_32\setsockopt", "Ptr", s, "Int", 0xFFFF
+		, "Int", exclusive ? -5 : 4, "Ptr", opt, "Int", 4)
 	if (!(addr := sock_Address("", port))
 		|| (DllCall("ws2_32\bind", "Ptr", s, "Ptr", addr, "Int", 16, "Int") != 0)
 		|| (DllCall("ws2_32\listen", "Ptr", s, "Int", 16, "Int") != 0)) {
@@ -280,6 +296,11 @@ sock_Receive(s) {
 		line := Trim(line, "`r")
 		if (line != "")
 			st.callback.Call(s, "line", line)
+		;a handler is allowed to close the socket it was just told about - being
+		;refused by the other end is exactly that - and the lines still in the
+		;buffer are then addressed to a connection that no longer exists
+		if !sock_state.Has(s)
+			break
 	}
 	return 1
 }

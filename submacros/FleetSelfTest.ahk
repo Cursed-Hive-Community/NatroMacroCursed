@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Seven things are checked, each because it is a way the design could be wrong
+;Ten things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -18,10 +18,27 @@
 ;	3. "fuzzy 1" keeps its space               field encoding survives the wire
 ;	4. a wrong secret is refused               the only door has a lock on it
 ;	5. the main's field becomes a GOTO         residents can follow the main
-;	6. a ping is answered and timed            the panel can show a round trip
-;	7. a macro that leaves is removed          leaving differs from crashing
+;	6. a late resident is sent the field       following survives a restart
+;	7. an unreadable roster strikes nobody     a race cannot empty the fleet
+;	8. a ping is answered and timed            the panel can show a round trip
+;	9. a macro that leaves is removed          leaving differs from crashing
+;	10. a second coordinator is refused        the port is the lock
 ;
-;Checks 6 and 7 need two coordinator beats to land - a round trip measured on
+;Ten is the one that was never going to be noticed by reading the code. Windows
+;lets two processes listen on one port when SO_REUSEADDR is set, so both
+;coordinators of a handover ran at once and the connections were split between
+;them - and a macro, seeing only the one that answered it, could not tell. The
+;term number was supposed to settle that and cannot: neither half ever hears
+;the other's term.
+;
+;Checks 6 and 7 are the two that cost real bugs. Six is the resident that
+;reconnects: the field is only forwarded when it changes, so a resident that
+;came back was told nothing until the main moved - which on a macro left on one
+;field is never. Seven is the roster file read while it was being written: a
+;reload that came back empty struck every account off and sent the whole fleet
+;a refusal, from nothing worse than two processes sharing one file.
+;
+;Checks 8 and 9 need two coordinator beats to land - a round trip measured on
 ;one beat is broadcast on the next - so the test runs for a few seconds longer
 ;than the others would need.
 ;
@@ -39,9 +56,21 @@ SECRET := "selftest"
 ;its own. It goes in a file of its own rather than the real one: a self-test
 ;that overwrites your fleet in order to prove the fleet works is no test.
 ROSTER := A_ScriptDir "\..\settings\fleet_roster_selftest.ini"
-roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: "", owner: 1 }, 2, { row: 2, name: "fuzzy 1", role: "fuzzy", user: "", owner: 0 }))
+;The coordinator puts its log beside whatever roster it was given, so this is
+;this run's log and nobody else's - which is what makes it safe to delete and
+;meaningful to read back.
+;
+;Not named LOG: AutoHotkey identifiers are case insensitive, and Log is the
+;built-in logarithm. The collision is not only with functions of our own.
+LOGFILE := RegExReplace(ROSTER, "i)\.ini$", ".log")
+try FileDelete LOGFILE
+;row 3 exists in the roster from the start but does not connect until the main
+;has already reported its field - which is what a resident restarting looks like
+roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: "", owner: 1 }
+	, 2, { row: 2, name: "fuzzy 1", role: "fuzzy", user: "", owner: 0 }
+	, 3, { row: 3, name: "fuzzy 2", role: "fuzzy", user: "", owner: 0 }))
 
-coordPid := 0, finished := 0
+coordPid := 0, rivalPid := 0, finished := 0
 seenBy := Map()             ;client label -> Map of row -> roster frame it received
 refused := ""               ;what the bad-secret connection was told
 
@@ -50,22 +79,61 @@ Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' PORT ' ' SECRET ' 1 1
 ;the coordinator has to bind before anyone can knock
 Sleep 1200
 
-seenBy["main"] := Map(), seenBy["fuzzy"] := Map()
+seenBy["main"] := Map(), seenBy["fuzzy"] := Map(), seenBy["late"] := Map()
 gotoField := "", fieldSent := 0
+lateField := ""             ;what a resident joining afterwards was told
 pinged := 0                 ;did the fuzzy macro get asked how fast it answers
-goneRow := 0                ;which row the main was told had left
+goneRows := Map()           ;every row the main was told had left
 bothSeen := Map("main", 0, "fuzzy", 0)   ;each client saw the whole roster, at some point
 row2 := ""                  ;the last ROSTER frame about row 2, kept for the report
 rttSeen := -1               ;a round trip the coordinator actually measured
+clientC := 0
 clientA := sock_Connect("127.0.0.1", PORT, OnA)
 clientB := sock_Connect("127.0.0.1", PORT, OnB)
 clientBad := sock_Connect("127.0.0.1", PORT, OnBad)
 
+;the late resident, long after the main said where it was farming
+SetTimer Late, -5000
+;the second coordinator, which must not get the port. It gives up after a few
+;seconds of retrying, so it is started early enough to have finished by the
+;time the report is written.
+SetTimer Rival, -6500
+;the roster file as a reader catches it mid-write
+SetTimer Blank, -8000
 ;the fuzzy macro leaves on purpose, late enough that its measured round trip
 ;has already been broadcast and can be checked
 SetTimer Leave, -11500
-SetTimer Report, -14000
+SetTimer Report, -16000
 return
+
+;A resident arriving after everyone else, which is a resident that crashed and
+;came back. It should be told where the hive is standing without the main
+;having to change field for its benefit.
+Late(*) {
+	global clientC
+
+	clientC := sock_Connect("127.0.0.1", PORT, OnC)
+}
+
+;A second coordinator on the same port, which is what every handover starts.
+;It must be refused: listening alongside the first would split the fleet
+;between two processes that no macro can see at the same time.
+Rival(*) {
+	global PORT, SECRET, ROSTER, rivalPid
+
+	Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' PORT ' ' SECRET ' 9 1 "' ROSTER '"'
+		, , "Hide", &rivalPid
+}
+
+;The roster file as it looks for the instant between a delete and a write, or
+;on a read that failed. The coordinator must not read this as "every account
+;has been removed" - doing so struck the whole fleet off and refused all of it.
+Blank(*) {
+	global ROSTER
+
+	try FileDelete ROSTER
+	try FileAppend ";nothing readable here`r`n", ROSTER, "UTF-8"
+}
 
 ;What ext_FleetLeave does on the macro side: say so, then go. The coordinator
 ;should strike the row rather than list it offline.
@@ -83,10 +151,13 @@ OnB(s, event, data) {
 	;has to encode, and a naive implementation would split the frame on it
 	Handle("fuzzy", 2, "fuzzy 1", s, event, data)
 }
+OnC(s, event, data) {
+	Handle("late", 3, "fuzzy 2", s, event, data)
+}
 
 Handle(label, row, name, s, event, data) {
-	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRow
-	global bothSeen, row2, rttSeen
+	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRows
+	global bothSeen, row2, rttSeen, lateField
 	local frame
 
 	if (event = "connect") {
@@ -120,8 +191,12 @@ Handle(label, row, name, s, event, data) {
 			sock_SendLine(s, fleet_Frame("FIELD", Map("name", "Sunflower")))
 		}
 	}
-	else if ((label = "fuzzy") && (frame.verb = "GOTO"))
-		gotoField := fleet_Field(frame, "field")
+	else if (frame.verb = "GOTO") {
+		if (label = "fuzzy")
+			gotoField := fleet_Field(frame, "field")
+		else if (label = "late")
+			lateField := fleet_Field(frame, "field")
+	}
 	else if (frame.verb = "PING") {
 		;answered the way a real macro does; without this there is nothing for
 		;the coordinator to time and the round trip stays unmeasured
@@ -130,11 +205,11 @@ Handle(label, row, name, s, event, data) {
 		sock_SendLine(s, fleet_Frame("ACK", Map("id", fleet_Field(frame, "id"))))
 	}
 	else if ((label = "main") && (frame.verb = "GONE")) {
-		goneRow := Integer(fleet_Field(frame, "row", 0))
+		goneRows[Integer(fleet_Field(frame, "row", 0))] := 1
 		;GONE is the only frame that removes a row, so the panel's own view has
 		;to act on it - this is that, in miniature
-		if (seenBy["main"].Has(goneRow))
-			seenBy["main"].Delete(goneRow)
+		if (seenBy["main"].Has(Integer(fleet_Field(frame, "row", 0))))
+			seenBy["main"].Delete(Integer(fleet_Field(frame, "row", 0)))
 	}
 }
 
@@ -156,9 +231,11 @@ OnBad(s, event, data) {
 }
 
 Report(*) {
-	global seenBy, refused, coordPid, finished, clientA, clientB, clientBad, ROSTER, gotoField
-	global bothSeen, row2, rttSeen, pinged, goneRow
-	local lines := [], allOk := 1, summary, path, leftRoster
+	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad, clientC
+	global ROSTER, gotoField
+	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
+	local lines := [], allOk := 1, summary, path, leftRoster, logText
+	global LOGFILE
 
 	if finished
 		return
@@ -167,6 +244,11 @@ Report(*) {
 	;read before the file is deleted below: a row that left should be gone from
 	;the roster on disk too, which is what stops it coming back on a reload
 	leftRoster := FileExist(ROSTER) ? roster_Load(ROSTER) : Map()
+	;and the log read once, here, before anything is closed. ProcessClose
+	;returns before the process is actually gone, and a coordinator still
+	;holding the file open for append makes this read fail - which it did,
+	;intermittently, and only in the part of the report a human reads.
+	logText := FleetLog()
 
 	allOk := Check(lines, "both rows reach the main macro"
 		, bothSeen["main"]) && allOk
@@ -178,10 +260,20 @@ Report(*) {
 		, refused != "") && allOk
 	allOk := Check(lines, "the main's field reaches the resident as a GOTO"
 		, gotoField == "Sunflower") && allOk
+	allOk := Check(lines, "a resident joining late is sent the main's field"
+		, lateField == "Sunflower") && allOk
+	;row 1 is the main, and it was never removed from anything - so if the
+	;coordinator struck it off, it did so because it believed an empty file
+	allOk := Check(lines, "an unreadable roster strikes nobody off"
+		, seenBy["main"].Has(1) && !goneRows.Has(1) && !goneRows.Has(3)) && allOk
 	allOk := Check(lines, "a ping is answered and timed"
 		, pinged && (rttSeen >= 0)) && allOk
 	allOk := Check(lines, "a macro that leaves is struck from the fleet"
-		, (goneRow = 2) && !seenBy["main"].Has(2) && !leftRoster.Has(2)) && allOk
+		, goneRows.Has(2) && !seenBy["main"].Has(2) && !leftRoster.Has(2)) && allOk
+	;read from this run's own log, which is why the coordinator puts it beside
+	;the roster it was handed. "listening" twice would be the bug itself.
+	allOk := Check(lines, "a second coordinator is refused the port"
+		, InStr(logText, "another coordinator already has it")) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -191,13 +283,21 @@ Report(*) {
 			. "  rtt=" fleet_Field(row2, "rtt") "ms")
 	else
 		lines.Push("", "The main macro never heard about row 2.")
-	lines.Push("after it left: GONE row=" goneRow
+	lines.Push("after it left: GONE for row 2=" (goneRows.Has(2) ? "yes" : "no")
 		. ", still in the live view=" (seenBy["main"].Has(2) ? "yes" : "no")
 		. ", still in the roster file=" (leftRoster.Has(2) ? "yes" : "no"))
+	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing"))
 
 	sock_Close(clientA), sock_Close(clientB), sock_Close(clientBad)
+	if clientC
+		sock_Close(clientC)
 	if coordPid
 		try ProcessClose(coordPid)
+	;it should have exited on its own, having been refused the port. Closed
+	;anyway, because a test that leaves a coordinator behind poisons the next
+	;run - which is how this very bug was found.
+	if rivalPid
+		try ProcessClose(rivalPid)
 	try FileDelete ROSTER
 
 	;the coordinator's own log is the half of the story this script cannot
@@ -205,7 +305,7 @@ Report(*) {
 	summary := "Fleet self-test on " A_ComputerName ", AutoHotkey " A_AhkVersion "`r`n`r`n"
 		. StrReplace(Join(lines), "`n", "`r`n")
 		. "`r`ncoordinator pid " (coordPid ? coordPid : "never started")
-		. "`r`n`r`nsettings\fleet_log.txt:`r`n" FleetLog()
+		. "`r`n`r`n" LOGFILE ":`r`n" logText
 	path := A_ScriptDir "\..\settings\fleet_diag.txt"
 	try FileDelete path
 	try FileAppend summary, path, "UTF-8"
@@ -230,11 +330,11 @@ Report(*) {
 ;Whatever the coordinator managed to write before it died, which when it
 ;died early is nothing - and that silence is itself the answer.
 FleetLog() {
-	local path := A_ScriptDir "\..\settings\fleet_log.txt"
+	global LOGFILE
 
-	if !FileExist(path)
+	if !FileExist(LOGFILE)
 		return "(no log at all - the coordinator never got as far as writing one)"
-	try return FileRead(path, "UTF-8")
+	try return FileRead(LOGFILE, "UTF-8")
 	return "(the log exists but could not be read)"
 }
 

@@ -227,7 +227,7 @@ ext_fleetOnSocket(s, event, data) {
 ;Announce ourselves. Only the row number and the secret matter: who row 2 is
 ;belongs to the roster file, not to whatever this macro believes about itself.
 ext_fleetHello() {
-	global ext_fleetSock, ext_fleetPeers, FleetRow, FleetSecret
+	global ext_fleetSock, ext_fleetPeers, FleetRow, FleetSecret, ext_fleetMyField
 
 	;Forget the old picture before asking for a new one. The coordinator answers
 	;a HELLO with the whole roster, and rows are merged by number rather than
@@ -235,6 +235,11 @@ ext_fleetHello() {
 	;otherwise sit in the table for ever, still wearing the state and the colour
 	;it had at the moment the connection dropped.
 	ext_fleetPeers.Clear()
+	;and the field we last said we were farming. A coordinator we are meeting
+	;for the first time - or one that has just been started by a takeover - has
+	;no record of it, so the next gather trip has to say so again instead of
+	;finding our own note that nothing has changed and staying quiet.
+	ext_fleetMyField := ""
 	sock_SendLine(ext_fleetSock, fleet_Frame("HELLO", Map("row", FleetRow
 		, "secret", FleetSecret, "machine", A_ComputerName)))
 }
@@ -242,7 +247,7 @@ ext_fleetHello() {
 ;A frame from the coordinator.
 ext_fleetOnLine(line) {
 	global ext_fleetPeers, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
-	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock
+	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock, ext_fleetRefused
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -289,7 +294,18 @@ ext_fleetOnLine(line) {
 			ext_fleetFollowField := fleet_Field(frame, "field")
 			ext_fleetCoordSeen := nowUnix()
 		case "BYE":
-			nm_setStatus("Failed", "Fleet refused this macro`n" fleet_Field(frame, "why"))
+			;A refusal is final: the secret is wrong, the row is not in the
+			;roster, or this account has been taken out of the fleet. None of
+			;them improves by knocking again, and the backoff would knock all
+			;night and be refused every time - so the fleet is let go here and
+			;the macro carries on farming alone, which is the rule this whole
+			;file is written to. The reason is kept for the panel to show
+			;rather than put in the status line, since being refused by the
+			;fleet says nothing about what the macro itself is doing.
+			ext_fleetRefused := fleet_Field(frame, "why", "refused")
+			ext_fleetEvents.InsertAt(1, FormatTime(A_Now, "HH:mm:ss")
+				. "  the fleet refused this macro: " ext_fleetRefused)
+			ext_fleetStop()
 	}
 }
 
@@ -315,10 +331,25 @@ ext_fleetReportField(field) {
 ;gathered it, so it is a valid key by construction - the guard is for the day
 ;that stops being true.
 ext_fleetFollowTarget() {
-	global FleetCheck, ext_fleetFollowField, FieldDefault
+	global FleetCheck, ext_fleetFollowField, FieldDefault, ext_fleetPeers, FleetRow
+	local mine
 
 	if (!FleetCheck || (ext_fleetFollowField = ""))
 		return ""
+	;A role changed in the roster editor has to take effect without restarting
+	;the macro it describes, and nothing else ever withdraws a GOTO - so an
+	;account that is no longer a resident stops following here. Checked against
+	;the roster rather than against a local setting, because the roster is the
+	;one copy everybody agrees on. While disconnected the last order stands: a
+	;dropped connection is not a change of job, and reverting on every blip
+	;would walk the macro back and forth for nothing.
+	if ext_fleetPeers.Has(FleetRow) {
+		mine := ext_FleetCell(ext_fleetPeers[FleetRow], "role")
+		if ((mine != "") && (mine != "fuzzy") && (mine != "tad")) {
+			ext_fleetFollowField := ""
+			return ""
+		}
+	}
 	if !FieldDefault.Has(ext_fleetFollowField)
 		return ""
 	return ext_fleetFollowField
@@ -420,8 +451,11 @@ ext_fleetTakeOver(why) {
 
 ;Bring the whole thing up. Called once, from the macro's start-up.
 ext_fleetStart() {
-	global FleetCheck, FleetRow, FleetHostRow
+	global FleetCheck, FleetRow, FleetHostRow, ext_fleetRefused
 
+	;a refusal is forgotten the moment somebody sets this macro up again -
+	;that is what being set up again means
+	ext_fleetRefused := ""
 	;listening costs nothing and an unbound macro needs it most: it is how the
 	;join dialog finds a fleet to join in the first place
 	ext_fleetDiscover()
@@ -471,11 +505,16 @@ ext_fleetView() {
 ;which term.
 ext_fleetSummary() {
 	global ext_fleetSock, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
-	global FleetCheck, ext_fleetTrying, ext_fleetFoundAt
+	global FleetCheck, ext_fleetTrying, ext_fleetFoundAt, ext_fleetRefused
 	local silent
 
 	if !FleetCheck
 		return "Fleet is off"
+	;said plainly, because "listening for a coordinator" would be a lie - this
+	;macro has stopped looking and somebody has to do something about it
+	if (ext_fleetRefused != "")
+		return "The fleet refused this macro: " ext_fleetRefused
+			. " - set it up again to rejoin"
 	if !ext_fleetSock {
 		return ext_fleetFoundAt
 			? "Found a coordinator at " ext_fleetFoundAt " - connecting"
@@ -1367,7 +1406,7 @@ ext_fleetNextDeadline() {
 	for _, p in ext_fleetView() {
 		if (ext_FleetCell(p, "guiding") = "")
 			continue
-		left := Integer(ext_FleetCell(p, "until")) - nowUnix()
+		left := ext_FleetNum(p, "until") - nowUnix()
 		if ((left > 0) && (!best || (left < best)))
 			best := left, who := ext_FleetCell(p, "name")
 	}

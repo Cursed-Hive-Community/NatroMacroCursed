@@ -57,6 +57,12 @@ logPath := A_ScriptDir "\..\settings\fleet_log.txt"
 ;disturb the real one
 rosterPath := (A_Args.Length >= 5) ? A_Args[5]
 	: A_ScriptDir "\..\settings\fleet_roster.ini"
+;A run given its own roster gets its own log beside it. A self-test reads the
+;log back to see what the coordinator did, and it must be reading what this run
+;did rather than the real fleet's history - nor scribbling on it. Same reason
+;the roster is overridable in the first place.
+if (A_Args.Length >= 5)
+	logPath := RegExReplace(rosterPath, "i)\.ini$", ".log")
 ;who each row is meant to be. Kept in one file rather than configured on
 ;seven machines, and re-read when it changes so editing the panel does not
 ;mean restarting the coordinator.
@@ -73,10 +79,29 @@ rosterStamp := fleet_RosterStamp()
 ;report every hop on a local network as zero.
 pingId := 0
 pingAt := Map()
+;the field the main last reported. Held here rather than in a static inside
+;fleet_LeadField, because a resident that joins late - or comes back from a
+;crash - has to be told where the hive is standing. Waiting for the main to
+;change field means waiting for ever on a macro left on one field.
+leadField := ""
 
 fleet_Log("coordinator starting, port " port ", term " term ", row " hostRow)
-if !(listener := sock_Listen(port, fleet_OnSocket)) {
-	fleet_Log("could not listen on port " port " - is another coordinator already up?")
+;The port is the lock, and sock_Listen is asked to hold it exclusively - see
+;the note there. Failing to take it means a coordinator is already up and this
+;process has nothing to do but get out of the way, which is far better than
+;listening alongside it and splitting the fleet in two.
+;
+;Retried for a few seconds first: a coordinator that was killed a moment ago
+;can leave the port held briefly, and a handover that gives up on that is a
+;handover that does not happen.
+listener := 0
+Loop 10 {
+	if (listener := sock_Listen(port, fleet_OnSocket, 1))
+		break
+	Sleep 500
+}
+if !listener {
+	fleet_Log("could not listen on port " port " - another coordinator already has it")
 	ExitApp 1
 }
 fleet_Log("listening")
@@ -96,8 +121,6 @@ return
 
 ;Everything the socket layer has to say about every connection.
 fleet_OnSocket(s, event, data) {
-	global bySocket
-
 	if (event = "line")
 		fleet_OnLine(s, data)
 	else if (event = "close")
@@ -141,7 +164,7 @@ fleet_OnLine(s, line) {
 ;role come from the roster file, so the fleet cannot end up with two versions
 ;of who row 2 is depending on which machine was edited last.
 fleet_OnHello(s, frame) {
-	global peers, bySocket, secret, term, hostRow, roster
+	global peers, bySocket, secret, term, hostRow, roster, leadField
 	local row, name, previous
 
 	if (fleet_Field(frame, "secret") != secret) {
@@ -179,6 +202,11 @@ fleet_OnHello(s, frame) {
 	;term to obey, then bring everyone's picture up to date
 	sock_SendLine(s, fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	fleet_Broadcast()
+	;a resident arriving mid-session is told where the main is standing. Without
+	;this it farms its own field until the main next changes, which on a macro
+	;left on one field never happens - so a fuzzy that merely restarted would
+	;spend the rest of the night out of position.
+	fleet_FollowOne(peers[row])
 }
 
 ;FIELD, GUIDING, CHARGE, MONDO_IN - a macro telling the fleet what it sees.
@@ -323,13 +351,23 @@ fleet_Ping() {
 ;Say we are alive, and write off anyone who has not.
 fleet_Beat() {
 	global peers, term, hostRow, roster, rosterPath, rosterStamp
-	local p, stamp
+	local p, stamp, fresh
 
 	;pick up an edited roster without a restart
 	if ((stamp := fleet_RosterStamp()) != rosterStamp) {
-		roster := roster_Load(rosterPath), rosterStamp := stamp
-		fleet_Event("roster reloaded, " roster.Count " rows")
-		fleet_ApplyRoster()
+		fresh := roster_Load(rosterPath)
+		;A reload that comes back empty while macros are connected is a file
+		;caught mid-write or briefly missing, not seven accounts deleted at
+		;once. Believing it would strike the whole fleet off and send every
+		;macro a BYE, which is a catastrophe produced by a benign race - so the
+		;stamp is left untouched and the next beat reads it again.
+		if (!fresh.Count && peers.Count)
+			fleet_Log("ignored an empty roster reload - the file was unreadable")
+		else {
+			roster := fresh, rosterStamp := stamp
+			fleet_Event("roster reloaded, " roster.Count " rows")
+			fleet_ApplyRoster()
+		}
 	}
 	for _, p in peers {
 		if ((p.state = "online") && ((nowUnix() - p.lastSeen) > FLEET_QUIET_SECS)) {
@@ -404,6 +442,9 @@ fleet_ApplyRoster() {
 		}
 		p.name := roster[row].name, p.role := roster[row].role
 		p.user := roster[row].user, p.owner := roster[row].owner
+		;re-roled by hand into a resident, so it is owed the field the hive is
+		;on - the same reason a resident gets one when it joins
+		fleet_FollowOne(p)
 	}
 	for _, row in struck
 		fleet_Drop(row, "was removed from the roster")
@@ -489,21 +530,29 @@ fleet_NextRow() {
 ;the main re-enters nm_GoGather every trip, and moving the whole hive on an
 ;unchanged field would be pure churn.
 fleet_LeadField(field) {
-	global peers
-	static last := ""
+	global peers, leadField
 	local p, sent := 0
 
-	if (field = last)
+	if (field = leadField)
 		return 0
-	last := field
+	leadField := field
 	for _, p in peers
-		if (p.socket && (p.state = "online") && ((p.role = "fuzzy") || (p.role = "tad"))) {
-			sock_SendLine(p.socket, fleet_Frame("GOTO", Map("field", field)))
-			sent++
-		}
+		sent += fleet_FollowOne(p)
 	if sent
 		fleet_Event("main farming " field " - " sent " resident(s) following")
 	return sent
+}
+
+;Send one macro where the hive is standing, if it is a macro that follows at
+;all. Every GOTO goes through here, so "who follows" is written down once.
+fleet_FollowOne(p) {
+	global leadField
+
+	if ((leadField = "") || !p.socket || (p.state != "online"))
+		return 0
+	if ((p.role != "fuzzy") && (p.role != "tad"))
+		return 0
+	return sock_SendLine(p.socket, fleet_Frame("GOTO", Map("field", leadField))) ? 1 : 0
 }
 
 ;Something worth a line in everybody's view, not only in the log file here.
@@ -516,8 +565,23 @@ fleet_Event(text) {
 
 ;A plain text log beside the macro's own settings. Debugging a fleet by watching
 ;seven windows is hopeless; one file with timestamps is not.
+;
+;Capped, because the thing that writes to it fastest is a fault: a coordinator
+;that cannot reach a macro logs a line every few seconds all night. Half a
+;megabyte is further back than anyone reads, and the previous half stays beside
+;it under .1. The size is only looked at every so often - a stat per line would
+;cost more than the lines do.
 fleet_Log(text) {
 	global logPath
+	static cap := 524288, written := 0
 
+	if (Mod(++written, 200) = 0) {
+		try {
+			if (FileGetSize(logPath) > cap) {
+				try FileDelete logPath ".1"
+				FileMove logPath, logPath ".1", 1
+			}
+		}
+	}
 	try FileAppend FormatTime(A_Now, "HH:mm:ss") "  " text "`n", logPath, "UTF-8"
 }
