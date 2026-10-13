@@ -20,6 +20,28 @@
 ;   every two seconds, so this stays right even after a router hands out a new
 ;   lease, which is the whole reason nothing has to be typed in any more.
 ;3. An address entered by hand, for a network where broadcasts are blocked.
+;Who is running the fleet, in words, or "" while nobody has said.
+;
+;The coordinator reports the row that started it on every heartbeat, and that
+;row is also the one whose settings folder it is reading out of - a coordinator
+;is launched by a macro, in that macro's working directory. So this names the
+;account and the machine the fleet's configuration actually lives on, which is
+;what somebody needs when they go looking for where to change something.
+ext_fleetCoordWho() {
+	global ext_fleetCoordRow, ext_fleetPeers, FleetRow
+	local p, who, where
+
+	if !ext_fleetCoordRow
+		return ""
+	if (ext_fleetCoordRow = FleetRow)
+		return "this macro"
+	if !ext_fleetPeers.Has(ext_fleetCoordRow)
+		return "row " ext_fleetCoordRow
+	p := ext_fleetPeers[ext_fleetCoordRow]
+	who := ext_FleetSeatName(p), where := ext_FleetCell(p, "machine")
+	return (where != "") ? who " on " where : who
+}
+
 ext_fleetCandidates() {
 	global FleetAddress, ext_fleetFoundAt
 	local list := ["127.0.0.1"]
@@ -558,7 +580,7 @@ ext_fleetView() {
 ;which term.
 ext_fleetSummary() {
 	global ext_fleetSock, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
-	global FleetCheck, ext_fleetTrying, ext_fleetFoundAt, ext_fleetRefused
+	global FleetCheck, ext_fleetFoundAt, ext_fleetRefused
 	local silent
 
 	if !FleetCheck
@@ -574,9 +596,12 @@ ext_fleetSummary() {
 			: "Listening for a coordinator on the network"
 	}
 	silent := nowUnix() - ext_fleetCoordSeen
-	return "Connected to " ext_fleetTrying
-		. (ext_fleetCoordRow ? " (row " ext_fleetCoordRow ")" : "")
-		. ", term " ext_fleetTerm
+	;named rather than numbered. "row 1" means nothing to somebody wondering
+	;which machine to go and look at; the account and the machine mean
+	;everything, and the address it was reached on says less than either now
+	;that the machine can be named.
+	return "Fleet run by " ext_FleetOr(ext_fleetCoordWho(), "a macro it cannot name yet")
+		. " - term " ext_fleetTerm
 		. ((silent > 15) ? " - quiet for " silent "s" : "")
 }
 
@@ -1316,16 +1341,23 @@ ext_FleetSave(name, value) {
 ;A window of its own, because it is a table and the setup window already has
 ;three sections stacked in it.
 
-;Is this the macro whose server file the fleet actually uses?
+;Is this the macro whose configuration files the fleet actually uses?
 ;
-;The coordinator reads the file on the machine it runs on, so on every other
-;macro the local file is a leftover nobody reads. A macro with no row yet
-;counts as well: it has nothing to join and its file is the one it will host
-;with.
+;Against the row that is coordinating right now, not the one the panel named as
+;host. Those differ after a takeover, and this asked the wrong one: the
+;designated host would offer to edit files nobody was reading, while the macro
+;actually coordinating refused to edit the files it was reading. Both backwards.
+;
+;The row the coordinator reports on every heartbeat is the row that started it,
+;and a coordinator is started in its starter's own working directory - so that
+;row is exactly the one whose settings folder the fleet is living out of.
+;
+;A macro with no row yet counts too: it has nothing to join, and its file is
+;the one it will host with.
 ext_fleetServerHost() {
-	global FleetRow, FleetHostRow
+	global FleetRow, ext_fleetCoordRow
 
-	return (FleetRow <= 0) || (FleetRow = FleetHostRow)
+	return (FleetRow <= 0) || (FleetRow = ext_fleetCoordRow)
 }
 
 ;The list this window shows.
