@@ -108,8 +108,24 @@ ext_stickerStackInterrupt(convertAfter := 1) {
 ;:00 to :14 is a catch-up window. The macro can easily be mid-pattern with a
 ;full backpack at :59, and arriving late still beats not going.
 ;
-;Buff only. Killing Mondo is a different job with its own routine, and Natro
-;already handles it.
+;Buff only, for now, and the "for now" is a decision rather than an oversight.
+;
+;Killing Mondo is what an atk account exists for: the same departure at :59, so
+;that it is standing on the spawn as the chick appears, but handing over to
+;Natro's own Kill routine instead of waiting out a buff. The timing here is
+;already the hard half and needs nothing from the fleet - the hour is the same
+;on every machine, so each atk decides for itself and no order has to travel.
+;
+;What it does need is for the atk to be in the right server at :59, and an
+;account parked in a reserve has to be brought back first. That is the queue,
+;which is not written, and a departure for a server the chick does not spawn in
+;is worse than no departure at all. So this waits for it.
+;
+;One thing settled in advance, so it is not re-argued later: the kill path
+;breaks off a balloon convert to get there, where the buff path only does so
+;when the boost lease is near its end. Ten minutes of convert is a real loss
+;and the spawn does not come round again for an hour - and arriving late to
+;a chick somebody else has already killed costs the trip for nothing.
 ext_mondoDue() {
 	global MondoInterruptCheck, MondoBuffCheck, MondoAction, LastMondoBuff
 	local utcMin

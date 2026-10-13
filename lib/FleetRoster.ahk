@@ -38,6 +38,11 @@
 ;	       and the main arrives at the same place at the same moment - the
 ;	       whole point being to put the chick down between them as fast as
 ;	       it can be done
+;
+;Only main, fuzzy and tad change what a macro does today. guid and atk are
+;offered so that the roster can describe the whole fleet before the work that
+;acts on them exists - the guiding star queue for one, and the Mondo departure
+;in extensions\interrupts.ahk for the other, which says there why it waits.
 roster_Roles() {
 	return ["main", "fuzzy", "tad", "guid", "atk"]
 }
