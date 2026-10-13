@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Fifteen things are checked, each because it is a way the design could be wrong
+;Eighteen things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -28,6 +28,17 @@
 ;	13. a deleted server disappears            a list that shrinks still converges
 ;	14. a row nobody has seen is broadcast     every macro can hold a replica
 ;	15. a refusal says whose problem it is     a recoverable one is retried
+;	16. a stale configuration cannot win       a late macro cannot undo the rest
+;	17. a better configuration is taken        the fleet climbs to the best copy
+;	18. a tie keeps one and files the other    nothing is lost deciding
+;
+;Sixteen to eighteen are the versioning, and sixteen is the one that matters.
+;Two macros that were disconnected can reconnect before the rest, one of them
+;takes over, and it takes over holding the copy it had - which is older than
+;the copy everybody else holds. Nothing in a file's timestamp can tell those
+;apart: a replica is written when it arrives, so the stale machine's file is
+;the one with the newer timestamp. Without a version in the file, the stale
+;configuration spread and overwrote every good copy in the fleet.
 ;
 ;Fourteen and fifteen are the two halves of surviving the loss of the machine
 ;that coordinates. The configuration used to live only in that machine's
@@ -94,7 +105,7 @@ SERVERS := RegExReplace(ROSTER, "i)\.ini$", "_servers.ini")
 servers_Save(SERVERS, Map(1, { slot: 1, name: "Main", kind: "main", owner: 2
 		, link: "https://roblox.test/main?code=a b%c" }
 	, 2, { slot: 2, name: "Reserve", kind: "reserve", owner: 3
-		, link: "https://roblox.test/reserve" }))
+		, link: "https://roblox.test/reserve" }), 3, 1)
 ;row 3 exists in the roster from the start but does not connect until the main
 ;has already reported its field - which is what a resident restarting looks like
 roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
@@ -102,7 +113,10 @@ roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
 	, 2, { row: 2, name: "fuzzy 1", role: "fuzzy", user: ""
 		, machine: "selftest" }
 	, 3, { row: 3, name: "fuzzy 2", role: "fuzzy", user: "fuzzy2"
-		, machine: "selftest" }))
+		, machine: "selftest" })
+	;version five rather than one, so there is room below it for a stale copy
+	;to be offered and refused
+	, 5, 1)
 
 coordPid := 0, rivalPid := 0, finished := 0
 boundRow := -1              ;which row a second setup of row 3 was handed back
@@ -117,6 +131,8 @@ cfgGen := "", cfgWant := 0
 ;three accounts were configured has to be caught while it is true
 cfgMost := 0                ;the most rows a single generation ever promised
 cfgUnseen := ""             ;a configured row that had not connected when it arrived
+cfgLowVer := 9999           ;the lowest version the coordinator ever served
+cfgTookUp := 0              ;the version at which the handed-up roster came back
 byeFinal := Map()           ;what each refusal said about being final
 seenBy := Map()             ;client label -> Map of row -> roster frame it received
 refused := ""               ;what the bad-secret connection was told
@@ -150,6 +166,10 @@ SetTimer Open, -6000
 SetTimer Rebind, -6800
 ;a server deleted, late enough that the first list has certainly arrived
 SetTimer DropServer, -9000
+;a stale configuration offered, then a better one, then one that ties
+SetTimer HandUpStale, -7500
+SetTimer HandUpBetter, -10500
+SetTimer HandUpTie, -11000
 ;a macro with the right secret and a row that is not in the roster, which is
 ;what every macro looks like to a coordinator that came up without one
 SetTimer Stranger, -9500
@@ -236,6 +256,48 @@ OnStranger(s, event, data) {
 		byeFinal["unknown row"] := fleet_Field(frame, "final", "missing")
 }
 
+;A configuration from the past, offered by a seated macro.
+;
+;This is the macro that was disconnected while the fleet moved on, reconnected,
+;and now holds an older copy than the coordinator. It must not win. Before the
+;files carried a version there was nothing to compare and it always did.
+HandUpStale(*) {
+	global clientA
+
+	Push(clientA, 2, 7, Map(1, "stale one"))
+}
+
+;And a configuration from the future, which must win.
+;
+;All three rows, because adopting a roster that is missing one would strike
+;that account off - correct behaviour for a real edit, and not what is being
+;tested here.
+HandUpBetter(*) {
+	global clientA
+
+	Push(clientA, 9, 7, Map(1, "main", 2, "fuzzy 1", 3, "handed up"))
+}
+
+;The same version as the one just taken, written by a different row: both sides
+;of a split edited separately. The lower row wrote the one we have, so ours
+;stays and theirs is kept beside it.
+HandUpTie(*) {
+	global clientA
+
+	Push(clientA, 9, 9, Map(1, "main", 2, "fuzzy 1", 3, "tie loser"))
+}
+
+;One SETROW frame per row, which is how a whole configuration travels.
+Push(sock, version, by, names) {
+	local row, name
+
+	for row, name in names
+		sock_SendLine(sock, fleet_Frame("SETROW", Map("v", version, "by", by
+			, "n", names.Count, "row", row, "name", name
+			, "role", (row = 1) ? "main" : "fuzzy"
+			, "user", "", "machine", "selftest")))
+}
+
 ;One server deleted. The macro's copy has to end up holding one and not two,
 ;and no frame says "delete" - the generation riding on the frames is the whole
 ;of the mechanism.
@@ -244,7 +306,8 @@ DropServer(*) {
 	local list := servers_Load(SERVERS)
 
 	list.Delete(2)
-	servers_Save(SERVERS, list)
+	;a deletion is the next version, exactly as the coordinator would write it
+	servers_Save(SERVERS, list, 4, 1)
 }
 
 ;The roster file as it looks for the instant between a delete and a write, or
@@ -281,7 +344,7 @@ Handle(label, row, name, s, event, data) {
 	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRows
 	global bothSeen, row2, rttSeen, lateField
 	global srv, srvGen, srvMainLink, srvMainOwner
-	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen
+	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgTookUp
 	local frame
 
 	if (event = "connect") {
@@ -324,14 +387,22 @@ Handle(label, row, name, s, event, data) {
 	else if ((label = "main") && (frame.verb = "ROW")) {
 		;the configured roster, collected the way the extension collects it -
 		;a generation never seen before replaces the copy rather than merging
-		if (fleet_Field(frame, "gen") != cfgGen) {
+		;keyed on the version and its author, which is what the extension does
+		;for real - a file's timestamp cannot order two machines' copies
+		if (cfgGen != fleet_Field(frame, "v") "/" fleet_Field(frame, "by")) {
 			cfg := Map()
-			cfgGen := fleet_Field(frame, "gen")
+			cfgGen := fleet_Field(frame, "v") "/" fleet_Field(frame, "by")
 			cfgWant := Integer(fleet_Field(frame, "n", 0))
 			if (cfgWant > cfgMost)
 				cfgMost := cfgWant
 		}
 		cfg[Integer(fleet_Field(frame, "row", 0))] := frame
+		if (Integer(fleet_Field(frame, "v", 0)) < cfgLowVer)
+			cfgLowVer := Integer(fleet_Field(frame, "v", 0))
+		;the handed-up roster coming back out of the coordinator is the only
+		;way to see that it was taken rather than merely accepted in silence
+		if ((fleet_Field(frame, "name") == "handed up") && !cfgTookUp)
+			cfgTookUp := Integer(fleet_Field(frame, "v", 0))
 		;the whole point of these frames: an account that is configured but has
 		;never connected has no ROSTER frame and is invisible everywhere else,
 		;so it could neither be shown nor replicated
@@ -343,9 +414,9 @@ Handle(label, row, name, s, event, data) {
 		;the generation logic the extension does for real, in miniature. A
 		;generation never seen before means the list changed somehow, and the
 		;old copy is thrown away rather than merged into.
-		if (fleet_Field(frame, "gen") != srvGen) {
+		if (srvGen != fleet_Field(frame, "v") "/" fleet_Field(frame, "by")) {
 			srv := Map()
-			srvGen := fleet_Field(frame, "gen")
+			srvGen := fleet_Field(frame, "v") "/" fleet_Field(frame, "by")
 		}
 		srv[Integer(fleet_Field(frame, "slot", 0))] := frame
 		if (fleet_Field(frame, "kind") = "main") {
@@ -390,8 +461,8 @@ OnBad(s, event, data) {
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
 	global clientC, clientD, clientE, boundRow, SERVERS
-	global srv, srvMainLink, srvMainOwner
-	global cfg, cfgWant, cfgMost, cfgUnseen, byeFinal
+	global srv, srvGen, srvMainLink, srvMainOwner
+	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgTookUp, byeFinal
 	global ROSTER, gotoField
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
@@ -453,6 +524,16 @@ Report(*) {
 	allOk := Check(lines, "a bad secret is final and an unknown row is not"
 		, (byeFinal.Has("bad secret") && (byeFinal["bad secret"] = 1))
 			&& (byeFinal.Has("unknown row") && (byeFinal["unknown row"] = 0))) && allOk
+	;version 2 was offered and would have been served if it had been taken
+	allOk := Check(lines, "a stale configuration handed up is refused"
+		, cfgLowVer >= 5) && allOk
+	allOk := Check(lines, "a better configuration handed up is taken"
+		, cfgTookUp = 9) && allOk
+	;the tie loser is written beside the file rather than dropped, which is the
+	;whole reason an arbitrary rule is tolerable
+	allOk := Check(lines, "a tie keeps ours and files theirs"
+		, FileExist(ROSTER ".conflict")
+			&& (roster_Load(ROSTER ".conflict").Has(3))) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -468,6 +549,8 @@ Report(*) {
 	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing"))
 	lines.Push("row 3 set itself up again and was handed row "
 		. ((boundRow >= 0) ? boundRow : "nothing at all"))
+	lines.Push("lowest version ever served: " cfgLowVer
+		. ", handed-up roster came back at: " (cfgTookUp ? cfgTookUp : "never"))
 	lines.Push("configured rows: " cfgMost " promised at the fullest, "
 		. cfg.Count " of " cfgWant " after row 2 left")
 	lines.Push("seen configured before it ever connected: "
@@ -477,6 +560,7 @@ Report(*) {
 		. ", unknown row final="
 		. (byeFinal.Has("unknown row") ? byeFinal["unknown row"] : "no BYE"))
 	lines.Push("servers held after one of two was deleted: " srv.Count
+		. " at version " srvGen
 		. ", main link=" (srvMainLink != "" ? srvMainLink : "never sent"))
 
 	sock_Close(clientA), sock_Close(clientB), sock_Close(clientBad)
@@ -495,6 +579,7 @@ Report(*) {
 		try ProcessClose(rivalPid)
 	try FileDelete ROSTER
 	try FileDelete SERVERS
+	try FileDelete ROSTER ".conflict"
 
 	;the coordinator's own log is the half of the story this script cannot
 	;see, so it travels with the verdict rather than being looked up after

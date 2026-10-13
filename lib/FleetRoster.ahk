@@ -15,6 +15,18 @@
 ;	User=SomeRobloxName
 ;	Machine=LAPTOP-TIROU
 ;
+;The [fleet] section at the top carries the version this configuration is on
+;and the row that wrote it. Those two are what tell a newer copy from an older
+;one, and the file's own timestamp cannot: a replica is written when it
+;arrives, so a machine holding a stale copy has a newer timestamp on it than
+;the machine holding the current one. Without a version, a macro that
+;reconnected late and became coordinator would serve its stale copy and every
+;up-to-date macro would write it over their good one.
+;
+;	[fleet]
+;	Version=7
+;	By=1
+;
 ;Role is one of main, fuzzy, tad, guid, atk. User is the exact Roblox username,
 ;needed only to force a kick.
 ;
@@ -81,7 +93,12 @@ roster_Load(path) {
 		if ((line = "") || (SubStr(line, 1, 1) = ";"))
 			continue
 		if (SubStr(line, 1, 1) = "[") {
-			section := Integer(Trim(SubStr(line, 2, StrLen(line) - 2)))
+			;a section that is not a number is not a row - the version lives in
+			;[fleet]. Checked rather than converted, because Integer() throws on
+			;anything that is not a number, and a configuration file is exactly
+			;the place where somebody's typo would otherwise stop the whole
+			;roster from loading.
+			section := fleet_SectionNumber(line)
 			if (section > 0)
 				rows[section] := { row: section, name: "row " section, role: "guid"
 					, user: "", machine: "" }
@@ -105,8 +122,13 @@ roster_Load(path) {
 ;Write it back, rows in order so the file stays readable after an edit. The
 ;header line is there so the file is never zero bytes long - see
 ;fleet_WriteWhole, which does the writing, for why that matters.
-roster_Save(path, rows) {
+;
+;version and by are not optional in spirit, whatever the defaults say: every
+;writer knows which version it is producing, and a file written without one
+;loses to every other copy in the fleet.
+roster_Save(path, rows, version := 1, by := 0) {
 	local out := ";the fleet roster - written by the macro, safe to read by hand`r`n`r`n"
+		. fleet_MetaSection(version, by)
 	local keys := [], r
 
 	for r, _ in rows
@@ -120,6 +142,79 @@ roster_Save(path, rows) {
 		out .= "Machine=" rows[r].machine "`r`n`r`n"
 	}
 	return fleet_WriteWhole(path, out)
+}
+
+;The [fleet] section every configuration file opens with.
+fleet_MetaSection(version, by) {
+	return "[fleet]`r`nVersion=" version "`r`nBy=" by "`r`n`r`n"
+}
+
+;Which row a section heading names, or 0 when it does not name one.
+fleet_SectionNumber(line) {
+	local name := Trim(SubStr(line, 2, StrLen(line) - 2))
+
+	return fleet_IsNumber(name) ? Integer(name) : 0
+}
+
+;Is this text a plain integer? Asked before converting, because Integer()
+;throws on anything else and these files can be edited by hand.
+fleet_IsNumber(v) {
+	return (v != "") && RegExMatch(v, "^-?\d+$")
+}
+
+;An integer from whatever a file said, including nothing at all.
+fleet_Num(v) {
+	return fleet_IsNumber(v) ? Integer(v) : 0
+}
+
+;The version a configuration file is on, and the row that wrote it.
+;
+;Read separately from the entries so that every caller of roster_Load and
+;servers_Load carries on working unchanged. These files are a few hundred bytes
+;and read once per change, so reading one twice costs nothing worth saving.
+fleet_ConfigVersion(path) {
+	local line, at, k, v, out := { version: 0, by: 0 }, inMeta := 0
+
+	if !FileExist(path)
+		return out
+	Loop Parse FileRead(path, "UTF-8"), "`n", "`r" {
+		line := Trim(A_LoopField)
+		if ((line = "") || (SubStr(line, 1, 1) = ";"))
+			continue
+		if (SubStr(line, 1, 1) = "[") {
+			inMeta := (Trim(line, "[]") = "fleet")
+			continue
+		}
+		if (!inMeta || !(at := InStr(line, "=")))
+			continue
+		k := StrLower(Trim(SubStr(line, 1, at - 1)))
+		v := Trim(SubStr(line, at + 1))
+		if (k = "version")
+			out.version := fleet_Num(v)
+		else if (k = "by")
+			out.by := fleet_Num(v)
+	}
+	return out
+}
+
+;Should configuration a replace configuration b?
+;
+;A higher version always wins. Equal versions written by different rows is the
+;one case a version cannot settle - both sides of a network split were edited
+;separately - and the lowest row wins it. Lowest rather than highest for no
+;deeper reason than that it is the same rule the coordinator election uses, and
+;two rules that disagree are one rule too many. What matters is that it is
+;decided the same way on every machine without anybody sending a message about
+;it, and that the copy that loses is kept rather than thrown away.
+fleet_ConfigBeats(a, b) {
+	if (a.version != b.version)
+		return (a.version > b.version)
+	if (a.by = b.by)
+		return 0
+	;by=0 means nobody said, which cannot be allowed to win a tie
+	if !a.by
+		return 0
+	return (!b.by || (a.by < b.by))
 }
 
 ;Replace a whole shared configuration file in one step.

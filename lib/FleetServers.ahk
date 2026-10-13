@@ -20,6 +20,9 @@
 ;	Owner=2
 ;	Kind=main
 ;
+;The [fleet] section carries the version and the row that wrote it, exactly as
+;the roster's does and for the same reason - see FleetRoster.ahk.
+;
 ;Kind is main or reserve, and exactly one entry is the main. Owner is a roster
 ;row number, 0 when nobody has said. Slot numbers are stable and never reused,
 ;so a control that points at one keeps pointing at the same server after
@@ -41,7 +44,9 @@ servers_Load(path) {
 			if ((line = "") || (SubStr(line, 1, 1) = ";"))
 				continue
 			if (SubStr(line, 1, 1) = "[") {
-				slot := Integer(Trim(SubStr(line, 2, StrLen(line) - 2)))
+				;[fleet] is the version, not a server - and a hand-edited file
+				;must not be able to stop the list from loading at all
+				slot := fleet_SectionNumber(line)
 				if (slot > 0)
 					list[slot] := { slot: slot, name: "server " slot, link: ""
 						, owner: 0, kind: "reserve" }
@@ -55,7 +60,7 @@ servers_Load(path) {
 			switch k {
 				case "name":  entry.name := v
 				case "link":  entry.link := v
-				case "owner": entry.owner := Integer(v != "" ? v : 0)
+				case "owner": entry.owner := fleet_Num(v)
 				case "kind":  entry.kind := (StrLower(v) = "main") ? "main" : "reserve"
 			}
 		}
@@ -124,8 +129,9 @@ servers_NextSlot(list) {
 ;Write it back, slots in order. Through the same whole-file write the roster
 ;uses, because this file has the same two writers and the same readers on a
 ;timer - see fleet_WriteWhole.
-servers_Save(path, list) {
+servers_Save(path, list, version := 1, by := 0) {
 	local out := ";the fleet's servers - written by the macro, safe to read by hand`r`n`r`n"
+		. fleet_MetaSection(version, by)
 	local keys := [], s
 
 	for s, _ in list

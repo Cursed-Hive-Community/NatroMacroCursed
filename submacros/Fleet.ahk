@@ -68,11 +68,23 @@ if (A_Args.Length >= 5)
 ;seven machines, and re-read when it changes so editing the panel does not
 ;mean restarting the coordinator.
 roster := roster_Load(rosterPath)
+;Which version of each configuration this coordinator serves, and the row that
+;wrote it. The file's own timestamp cannot answer that - a replica is written
+;when it arrives, so a machine holding a stale copy carries a newer timestamp
+;than the machine holding the current one. Without a version, a macro that
+;reconnected late and took over would serve its stale copy and every up-to-date
+;macro would write it over their good one.
+rosterVer := fleet_ConfigVersion(rosterPath)
 ;where the accounts sit, and who owns each of those places. Beside the roster
 ;rather than inside it: one flag on one row could not say that two servers have
 ;two different owners, and the owner is the only account whose /kick works.
 serversPath := RegExReplace(rosterPath, "i)\.ini$", "_servers.ini")
 servers := servers_Load(serversPath)
+serversVer := fleet_ConfigVersion(serversPath)
+;a configuration handed up by a macro, collected one frame per entry until the
+;version it belongs to is whole - see fleet_OnSetRow
+upRow := { version: -1, by: -1, want: 0, rows: Map() }
+upServer := { version: -1, by: -1, want: 0, rows: Map() }
 ;Binding. The door is shut by default and opens for a couple of minutes when
 ;the host asks, which is the only moment a macro can be let in without
 ;already knowing the secret. A fleet left open is a fleet anything on the
@@ -158,6 +170,10 @@ fleet_OnLine(s, line) {
 			fleet_OnBind(s, frame)
 		case "LEAVE":
 			fleet_OnLeave(s)
+		case "SETROW":
+			fleet_OnSetRow(s, frame)
+		case "SETSERVER":
+			fleet_OnSetServer(s, frame)
 		case "FIELD", "GUIDING", "CHARGE", "MONDO_IN", "STATE":
 			fleet_OnReport(s, frame)
 		case "ACK", "FAIL":
@@ -303,10 +319,7 @@ fleet_OnLeave(s) {
 		return
 	if roster.Has(row) {
 		roster.Delete(row)
-		roster_Save(rosterPath, roster)
-		;our own write would otherwise look like an outside edit and cost a
-		;pointless reload on the next beat
-		rosterStamp := fleet_RosterStamp()
+		fleet_BumpRoster()
 	}
 	;no BYE: it is the macro's own decision and it is not being refused
 	fleet_Drop(row, "left the fleet", 0)
@@ -376,8 +389,8 @@ fleet_Ping() {
 ;Say we are alive, and write off anyone who has not.
 fleet_Beat() {
 	global peers, term, hostRow, roster, rosterPath, rosterStamp
-	global servers, serversPath, serversStamp
-	local p, stamp, fresh
+	global servers, serversPath, serversStamp, rosterVer, serversVer
+	local p, stamp, fresh, ver
 
 	;pick up an edited roster without a restart
 	if ((stamp := fleet_RosterStamp()) != rosterStamp) {
@@ -391,7 +404,18 @@ fleet_Beat() {
 			fleet_Log("ignored an empty roster reload - the file was unreadable")
 		else {
 			roster := fresh, rosterStamp := stamp
-			fleet_Event("roster reloaded, " roster.Count " rows")
+			;An edit by hand does not move the version, so the fleet would be
+			;told the same version with different contents and would keep what
+			;it already had. A version the editor bumped itself is adopted;
+			;anything else is bumped here and written back, which is what makes
+			;an edit from outside this process propagate at all.
+			ver := fleet_ConfigVersion(rosterPath)
+			if (ver.version > rosterVer.version)
+				rosterVer := ver
+			else
+				fleet_BumpRoster()
+			fleet_Event("roster reloaded, " roster.Count " rows, version "
+				. rosterVer.version)
 			fleet_ApplyRoster()
 		}
 	}
@@ -406,7 +430,13 @@ fleet_Beat() {
 	;or unreadable file with one unfilled main rather than with nothing.
 	if ((stamp := fleet_ServersStamp()) != serversStamp) {
 		servers := servers_Load(serversPath), serversStamp := stamp
-		fleet_Event("servers reloaded, " servers.Count " of them")
+		ver := fleet_ConfigVersion(serversPath)
+		if (ver.version > serversVer.version)
+			serversVer := ver
+		else
+			fleet_BumpServers()
+		fleet_Event("servers reloaded, " servers.Count " of them, version "
+			. serversVer.version)
 	}
 	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	fleet_Ping()
@@ -457,11 +487,12 @@ fleet_Broadcast() {
 ;omission: a coordinator that has come up without a configuration must not be
 ;able to talk every macro into replacing a good replica with nothing.
 fleet_BroadcastRoster() {
-	global roster, rosterStamp
+	global roster, rosterVer
 	local r, e
 
 	for r, e in roster
-		fleet_Send(fleet_Frame("ROW", Map("gen", rosterStamp, "n", roster.Count
+		fleet_Send(fleet_Frame("ROW", Map("v", rosterVer.version, "by", rosterVer.by
+			, "n", roster.Count
 			, "row", e.row, "name", e.name, "role", e.role
 			, "user", e.user, "machine", e.machine)))
 }
@@ -472,11 +503,12 @@ fleet_BroadcastRoster() {
 ;it was deleted - the same trick the roster uses to avoid half-applied updates,
 ;applied to a list that can shrink.
 fleet_BroadcastServers() {
-	global servers, serversStamp
+	global servers, serversVer
 	local s, e
 
 	for s, e in servers
-		fleet_Send(fleet_Frame("SERVER", Map("gen", serversStamp, "n", servers.Count
+		fleet_Send(fleet_Frame("SERVER", Map("v", serversVer.version, "by", serversVer.by
+			, "n", servers.Count
 			, "slot", e.slot, "name", e.name, "link", e.link
 			, "owner", e.owner, "kind", e.kind)))
 }
@@ -489,6 +521,131 @@ fleet_Send(line) {
 	for _, p in peers
 		if (p.socket)
 			sock_SendLine(p.socket, line)
+}
+
+;Write the roster out as the next version, under our own name.
+;
+;One place, because a write that forgets to move the version is a write the
+;fleet cannot see: every macro compares versions to decide whether what it has
+;been sent is worth keeping, and an unchanged version reads as "nothing to do".
+fleet_BumpRoster() {
+	global roster, rosterPath, rosterStamp, rosterVer, hostRow
+
+	rosterVer := { version: rosterVer.version + 1, by: hostRow }
+	roster_Save(rosterPath, roster, rosterVer.version, rosterVer.by)
+	;our own write would otherwise look like an outside edit and cost a
+	;pointless reload on the next beat
+	rosterStamp := fleet_RosterStamp()
+	return 1
+}
+fleet_BumpServers() {
+	global servers, serversPath, serversStamp, serversVer, hostRow
+
+	serversVer := { version: serversVer.version + 1, by: hostRow }
+	servers_Save(serversPath, servers, serversVer.version, serversVer.by)
+	serversStamp := fleet_ServersStamp()
+	return 1
+}
+
+;A macro handing a configuration up.
+;
+;It arrives when a macro holds a better one than this coordinator does, and
+;that happens for an ordinary reason: a macro that was disconnected while the
+;fleet was quiet can be the one that takes over, and it takes over with the
+;copy it had. The fleet then has to climb back to the best copy anybody holds
+;rather than settle for whichever macro happened to reconnect first.
+;
+;Collected per version, like everything that arrives one frame per entry, and
+;taken only when whole and only when it beats what we have. That comparison is
+;the whole of the authorisation: a configuration which is not strictly better
+;is not taken, whoever sent it.
+fleet_OnSetRow(s, frame) {
+	global roster, rosterPath, rosterStamp, rosterVer, upRow
+	local ver, want := fleet_Num(fleet_Field(frame, "n")), row
+
+	;only from a macro that got past HELLO. The version comparison decides
+	;whether a configuration is worth taking, but it says nothing about who is
+	;entitled to offer one, and a connection that never proved it knew the
+	;secret is not.
+	if !fleet_RowOf(s)
+		return 0
+	ver := { version: fleet_Num(fleet_Field(frame, "v"))
+		, by: fleet_Num(fleet_Field(frame, "by")) }
+	if ((upRow.version != ver.version) || (upRow.by != ver.by))
+		upRow := { version: ver.version, by: ver.by, want: want, rows: Map() }
+	if (row := fleet_Num(fleet_Field(frame, "row")))
+		upRow.rows[row] := { row: row
+			, name: fleet_Field(frame, "name")
+			, role: fleet_Field(frame, "role")
+			, user: fleet_Field(frame, "user")
+			, machine: fleet_Field(frame, "machine") }
+	if (!upRow.want || (upRow.rows.Count != upRow.want))
+		return 0
+	if !fleet_ConfigBeats(ver, rosterVer) {
+		fleet_KeepConflict(rosterPath, upRow.rows, ver, rosterVer, "roster")
+		return 0
+	}
+	roster := upRow.rows, rosterVer := ver
+	roster_Save(rosterPath, roster, ver.version, ver.by)
+	rosterStamp := fleet_RosterStamp()
+	fleet_Event("took the roster row " ver.by " handed up, version " ver.version
+		. ", " roster.Count " rows")
+	fleet_ApplyRoster()
+	fleet_BroadcastRoster()
+	return 1
+}
+
+fleet_OnSetServer(s, frame) {
+	global servers, serversPath, serversStamp, serversVer, upServer
+	local ver, want := fleet_Num(fleet_Field(frame, "n")), slot
+
+	;a seated macro only - see fleet_OnSetRow
+	if !fleet_RowOf(s)
+		return 0
+	ver := { version: fleet_Num(fleet_Field(frame, "v"))
+		, by: fleet_Num(fleet_Field(frame, "by")) }
+	if ((upServer.version != ver.version) || (upServer.by != ver.by))
+		upServer := { version: ver.version, by: ver.by, want: want, rows: Map() }
+	if (slot := fleet_Num(fleet_Field(frame, "slot")))
+		upServer.rows[slot] := { slot: slot
+			, name: fleet_Field(frame, "name")
+			, link: fleet_Field(frame, "link")
+			, owner: fleet_Num(fleet_Field(frame, "owner"))
+			, kind: (fleet_Field(frame, "kind") = "main") ? "main" : "reserve" }
+	if (!upServer.want || (upServer.rows.Count != upServer.want))
+		return 0
+	if !fleet_ConfigBeats(ver, serversVer) {
+		fleet_KeepConflict(serversPath, upServer.rows, ver, serversVer, "servers")
+		return 0
+	}
+	servers := servers_FixMain(upServer.rows), serversVer := ver
+	servers_Save(serversPath, servers, ver.version, ver.by)
+	serversStamp := fleet_ServersStamp()
+	fleet_Event("took the servers row " ver.by " handed up, version " ver.version)
+	fleet_BroadcastServers()
+	return 1
+}
+
+;A configuration that lost is kept rather than dropped.
+;
+;Losing on version alone is ordinary and says nothing worth keeping. Losing a
+;tie is not: equal versions written by different rows means both sides of a
+;network split were edited separately, the rule that settles it is arbitrary,
+;and the copy it discards is exactly the one somebody will want to look at. So
+;that one is written beside the file it lost to, and said out loud.
+fleet_KeepConflict(path, rows, lost, kept, what) {
+	if (lost.version != kept.version) {
+		fleet_Log("ignored a " what " handed up at version " lost.version
+			. " - ours is " kept.version)
+		return 0
+	}
+	if (what = "roster")
+		roster_Save(path ".conflict", rows, lost.version, lost.by)
+	else
+		servers_Save(path ".conflict", rows, lost.version, lost.by)
+	fleet_Event("two versions of the " what " at " lost.version ": kept row "
+		. kept.by "'s, row " lost.by "'s is beside it in " what ".conflict")
+	return 1
 }
 
 ;The roster file as it stands, so a change can be noticed. Size and time
@@ -599,8 +756,7 @@ fleet_OnBind(s, frame) {
 		, role: fleet_Field(frame, "role", "guid")
 		, user: fleet_Field(frame, "user", "")
 		, machine: fleet_Field(frame, "machine", "") }
-	roster_Save(rosterPath, roster)
-	rosterStamp := fleet_RosterStamp()
+	fleet_BumpRoster()
 	fleet_Event((again ? "rebound " : "bound ") roster[row].name
 		. " (" roster[row].role ") from "
 		. fleet_Field(frame, "machine", "somewhere"))

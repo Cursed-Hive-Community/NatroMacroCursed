@@ -214,7 +214,9 @@ ext_fleetStartFleet(name, role, user) {
 	rows := roster_Load(path)
 	rows[1] := { row: 1, name: name, role: role, user: user
 		, machine: A_ComputerName }
-	roster_Save(path, rows)
+	;version one, written by row one: a fleet being created has no history to
+	;compare against and this is the first thing anybody will compare to
+	roster_Save(path, rows, 1, 1)
 	if (FleetSecret = "")
 		ext_FleetSave("FleetSecret", fleet_NewSecret())
 	ext_FleetSave("FleetRow", 1)
@@ -271,7 +273,8 @@ ext_fleetLostCoord() {
 ;belongs to the roster file, not to whatever this macro believes about itself.
 ext_fleetHello() {
 	global ext_fleetSock, ext_fleetPeers, FleetRow, FleetSecret, ext_fleetMyField
-	global ext_fleetServers, ext_fleetServerGen, ext_fleetRoster, ext_fleetRosterGen
+	global ext_fleetServers, ext_fleetServerVer, ext_fleetRoster, ext_fleetRosterVer
+	global ext_fleetHandedUp
 
 	;Forget the old picture before asking for a new one. The coordinator answers
 	;a HELLO with the whole roster, and rows are merged by number rather than
@@ -282,8 +285,9 @@ ext_fleetHello() {
 	;the servers too, and their generation with them - a coordinator we have not
 	;met may be reading a different file, and an empty generation guarantees the
 	;first SERVER frame rebuilds rather than merges
-	ext_fleetServers.Clear(), ext_fleetServerGen := ""
-	ext_fleetRoster.Clear(), ext_fleetRosterGen := ""
+	ext_fleetServers.Clear(), ext_fleetServerVer := { version: -1, by: -1 }
+	ext_fleetRoster.Clear(), ext_fleetRosterVer := { version: -1, by: -1 }
+	ext_fleetHandedUp := ""
 	;and the field we last said we were farming. A coordinator we are meeting
 	;for the first time - or one that has just been started by a takeover - has
 	;no record of it, so the next gather trip has to say so again instead of
@@ -297,8 +301,8 @@ ext_fleetHello() {
 ext_fleetOnLine(line) {
 	global ext_fleetPeers, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
 	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock, ext_fleetRefused
-	global ext_fleetServers, ext_fleetServerGen, ext_fleetServerWant
-	global ext_fleetRoster, ext_fleetRosterGen, ext_fleetRosterWant
+	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant
+	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -332,19 +336,20 @@ ext_fleetOnLine(line) {
 			sock_SendLine(ext_fleetSock, fleet_Frame("ACK", Map("id", fleet_Field(frame, "id"))))
 			ext_fleetCoordSeen := nowUnix()
 		case "SERVER":
-			;One generation of the list at a time. A generation this macro has
-			;not seen means the list changed somehow - an edit, a deletion, a
-			;different coordinator - and the only safe answer is to drop what
-			;we have and take the frames that follow. Compared for difference
-			;rather than for being newer: two coordinators reading the same
-			;file produce the same generation, and that is correct, there being
-			;nothing to rebuild.
-			if (fleet_Field(frame, "gen") != ext_fleetServerGen) {
+			;One version of the list at a time. A version this macro has not
+			;seen means the list changed somehow - an edit, a deletion, a
+			;different coordinator - and the only safe answer is to drop what we
+			;have and take the frames that follow. What the coordinator is
+			;serving is followed in memory whether or not it is the best copy
+			;anybody holds, because the panel should show what the fleet is
+			;actually running on; whether it reaches the disk is a separate
+			;question, answered in ext_fleetReplicate.
+			if (!ext_fleetSameVer(ext_fleetServerVer, frame)) {
 				ext_fleetServers.Clear()
-				ext_fleetServerGen := fleet_Field(frame, "gen")
-				ext_fleetServerWant := Integer(fleet_Field(frame, "n", 0))
+				ext_fleetServerVer := ext_fleetFrameVer(frame)
+				ext_fleetServerWant := fleet_Num(fleet_Field(frame, "n"))
 			}
-			if (row := Integer(fleet_Field(frame, "slot", 0)))
+			if (row := fleet_Num(fleet_Field(frame, "slot")))
 				ext_fleetServers[row] := frame.fields
 			ext_fleetReplicate()
 			ext_fleetCoordSeen := nowUnix()
@@ -353,12 +358,12 @@ ext_fleetOnLine(line) {
 			;is behaving - ROSTER above only describes accounts that have
 			;connected at least once. Collected exactly like the servers, and
 			;for the extra reason that this is what a macro taking over needs.
-			if (fleet_Field(frame, "gen") != ext_fleetRosterGen) {
+			if (!ext_fleetSameVer(ext_fleetRosterVer, frame)) {
 				ext_fleetRoster.Clear()
-				ext_fleetRosterGen := fleet_Field(frame, "gen")
-				ext_fleetRosterWant := Integer(fleet_Field(frame, "n", 0))
+				ext_fleetRosterVer := ext_fleetFrameVer(frame)
+				ext_fleetRosterWant := fleet_Num(fleet_Field(frame, "n"))
 			}
-			if (row := Integer(fleet_Field(frame, "row", 0)))
+			if (row := fleet_Num(fleet_Field(frame, "row")))
 				ext_fleetRoster[row] := frame.fields
 			ext_fleetReplicate()
 			ext_fleetCoordSeen := nowUnix()
@@ -420,25 +425,113 @@ ext_fleetOnLine(line) {
 ;copies - writing them would move their timestamp, which it reads as an edit,
 ;which it broadcasts as a new generation, which every macro writes again.
 ext_fleetReplicate() {
-	global ext_fleetRoster, ext_fleetRosterGen, ext_fleetRosterWant, ext_fleetRosterSaved
-	global ext_fleetServers, ext_fleetServerGen, ext_fleetServerWant, ext_fleetServerSaved
+	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant, ext_fleetRosterDisk
+	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant, ext_fleetServerDisk
+	static wasHost := -1
 
+	;While this macro is the one hosting, its files are written by the
+	;coordinator process rather than from here - every bind, every leave - so
+	;the versions remembered below go stale without anything noticing. Left
+	;that way, the first configuration to arrive after this macro stopped
+	;coordinating would be compared against a version from before everything
+	;its own coordinator had written, and a stale copy from elsewhere could
+	;beat it. Which is the exact failure the version exists to prevent, so it
+	;would be a poor place to leave one.
+	;
+	;Re-read on any change of role, which costs two reads of a few hundred
+	;bytes and happens about as often as a coordinator changes hands.
+	if (ext_fleetServerHost() != wasHost) {
+		wasHost := ext_fleetServerHost()
+		ext_fleetRosterDisk := fleet_ConfigVersion(ext_fleetRosterFile())
+		ext_fleetServerDisk := fleet_ConfigVersion(ext_fleetServersFile())
+	}
 	if ext_fleetServerHost()
 		return 0
-	if (ext_fleetReplicaWhole(ext_fleetRoster, ext_fleetRosterGen
-		, ext_fleetRosterWant, ext_fleetRosterSaved)
-		&& roster_Save(ext_fleetRosterFile(), ext_fleetRosterRows()))
-		ext_fleetRosterSaved := ext_fleetRosterGen
-	if (ext_fleetReplicaWhole(ext_fleetServers, ext_fleetServerGen
-		, ext_fleetServerWant, ext_fleetServerSaved)
-		&& servers_Save(ext_fleetServersFile(), ext_fleetServerRows()))
-		ext_fleetServerSaved := ext_fleetServerGen
+	if ext_fleetReplicaWhole(ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant) {
+		if fleet_ConfigBeats(ext_fleetRosterVer, ext_fleetRosterDisk) {
+			if roster_Save(ext_fleetRosterFile(), ext_fleetRosterRows()
+				, ext_fleetRosterVer.version, ext_fleetRosterVer.by)
+				ext_fleetRosterDisk := ext_fleetRosterVer
+		}
+		else
+			ext_fleetHandUp("roster")
+	}
+	if ext_fleetReplicaWhole(ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant) {
+		if fleet_ConfigBeats(ext_fleetServerVer, ext_fleetServerDisk) {
+			if servers_Save(ext_fleetServersFile(), ext_fleetServerRows()
+				, ext_fleetServerVer.version, ext_fleetServerVer.by)
+				ext_fleetServerDisk := ext_fleetServerVer
+		}
+		else
+			ext_fleetHandUp("servers")
+	}
 	return 1
 }
 
-;Is this generation complete, and not the one already on disk?
-ext_fleetReplicaWhole(store, gen, want, saved) {
-	return (gen != "") && (gen != saved) && want && (store.Count = want)
+;Is this version complete enough to act on?
+ext_fleetReplicaWhole(store, ver, want) {
+	return (ver.version > 0) && want && (store.Count = want)
+}
+
+;The coordinator is serving something no better than what is on this disk, so
+;offer it what is here.
+;
+;This is the half that keeps the fleet from freezing on a stale copy. The
+;safety rule on its own - never write a worse configuration over a better one -
+;stops the damage but leaves the fleet running on whatever the macro that
+;happened to take over was holding, with nobody able to correct it. So the
+;macro that holds better sends it, and the coordinator takes it if the version
+;says it is better. Sent once per version it has seen, not once per frame:
+;every row of a configuration arrives separately and all of them would
+;otherwise provoke a hand-up of their own.
+;
+;Nothing is sent when the versions are equal and were written by the same row -
+;that is the same configuration, not a disagreement about it.
+ext_fleetHandUp(what) {
+	global ext_fleetSock, ext_fleetRosterVer, ext_fleetServerVer
+	global ext_fleetRosterDisk, ext_fleetServerDisk, ext_fleetHandedUp
+	local theirs, mine, rows, row, e, key
+
+	if !ext_fleetSock
+		return 0
+	if (what = "roster")
+		theirs := ext_fleetRosterVer, mine := ext_fleetRosterDisk
+	else
+		theirs := ext_fleetServerVer, mine := ext_fleetServerDisk
+	if ((theirs.version = mine.version) && (theirs.by = mine.by))
+		return 0
+	if !fleet_ConfigBeats(mine, theirs)
+		return 0
+	key := what "/" theirs.version "/" theirs.by
+	if (ext_fleetHandedUp = key)
+		return 0
+	ext_fleetHandedUp := key
+	if (what = "roster") {
+		rows := roster_Load(ext_fleetRosterFile())
+		for row, e in rows
+			sock_SendLine(ext_fleetSock, fleet_Frame("SETROW"
+				, Map("v", mine.version, "by", mine.by, "n", rows.Count
+				, "row", e.row, "name", e.name, "role", e.role
+				, "user", e.user, "machine", e.machine)))
+		return rows.Count
+	}
+	rows := servers_Load(ext_fleetServersFile())
+	for row, e in rows
+		sock_SendLine(ext_fleetSock, fleet_Frame("SETSERVER"
+			, Map("v", mine.version, "by", mine.by, "n", rows.Count
+			, "slot", e.slot, "name", e.name, "link", e.link
+			, "owner", e.owner, "kind", e.kind)))
+	return rows.Count
+}
+
+;The version a frame says its configuration is on.
+ext_fleetFrameVer(frame) {
+	return { version: fleet_Num(fleet_Field(frame, "v"))
+		, by: fleet_Num(fleet_Field(frame, "by")) }
+}
+ext_fleetSameVer(ver, frame) {
+	return (ver.version = fleet_Num(fleet_Field(frame, "v")))
+		&& (ver.by = fleet_Num(fleet_Field(frame, "by")))
 }
 
 ;The two files the fleet's configuration lives in on this machine. Named here
@@ -669,10 +762,15 @@ ext_fleetTakeOver(why) {
 ;Bring the whole thing up. Called once, from the macro's start-up.
 ext_fleetStart() {
 	global FleetCheck, FleetRow, FleetHostRow, ext_fleetRefused
+	global ext_fleetRosterDisk, ext_fleetServerDisk
 
 	;a refusal is forgotten the moment somebody sets this macro up again -
 	;that is what being set up again means
 	ext_fleetRefused := ""
+	;what this machine already holds, so the first configuration that arrives
+	;can be compared against it rather than trusted on sight
+	ext_fleetRosterDisk := fleet_ConfigVersion(ext_fleetRosterFile())
+	ext_fleetServerDisk := fleet_ConfigVersion(ext_fleetServersFile())
 	;listening costs nothing and an unbound macro needs it most: it is how the
 	;join dialog finds a fleet to join in the first place
 	ext_fleetDiscover()
@@ -692,13 +790,14 @@ ext_fleetStart() {
 ;Stop talking to the fleet, without killing a coordinator that other macros may
 ;still be using.
 ext_fleetStop() {
-	global ext_fleetSock, ext_fleetPeers, ext_fleetServers, ext_fleetServerGen
-	global ext_fleetRoster, ext_fleetRosterGen
+	global ext_fleetSock, ext_fleetPeers, ext_fleetServers, ext_fleetServerVer
+	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetHandedUp
 
 	;nothing known about the fleet survives not being connected to it
 	ext_fleetPeers.Clear()
-	ext_fleetServers.Clear(), ext_fleetServerGen := ""
-	ext_fleetRoster.Clear(), ext_fleetRosterGen := ""
+	ext_fleetServers.Clear(), ext_fleetServerVer := { version: -1, by: -1 }
+	ext_fleetRoster.Clear(), ext_fleetRosterVer := { version: -1, by: -1 }
+	ext_fleetHandedUp := ""
 	SetTimer ext_fleetBeat, 0
 	SetTimer ext_fleetWatch, 0
 	SetTimer ext_fleetConnect, 0
@@ -1548,7 +1647,7 @@ ext_fleetServerList() {
 ;is rude. Done on the first open rather than at startup because it writes a
 ;file, and a macro that is not hosting has no business writing one.
 ext_fleetSeedServers() {
-	global FleetServersPath, FleetServerMain, FleetServerReserve
+	global FleetServersPath, FleetServerMain, FleetServerReserve, FleetRow
 	local list
 
 	if (FileExist(FleetServersPath) || !ext_fleetServerHost())
@@ -1560,7 +1659,7 @@ ext_fleetSeedServers() {
 	if (FleetServerReserve != "")
 		list[2] := { slot: 2, name: "Reserve", link: FleetServerReserve
 			, owner: 0, kind: "reserve" }
-	return servers_Save(FleetServersPath, list)
+	return servers_Save(FleetServersPath, list, 1, FleetRow)
 }
 
 ext_FleetServersGUI(*) {
@@ -1725,7 +1824,7 @@ ext_FleetServerSave(*) {
 		: 0
 	if (FleetServers[FleetServerSlot].name = "")
 		FleetServers[FleetServerSlot].name := "server " FleetServerSlot
-	servers_Save(FleetServersPath, FleetServers)
+	ext_fleetSaveServers()
 	ext_FleetServerDraw()
 	ext_FleetServerSummary()
 }
@@ -1737,7 +1836,7 @@ ext_FleetServerAdd(*) {
 	slot := servers_NextSlot(FleetServers)
 	FleetServers[slot] := { slot: slot, name: "Reserve " servers_Reserves(FleetServers) + 1
 		, link: "", owner: 0, kind: "reserve" }
-	servers_Save(FleetServersPath, FleetServers)
+	ext_fleetSaveServers()
 	ext_FleetServerDraw()
 	ext_FleetServerSummary()
 }
@@ -1756,7 +1855,7 @@ ext_FleetServerRemove(*) {
 		return
 	FleetServers.Delete(FleetServerSlot)
 	FleetServerSlot := 0
-	servers_Save(FleetServersPath, FleetServers)
+	ext_fleetSaveServers()
 	ext_FleetServerDraw()
 	ext_FleetServerSummary()
 }
@@ -1839,6 +1938,30 @@ ext_FleetShort(text, n) {
 	return SubStr(text, 1, half) " ... " SubStr(text, -half)
 }
 
+;An edit made here is the next version of the configuration, so it says so.
+;
+;Without the bump the coordinator would reload the file, find the same version
+;on different contents, and tell the fleet nothing had changed - it does catch
+;that and bump it itself, but a moment later and under its own name. Doing it
+;here keeps the edit attributed to the macro that made it, which is what
+;settles a tie between two edits made on both sides of a split.
+ext_fleetSaveRoster() {
+	global FleetRoster, FleetRosterPath, FleetRow, ext_fleetRosterDisk
+	local ver := fleet_ConfigVersion(FleetRosterPath)
+
+	ext_fleetRosterDisk := { version: ver.version + 1, by: FleetRow }
+	return roster_Save(FleetRosterPath, FleetRoster
+		, ext_fleetRosterDisk.version, ext_fleetRosterDisk.by)
+}
+ext_fleetSaveServers() {
+	global FleetServers, FleetServersPath, FleetRow, ext_fleetServerDisk
+	local ver := fleet_ConfigVersion(FleetServersPath)
+
+	ext_fleetServerDisk := { version: ver.version + 1, by: FleetRow }
+	return servers_Save(FleetServersPath, FleetServers
+		, ext_fleetServerDisk.version, ext_fleetServerDisk.by)
+}
+
 ;--- the roster editor -------------------------------------------------------
 
 ext_FleetRosterDraw() {
@@ -1904,7 +2027,7 @@ ext_FleetRosterSave(*) {
 	FleetRoster[FleetEditRow].user := Trim(FleetSetupGui["FleetEditUser"].Value)
 	if (FleetRoster[FleetEditRow].name = "")
 		FleetRoster[FleetEditRow].name := "row " FleetEditRow
-	roster_Save(FleetRosterPath, FleetRoster)
+	ext_fleetSaveRoster()
 	ext_FleetRosterDraw()
 }
 
@@ -1917,7 +2040,7 @@ ext_FleetRosterRemove(*) {
 		"Fleet", 0x40024) != "Yes")
 		return
 	FleetRoster.Delete(FleetEditRow)
-	roster_Save(FleetRosterPath, FleetRoster)
+	ext_fleetSaveRoster()
 	FleetEditRow := 0
 	ext_FleetRosterDraw()
 }

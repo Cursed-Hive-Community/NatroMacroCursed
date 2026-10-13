@@ -2754,10 +2754,19 @@ ext_fleetRefused := ""
 ;to disk. Thrown away and rebuilt whenever the generation changes, which is how
 ;a deleted entry stops being drawn; written out once whole, which is how a macro
 ;that has to take over already holds a configuration. See ext_fleetReplicate.
-ext_fleetServers := Map(), ext_fleetServerGen := ""
-ext_fleetServerWant := 0, ext_fleetServerSaved := ""
-ext_fleetRoster := Map(), ext_fleetRosterGen := ""
-ext_fleetRosterWant := 0, ext_fleetRosterSaved := ""
+ext_fleetServers := Map(), ext_fleetServerVer := { version: -1, by: -1 }
+ext_fleetServerWant := 0
+ext_fleetRoster := Map(), ext_fleetRosterVer := { version: -1, by: -1 }
+ext_fleetRosterWant := 0
+;what is actually on this machine's disk, which is not always what the
+;coordinator has just said. A replica is never allowed to go backwards, so
+;these are compared against before anything is written - see ext_fleetReplicate.
+ext_fleetRosterDisk := { version: 0, by: 0 }
+ext_fleetServerDisk := { version: 0, by: 0 }
+;which configuration this macro has already offered to the coordinator. Every
+;row of a configuration arrives as its own frame, and without this each of them
+;would provoke a hand-up of the whole thing.
+ext_fleetHandedUp := ""
 ;the server editor: the list it is working on, which slot is selected, the
 ;accounts its owner dropdown offers in the order it lists them, and the stamp
 ;that says whether the list has changed under the window
