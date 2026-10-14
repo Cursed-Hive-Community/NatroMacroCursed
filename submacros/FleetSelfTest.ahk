@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Eighteen things are checked, each because it is a way the design could be wrong
+;Twenty things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -31,6 +31,13 @@
 ;	16. a stale configuration cannot win       a late macro cannot undo the rest
 ;	17. a better configuration is taken        the fleet climbs to the best copy
 ;	18. a tie keeps one and files the other    nothing is lost deciding
+;	19. a roster cleared on purpose is applied  a wipe is not an unreadable file
+;	20. a macro's own version reaches the fleet a divergence has somewhere to show
+;
+;Nineteen is the other half of the guard behind seven. An empty roster has to
+;be refused when it is a file caught mid-write and obeyed when somebody cleared
+;the table, and the version is the only thing that tells those apart: one
+;carries the next version, the other carries none at all.
 ;
 ;Sixteen to eighteen are the versioning, and sixteen is the one that matters.
 ;Two macros that were disconnected can reconnect before the rest, one of them
@@ -124,6 +131,8 @@ clientD := 0, clientE := 0
 srvGen := ""                ;the generation of the server list last seen
 srv := Map()                ;the server list as the main macro holds it
 srvMainLink := "", srvMainOwner := -1
+myCv := -1                  ;the version the main said it held, come back round
+goneAtWipe := -1            ;how many rows had been struck before the wipe
 cfg := Map()                ;the roster as configured, as the main macro holds it
 cfgGen := "", cfgWant := 0
 ;noted as they go past rather than read back at the end: row 2 leaves the fleet
@@ -166,6 +175,13 @@ SetTimer Open, -6000
 SetTimer Rebind, -6800
 ;a server deleted, late enough that the first list has certainly arrived
 SetTimer DropServer, -9000
+;the main says which configuration it holds, which should come back to it
+SetTimer SayVersion, -8500
+;And the roster cleared on purpose, which is not the same as an unreadable one.
+;Late enough to land on a beat of its own: it strikes every row off, so a beat
+;that both wiped and carried something else would deliver the something else to
+;nobody - which is how this timing was found.
+SetTimer Wipe, -14000
 ;a stale configuration offered, then a better one, then one that ties
 SetTimer HandUpStale, -7500
 SetTimer HandUpBetter, -10500
@@ -178,7 +194,7 @@ SetTimer Blank, -8000
 ;the fuzzy macro leaves on purpose, late enough that its measured round trip
 ;has already been broadcast and can be checked
 SetTimer Leave, -11500
-SetTimer Report, -16000
+SetTimer Report, -22000
 return
 
 ;A resident arriving after everyone else, which is a resident that crashed and
@@ -254,6 +270,28 @@ OnStranger(s, event, data) {
 	}
 	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BYE"))
 		byeFinal["unknown row"] := fleet_Field(frame, "final", "missing")
+}
+
+;What a macro says about its own configuration, on the heartbeat. Without it
+;there is nowhere to see that one macro is sitting on a version of its own,
+;which is the only symptom the stale-copy failure has.
+SayVersion(*) {
+	global clientA
+
+	sock_SendLine(clientA, fleet_Frame("HEARTBEAT", Map("cv", 42, "cby", 7)))
+}
+
+;The table cleared on purpose: no rows, and the next version.
+;
+;This must be obeyed, where a file that merely parses to nothing must not. It
+;is destructive and correctly so - every account is gone, so every macro is
+;turned away - which is why the count of rows already struck is taken first,
+;so the earlier checks can still say what was true before it.
+Wipe(*) {
+	global ROSTER, goneRows, goneAtWipe
+
+	goneAtWipe := goneRows.Count
+	roster_Save(ROSTER, Map(), 11, 1)
 }
 
 ;A configuration from the past, offered by a seated macro.
@@ -344,7 +382,7 @@ Handle(label, row, name, s, event, data) {
 	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRows
 	global bothSeen, row2, rttSeen, lateField
 	global srv, srvGen, srvMainLink, srvMainOwner
-	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgTookUp
+	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgTookUp, myCv
 	local frame
 
 	if (event = "connect") {
@@ -360,6 +398,9 @@ Handle(label, row, name, s, event, data) {
 		return
 	if (frame.verb = "ROSTER") {
 		seenBy[label][Integer(fleet_Field(frame, "row", 0))] := frame
+		if ((label = "main") && (Integer(fleet_Field(frame, "row", 0)) = 1)
+			&& (Integer(fleet_Field(frame, "cv", 0)) > 0))
+			myCv := Integer(fleet_Field(frame, "cv", 0))
 		;noted as it goes past rather than read back at the end: row 2 is struck
 		;from the live view later in this test, and these checks still have to
 		;be able to say what was true while it was there
@@ -460,7 +501,7 @@ OnBad(s, event, data) {
 
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
-	global clientC, clientD, clientE, boundRow, SERVERS
+	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe
 	global srv, srvGen, srvMainLink, srvMainOwner
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgTookUp, byeFinal
 	global ROSTER, gotoField
@@ -495,8 +536,10 @@ Report(*) {
 		, lateField == "Sunflower") && allOk
 	;row 1 is the main, and it was never removed from anything - so if the
 	;coordinator struck it off, it did so because it believed an empty file
+	;against the count taken before the deliberate wipe below, which strikes
+	;everybody off on purpose and would otherwise look like the same fault
 	allOk := Check(lines, "an unreadable roster strikes nobody off"
-		, seenBy["main"].Has(1) && !goneRows.Has(1) && !goneRows.Has(3)) && allOk
+		, (goneAtWipe = 1) && seenBy["main"].Has(1)) && allOk
 	allOk := Check(lines, "a ping is answered and timed"
 		, pinged && (rttSeen >= 0)) && allOk
 	allOk := Check(lines, "a macro that leaves is struck from the fleet"
@@ -534,6 +577,12 @@ Report(*) {
 	allOk := Check(lines, "a tie keeps ours and files theirs"
 		, FileExist(ROSTER ".conflict")
 			&& (roster_Load(ROSTER ".conflict").Has(3))) && allOk
+	;the exact line, because the whole question is whether it was applied or
+	;mistaken for the unreadable file that check seven is about
+	allOk := Check(lines, "a roster cleared on purpose is applied, not ignored"
+		, InStr(logText, "roster reloaded, 0 rows, version 11")) && allOk
+	allOk := Check(lines, "a macro's own configuration version reaches the fleet"
+		, myCv = 42) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -549,6 +598,9 @@ Report(*) {
 	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing"))
 	lines.Push("row 3 set itself up again and was handed row "
 		. ((boundRow >= 0) ? boundRow : "nothing at all"))
+	lines.Push("the main said it held v42 and got back: "
+		. ((myCv >= 0) ? "v" myCv : "nothing")
+		. ", rows struck before the wipe: " goneAtWipe)
 	lines.Push("lowest version ever served: " cfgLowVer
 		. ", handed-up roster came back at: " (cfgTookUp ? cfgTookUp : "never"))
 	lines.Push("configured rows: " cfgMost " promised at the fullest, "

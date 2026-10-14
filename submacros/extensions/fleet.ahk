@@ -20,6 +20,28 @@
 ;   every two seconds, so this stays right even after a router hands out a new
 ;   lease, which is the whole reason nothing has to be typed in any more.
 ;3. An address entered by hand, for a network where broadcasts are blocked.
+;Which configuration the fleet is on, and whether this macro agrees.
+;
+;The version is the thing the whole design rests on and it was visible nowhere,
+;which left the one failure it exists to prevent impossible to diagnose from
+;the screen. Said plainly when they agree, and said loudly when they do not.
+ext_fleetConfigLine() {
+	global ext_fleetRosterVer, ext_fleetRosterDisk
+
+	if (ext_fleetRosterVer.version <= 0)
+		return "no configuration yet"
+	if ((ext_fleetRosterVer.version = ext_fleetRosterDisk.version)
+		&& (ext_fleetRosterVer.by = ext_fleetRosterDisk.by))
+		return "config v" ext_fleetRosterVer.version
+	if fleet_ConfigBeats(ext_fleetRosterDisk, ext_fleetRosterVer)
+		return "config v" ext_fleetRosterVer.version
+			. " - THIS MACRO HOLDS v" ext_fleetRosterDisk.version ", handing it up"
+	return "config v" ext_fleetRosterVer.version " by row " ext_fleetRosterVer.by
+		. " - this macro holds v" ext_fleetRosterDisk.version
+		. " by row " ext_fleetRosterDisk.by
+
+}
+
 ;Who is running the fleet, in words, or "" while nobody has said.
 ;
 ;The coordinator reports the row that started it on every heartbeat, and that
@@ -478,20 +500,57 @@ ext_fleetReplicaFlush() {
 			if roster_Save(ext_fleetRosterFile(), ext_fleetRosterRows()
 				, ext_fleetRosterVer.version, ext_fleetRosterVer.by)
 				ext_fleetRosterDisk := ext_fleetRosterVer
+			else
+				ext_fleetProblem("could not write the roster replica to "
+					. ext_fleetRosterFile()
+					. " - this macro cannot stand in as coordinator")
 		}
-		else
+		else {
+			ext_fleetSayDivergent("roster", ext_fleetRosterVer, ext_fleetRosterDisk)
 			ext_fleetHandUp("roster")
+		}
 	}
 	if ext_fleetReplicaWhole(ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant) {
 		if fleet_ConfigBeats(ext_fleetServerVer, ext_fleetServerDisk) {
 			if servers_Save(ext_fleetServersFile(), ext_fleetServerRows()
 				, ext_fleetServerVer.version, ext_fleetServerVer.by)
 				ext_fleetServerDisk := ext_fleetServerVer
+			else
+				ext_fleetProblem("could not write the servers replica to "
+					. ext_fleetServersFile())
 		}
-		else
+		else {
+			ext_fleetSayDivergent("servers", ext_fleetServerVer, ext_fleetServerDisk)
 			ext_fleetHandUp("servers")
+		}
 	}
 	return 1
+}
+
+;The fleet is running one configuration and this macro holds another, and the
+;rule says ours stays.
+;
+;Only worth a word when the versions are equal and were written by different
+;rows - both sides of a split edited separately, which no version can settle
+;and which the lowest row wins arbitrarily. Being behind is ordinary and fixes
+;itself; being tied means somebody's edit is sitting on this disk and will
+;never reach the fleet, and nothing else would ever say so. The coordinator
+;keeps the losing copy in a .conflict file; this is the half of that which the
+;person looking at this macro can see.
+ext_fleetSayDivergent(what, theirs, mine) {
+	global ext_fleetSaidDivergent
+	local key
+
+	if (theirs.version != mine.version)
+		return 0
+	if (theirs.by = mine.by)
+		return 0
+	key := what "/" theirs.version "/" theirs.by
+	if (ext_fleetSaidDivergent = key)
+		return 0
+	ext_fleetSaidDivergent := key
+	return ext_fleetProblem("two versions of the " what " at " theirs.version
+		. ": the fleet runs row " theirs.by "'s, this macro holds row " mine.by "'s")
 }
 
 ;Is this version complete enough to act on?
@@ -689,10 +748,14 @@ ext_fleetSayLeaving() {
 ;Say we are still here. Cheap, and it is what tells the coordinator apart from a
 ;macro that has quietly died.
 ext_fleetBeat() {
-	global ext_fleetSock
+	global ext_fleetSock, ext_fleetRosterDisk
 
+	;the heartbeat carries which configuration this macro holds, so that one
+	;macro sitting on a different version from the rest can be seen rather than
+	;deduced. It is the only symptom the stale-copy failure has.
 	if ext_fleetSock
-		sock_SendLine(ext_fleetSock, fleet_Frame("HEARTBEAT"))
+		sock_SendLine(ext_fleetSock, fleet_Frame("HEARTBEAT"
+			, Map("cv", ext_fleetRosterDisk.version, "cby", ext_fleetRosterDisk.by)))
 	else
 		ext_fleetConnect()
 }
@@ -924,7 +987,7 @@ ext_fleetSummary() {
 	;everything, and the address it was reached on says less than either now
 	;that the machine can be named.
 	return "Fleet run by " ext_FleetOr(ext_fleetCoordWho(), "a macro it cannot name yet")
-		. " - term " ext_fleetTerm
+		. " - term " ext_fleetTerm " - " ext_fleetConfigLine()
 		. ((silent > 15) ? " - quiet for " silent "s" : "")
 }
 
@@ -1254,12 +1317,16 @@ ext_FleetPeerGUI(row) {
 	;the link itself
 	ext_FleetPeerLine("PeerRtt", 282, "Response time")
 	ext_FleetPeerLine("PeerSeen", 304, "Last heard from")
+	;which configuration this particular macro is holding. Per account rather
+	;than once for the fleet, because the failure worth seeing is one macro
+	;sitting on a version of its own.
+	ext_FleetPeerLine("PeerConfig", 326, "Configuration")
 
-	FleetPeerGui.Add("Button", "x264 y340 w100 h26", "Close").OnEvent("Click", ext_FleetPeerClose)
+	FleetPeerGui.Add("Button", "x264 y362 w100 h26", "Close").OnEvent("Click", ext_FleetPeerClose)
 
 	ext_FleetPeerDraw()
 	SetTimer ext_FleetPeerDraw, 1000
-	FleetPeerGui.Show("w380 h378")
+	FleetPeerGui.Show("w380 h400")
 }
 
 ;Label left, value right. Every line the same shape reads faster than sentences.
@@ -1328,6 +1395,24 @@ ext_FleetPeerDraw() {
 		? Integer(rtt) " ms"
 		: "not measured yet"
 	try FleetPeerGui["PeerSeen"].Text := ext_FleetAgo(ext_FleetNum(p, "seen"))
+	try FleetPeerGui["PeerConfig"].Text := ext_FleetPeerConfig(p)
+}
+
+;What configuration one macro says it is holding, against what the fleet runs.
+;
+;"in step" rather than a version number when they agree, because the number
+;only matters when it is the wrong one - and a panel of matching numbers is a
+;panel nobody reads.
+ext_FleetPeerConfig(p) {
+	global ext_fleetRosterVer
+	local v := ext_FleetNum(p, "cv"), by := ext_FleetNum(p, "cby")
+
+	if !v
+		return "has not said"
+	if ((v = ext_fleetRosterVer.version) && (by = ext_fleetRosterVer.by))
+		return "v" v ", in step with the fleet"
+	return "v" v " by row " by " - THE FLEET RUNS v" ext_fleetRosterVer.version
+		. " by row " ext_fleetRosterVer.by
 }
 
 ext_FleetOr(value, fallback) {
@@ -1655,7 +1740,14 @@ ext_FleetSave(name, value) {
 	global
 
 	%name% := value
-	IniWrite value, "settings\nm_config.ini", "Fleet", name
+	;the global is set either way, so the screen and this session agree; it is
+	;the ini that may refuse, and a setting that did not reach disk is a macro
+	;that forgets what it was told the next time it starts
+	try
+		IniWrite value, "settings\nm_config.ini", "Fleet", name
+	catch as e
+		ext_fleetProblem("could not save " name " to settings\nm_config.ini: "
+			. e.Message)
 }
 
 ;--- the servers -------------------------------------------------------------
@@ -2029,16 +2121,26 @@ ext_fleetSaveRoster() {
 	local ver := fleet_ConfigVersion(FleetRosterPath)
 
 	ext_fleetRosterDisk := { version: ver.version + 1, by: FleetRow }
-	return roster_Save(FleetRosterPath, FleetRoster
+	if roster_Save(FleetRosterPath, FleetRoster
 		, ext_fleetRosterDisk.version, ext_fleetRosterDisk.by)
+		return 1
+	ext_fleetProblem("could not write " FleetRosterPath " - the change was lost")
+	MsgBox "The change could not be written to`n`n" FleetRosterPath
+		. "`n`nIt has not been saved. Check the folder is writable.", "Fleet", 0x40010
+	return 0
 }
 ext_fleetSaveServers() {
 	global FleetServers, FleetServersPath, FleetRow, ext_fleetServerDisk
 	local ver := fleet_ConfigVersion(FleetServersPath)
 
 	ext_fleetServerDisk := { version: ver.version + 1, by: FleetRow }
-	return servers_Save(FleetServersPath, FleetServers
+	if servers_Save(FleetServersPath, FleetServers
 		, ext_fleetServerDisk.version, ext_fleetServerDisk.by)
+		return 1
+	ext_fleetProblem("could not write " FleetServersPath " - the change was lost")
+	MsgBox "The change could not be written to`n`n" FleetServersPath
+		. "`n`nIt has not been saved. Check the folder is writable.", "Fleet", 0x40010
+	return 0
 }
 
 ;--- the roster editor -------------------------------------------------------

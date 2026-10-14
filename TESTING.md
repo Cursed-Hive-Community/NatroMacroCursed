@@ -77,6 +77,8 @@ and the real protocol. They are the strongest evidence in the repository.
 - [x] a stale configuration handed up is refused
 - [x] a better configuration handed up is taken
 - [x] a tie keeps ours and files theirs as `.conflict`
+- [x] a roster cleared on purpose is applied, where an unreadable one is not
+- [x] a macro's own configuration version reaches the fleet
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -286,6 +288,10 @@ it has been watched happen.
       the rest, plug the two back in first so one takes over, and check that the
       good configuration wins and nobody's file was overwritten
 - [ ] a tie leaves a `.conflict` file and a line in the log
+- [ ] the macro that loses a tie says so on its own screen too, not only in the
+      coordinator's log
+- [ ] a settings folder made read-only is reported rather than silently costing
+      the fleet its replica
 
 ### The panel, live
 
@@ -296,6 +302,9 @@ it has been watched happen.
 - [ ] the log says why seats changed hands
 - [ ] clicking a card opens the right account
 - [ ] the two strip lines on the main window track the fleet
+- [ ] the summary names the configuration version, and says so loudly when this
+      macro holds a different one
+- [ ] the account panel's Configuration row shows a macro out of step
 
 ---
 
@@ -330,3 +339,12 @@ Not bugs to find - bugs already known about, with no fix yet.
   still tells the truth.
 - **Colour has never been seen.** Every palette decision in the Fleet window is
   unverified.
+- **Absolute timestamps cross machines.** `until` on a guiding star comes from
+  the reporting macro's clock and is counted down against the viewer's. Two
+  minutes of drift between PCs makes the countdown two minutes wrong, and ten
+  makes "last heard from" meaningless. Durations should travel as seconds
+  remaining. Not fixed.
+- **The configuration is rebroadcast every beat** even when nothing changed. The
+  version makes it free for the receiver, not for the network. It should go out
+  on change and on a join only - which it already does, so what is left is to
+  stop sending it on the beat as well.

@@ -176,7 +176,7 @@ fleet_OnLine(s, line) {
 		case "HELLO":
 			fleet_OnHello(s, frame)
 		case "HEARTBEAT":
-			fleet_Touch(s)
+			fleet_OnBeat(s, frame)
 		case "OPEN":
 			fleet_OnOpen(s, frame)
 		case "BIND":
@@ -242,7 +242,11 @@ fleet_OnHello(s, frame) {
 		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: 0
 		;-1 rather than 0: nothing has been measured yet, which is not the same
 		;as a macro that answered instantly
-		, rtt: -1, mondoIn: 0 }
+		, rtt: -1, mondoIn: 0
+		;which configuration that macro holds on its own disk. The fleet's whole
+		;correctness story is about versions, and without this there is nowhere
+		;to look to see that one macro is sitting on a different one.
+		, cv: 0, cby: 0 }
 	bySocket[s] := row
 	fleet_Event("row " row " (" name ") joined")
 	;tell the newcomer who is in charge before anything else, so it knows which
@@ -300,6 +304,20 @@ fleet_Touch(s) {
 		peers[row].lastSeen := nowUnix()
 }
 
+;A heartbeat says which configuration that macro holds, so the panel can show
+;one macro sitting on a different version from the rest - which is the only
+;symptom the stale-copy failure has.
+fleet_OnBeat(s, frame) {
+	global peers
+	local row := fleet_RowOf(s)
+
+	fleet_Touch(s)
+	if !row
+		return
+	peers[row].cv := fleet_Num(fleet_Field(frame, "cv"))
+	peers[row].cby := fleet_Num(fleet_Field(frame, "cby"))
+}
+
 ;How many macros are connected right now.
 ;
 ;Not peers.Count: a row that has gone keeps its place in that table, marked
@@ -352,6 +370,10 @@ fleet_OnLeave(s) {
 	;no BYE: it is the macro's own decision and it is not being refused
 	fleet_Drop(row, "left the fleet", 0)
 	fleet_Broadcast()
+	;the roster changed, so the configuration goes out now rather than on the
+	;next beat - a macro that reconnected in between would otherwise be handed
+	;a version that no longer describes the fleet
+	fleet_BroadcastRoster()
 }
 
 ;Take a row out of the fleet altogether. GONE is the only frame that removes
@@ -423,12 +445,14 @@ fleet_Beat() {
 	;pick up an edited roster without a restart
 	if ((stamp := fleet_RosterStamp()) != rosterStamp) {
 		fresh := roster_Load(rosterPath)
-		;A reload that comes back empty while macros are connected is a file
-		;caught mid-write or briefly missing, not seven accounts deleted at
-		;once. Believing it would strike the whole fleet off and send every
-		;macro a BYE, which is a catastrophe produced by a benign race - so the
-		;stamp is left untouched and the next beat reads it again.
-		if (!fresh.Count && peers.Count)
+		ver := fleet_ConfigVersion(rosterPath)
+		;An empty roster is a legitimate state - somebody cleared the table -
+		;and an unreadable one is not. The version is the only thing that can
+		;tell them apart: a roster emptied on purpose was written with the next
+		;version, while a file caught mid-write or briefly missing parses to
+		;nothing and carries no version at all. Believing the second would
+		;strike the whole fleet off and send every macro a BYE.
+		if (!fresh.Count && peers.Count && (ver.version <= rosterVer.version))
 			fleet_Log("ignored an empty roster reload - the file was unreadable")
 		else {
 			roster := fresh, rosterStamp := stamp
@@ -437,7 +461,6 @@ fleet_Beat() {
 			;it already had. A version the editor bumped itself is adopted;
 			;anything else is bumped here and written back, which is what makes
 			;an edit from outside this process propagate at all.
-			ver := fleet_ConfigVersion(rosterPath)
 			if (ver.version > rosterVer.version)
 				rosterVer := ver
 			else
@@ -500,7 +523,10 @@ fleet_Broadcast() {
 			, "guiding", p.guidingField, "until", p.guidingUntil, "charge", p.charge
 			;both are for the detail panel: how long this macro takes to answer,
 			;and when it last said anything at all
-			, "rtt", p.rtt, "seen", p.lastSeen)
+			, "rtt", p.rtt, "seen", p.lastSeen
+			;and which configuration that macro is holding, so a divergence has
+			;somewhere to show itself
+			, "cv", p.cv, "cby", p.cby)
 		fleet_Send(fleet_Frame("ROSTER", f))
 	}
 }
@@ -525,6 +551,17 @@ fleet_BroadcastRoster() {
 	global roster, rosterVer
 	local r, e
 
+	;A roster with nothing in it still has to say so, or clearing the table on
+	;purpose would reach nobody - one frame carrying the version and a count of
+	;none. The guard that used to send nothing here was aimed at a coordinator
+	;which had come up with no configuration at all, and that one is caught by
+	;its version instead: an empty roster written on purpose carries the next
+	;version, while a missing or half-written file parses to none.
+	if !roster.Count {
+		fleet_Send(fleet_Frame("ROW", Map("v", rosterVer.version, "by", rosterVer.by
+			, "n", 0)))
+		return
+	}
 	for r, e in roster
 		fleet_Send(fleet_Frame("ROW", Map("v", rosterVer.version, "by", rosterVer.by
 			, "n", roster.Count
@@ -567,7 +604,13 @@ fleet_BumpRoster() {
 	global roster, rosterPath, rosterStamp, rosterVer, hostRow
 
 	rosterVer := { version: rosterVer.version + 1, by: hostRow }
-	roster_Save(rosterPath, roster, rosterVer.version, rosterVer.by)
+	;A write that failed is not a detail. This file is what a replacement
+	;coordinator reads, so a settings folder gone read-only - or a full disk -
+	;quietly costs the fleet the one thing that lets it survive losing this
+	;machine, and it would have gone unmentioned.
+	if !roster_Save(rosterPath, roster, rosterVer.version, rosterVer.by)
+		fleet_Event("COULD NOT WRITE THE ROSTER to " rosterPath
+			. " - the fleet will not survive losing this machine")
 	;our own write would otherwise look like an outside edit and cost a
 	;pointless reload on the next beat
 	rosterStamp := fleet_RosterStamp()
@@ -577,7 +620,8 @@ fleet_BumpServers() {
 	global servers, serversPath, serversStamp, serversVer, hostRow
 
 	serversVer := { version: serversVer.version + 1, by: hostRow }
-	servers_Save(serversPath, servers, serversVer.version, serversVer.by)
+	if !servers_Save(serversPath, servers, serversVer.version, serversVer.by)
+		fleet_Event("COULD NOT WRITE THE SERVERS to " serversPath)
 	serversStamp := fleet_ServersStamp()
 	return 1
 }
@@ -796,6 +840,9 @@ fleet_OnBind(s, frame) {
 		. " (" roster[row].role ") from "
 		. fleet_Field(frame, "machine", "somewhere"))
 	sock_SendLine(s, fleet_Frame("BOUND", Map("row", row, "secret", secret)))
+	;a new account is a new configuration, and it travels at once for the same
+	;reason a departure does
+	fleet_BroadcastRoster()
 }
 
 ;The row this account already has, or 0.

@@ -2769,6 +2769,9 @@ ext_fleetCoordPid := 0
 ;the last fault worth telling somebody about, and the row and secret handed
 ;over by a bind that is waiting for a timer to finish it off
 ext_fleetLastProblem := "", ext_fleetBoundWith := ""
+;which divergence has already been reported, so a disagreement is said once
+;rather than on every frame of every beat - see ext_fleetSayDivergent
+ext_fleetSaidDivergent := ""
 ;which configuration this macro has already offered to the coordinator. Every
 ;row of a configuration arrives as its own frame, and without this each of them
 ;would provoke a hand-up of the whole thing.
