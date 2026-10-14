@@ -37,16 +37,45 @@ SOCK_FD_READ := 1, SOCK_FD_WRITE := 2, SOCK_FD_ACCEPT := 8
 ;the two Winsock errors worth telling apart from a real failure
 SOCK_EWOULDBLOCK := 10035
 
+;A line longer than this is not a frame. It is a broken stream or a hostile
+;one, and the buffer holding it would otherwise double until the process runs
+;out of memory. The longest frame anything here sends is a server entry
+;carrying a private server link - a few hundred bytes - so this leaves two
+;orders of magnitude of room before it refuses.
+SOCK_MAX_LINE := 65536
+;And what one socket may have waiting to go out. A coordinator sends a few
+;kilobytes a beat to each macro, so this is minutes of backlog for a peer that
+;has stopped reading - after which it is not coming back, and holding its mail
+;costs more than losing it. Without a ceiling, one stuck macro grows the
+;coordinator's memory every five seconds for as long as it is left running.
+SOCK_MAX_QUEUE := 1048576
+
 ;Per socket state, keyed by handle. Each entry holds the caller's callback, the
 ;bytes received that do not yet make up a whole line, and the bytes queued for
 ;sending that the socket would not take.
 sock_state := Map()
+
+;Why a socket was dropped from this side, which is the one thing the caller
+;cannot work out for itself: a connection closed on purpose and a connection
+;that went away look identical from the other end of a callback. Kept so the
+;Fleet panel can say it rather than leaving somebody to guess.
+sock_lastError := ""
 
 ;An optional eye on the dispatcher. Unset in normal use; a self-test sets it
 ;to see which events Windows actually delivered, which is the one thing a
 ;caller cannot work out from outside - and the thing that would have found
 ;the dropped-message bug above in a minute rather than a day.
 sock_trace := ""
+
+;Record a fault of our own making. Not routed through sock_trace: that is the
+;self-test's window onto which events Windows delivered, and a fault is not one
+;of those.
+sock_Problem(s, why) {
+	global sock_lastError
+
+	sock_lastError := FormatTime(A_Now, "HH:mm:ss") "  socket " s ": " why
+	return 1
+}
 
 ;Winsock has to be started once per process, and the dispatcher hooked up with
 ;it. Repeat calls are free.
@@ -166,6 +195,17 @@ sock_SendLine(s, text) {
 	;it accepts, so the buffer has to hold it - but it is not part of the frame,
 	;and the next line written will simply overwrite it.
 	need := StrPut(line, "UTF-8")
+	if (st.outLen + need > SOCK_MAX_QUEUE) {
+		;Dropped rather than queued, and deliberately without telling the caller
+		;through its own callback. A send is usually made from inside a loop over
+		;the caller's own table of peers, and re-entering that loop to delete
+		;from it is how the table gets corrupted. So the socket simply stops
+		;existing: the next send to it returns 0, and the ordinary quiet-peer
+		;timeout notices in its own time.
+		sock_Problem(s, "send queue full at " st.outLen " bytes, dropped it")
+		sock_Close(s)
+		return 0
+	}
 	;the queue is kept as bytes rather than as a string, because a partial send
 	;can stop in the middle of a UTF-8 character, and half a character is not
 	;something a string can hold
@@ -301,6 +341,15 @@ sock_Receive(s) {
 		;buffer are then addressed to a connection that no longer exists
 		if !sock_state.Has(s)
 			break
+	}
+	;Whatever is left is an unfinished line, and past the ceiling it is not a
+	;line at all. Reported through the callback the same way a close is, because
+	;that is what it amounts to from the caller's point of view.
+	if (sock_state.Has(s) && (st.inLen > SOCK_MAX_LINE)) {
+		sock_Problem(s, "no end of frame in " st.inLen " bytes, dropped it")
+		st.callback.Call(s, "close", "")
+		sock_Close(s)
+		return 0
 	}
 	return 1
 }

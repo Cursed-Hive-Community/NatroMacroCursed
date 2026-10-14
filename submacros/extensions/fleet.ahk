@@ -187,15 +187,31 @@ ext_fleetOnBindSocket(s, event, data) {
 ;We are in. Keep the row and the secret, and join properly - the binding
 ;socket has done its one job and is dropped.
 ext_fleetBound(row, newSecret) {
-	global ext_fleetBindSock, ext_fleetBindResult, FleetRow
+	global ext_fleetBoundWith
 
 	if (row <= 0)
 		return 0
-	ext_FleetSave("FleetRow", row)
+	;On a timer, for the same reason as the replica. This runs inside the socket
+	;callback for the binding connection, and what it has to do is write four
+	;settings to disk and then close that very socket and restart the fleet -
+	;none of which belongs inside a dispatch holding Critical, and none of which
+	;wants to happen while the frame that triggered it is still in flight.
+	ext_fleetBoundWith := { row: row, secret: newSecret }
+	SetTimer ext_fleetFinishBind, -50
+	return 1
+}
+
+ext_fleetFinishBind() {
+	global ext_fleetBoundWith, ext_fleetBindSock, ext_fleetBindResult
+
+	if !IsObject(ext_fleetBoundWith)
+		return 0
+	ext_FleetSave("FleetRow", ext_fleetBoundWith.row)
 	ext_FleetSave("FleetHostRow", 0)
-	if (newSecret != "")
-		ext_FleetSave("FleetSecret", newSecret)
+	if (ext_fleetBoundWith.secret != "")
+		ext_FleetSave("FleetSecret", ext_fleetBoundWith.secret)
 	ext_FleetSave("FleetCheck", 1)
+	ext_fleetBoundWith := ""
 	if ext_fleetBindSock
 		sock_Close(ext_fleetBindSock), ext_fleetBindSock := 0
 	ext_fleetStop()
@@ -424,7 +440,17 @@ ext_fleetOnLine(line) {
 ;And never on the machine that coordinates. Its files are the originals, not
 ;copies - writing them would move their timestamp, which it reads as an edit,
 ;which it broadcasts as a new generation, which every macro writes again.
+;Arm the write. Called from the socket dispatch, which holds Critical, where
+;reading and writing files would stall every timer in the macro behind a disk -
+;and this macro is also sending keystrokes to a game. A one-shot timer runs the
+;work as its own thread a moment later, outside the dispatch. Re-arming simply
+;moves the moment, so a burst of frames still produces one write.
 ext_fleetReplicate() {
+	SetTimer ext_fleetReplicaFlush, -50
+	return 1
+}
+
+ext_fleetReplicaFlush() {
 	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant, ext_fleetRosterDisk
 	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant, ext_fleetServerDisk
 	static wasHost := -1
@@ -743,19 +769,72 @@ ext_fleetSuccessor(skip := 0) {
 ;it. The higher term is what makes the fleet follow us rather than the process
 ;we are replacing.
 ext_fleetTakeOver(why) {
-	global ext_fleetTerm, ext_fleetSock, ext_fleetCoordSeen
+	global ext_fleetTerm, ext_fleetSock, ext_fleetCoordSeen, ext_fleetCoordPid
 	global FleetPort, FleetSecret, FleetRow, exe_path32
 
+	;A coordinator we started and which is still running is the coordinator. A
+	;second one would be refused the port anyway, and leaving the first behind
+	;is how a machine collects a handful of them - two accumulated in the test
+	;VM before anybody noticed they were there.
+	if (ext_fleetCoordPid && ProcessExist(ext_fleetCoordPid))
+		return 0
 	nm_setStatus("Starting", "Fleet coordinator`n" why)
 	ext_fleetTerm++
-	try Run '"' exe_path32 '" /script "' A_WorkingDir '\submacros\Fleet.ahk" '
-		. FleetPort ' "' FleetSecret '" ' ext_fleetTerm ' ' FleetRow, , "Hide"
+	;the failure is caught rather than swallowed: a wrong path here means no
+	;coordinator ever starts, and the macro would otherwise retry for ever
+	;against a launch that silently does nothing
+	try
+		Run '"' exe_path32 '" /script "' A_WorkingDir '\submacros\Fleet.ahk" '
+			. FleetPort ' "' FleetSecret '" ' ext_fleetTerm ' ' FleetRow
+			, , "Hide", &ext_fleetCoordPid
+	catch as e {
+		ext_fleetCoordPid := 0
+		ext_fleetProblem("could not start a coordinator: " e.Message)
+	}
 	;give it a moment to bind before knocking, and drop the dead connection so
 	;the next attempt starts from loopback again
 	if ext_fleetSock
 		sock_Close(ext_fleetSock), ext_fleetSock := 0
 	ext_fleetCoordSeen := nowUnix()
 	SetTimer ext_fleetConnect, -2000
+	return 1
+}
+
+;Stop the coordinator this macro started.
+;
+;It is a separate process and nothing else would ever end it. The macro that
+;launched it can be closed, or crash, and the coordinator carries on holding
+;the port and shouting its beacon at the network for as long as the machine is
+;up. The coordinator has an idle timeout of its own for the crash case; this is
+;the ordinary one.
+ext_fleetEndCoord() {
+	global ext_fleetCoordPid
+
+	if (ext_fleetCoordPid && ProcessExist(ext_fleetCoordPid))
+		try ProcessClose(ext_fleetCoordPid)
+	ext_fleetCoordPid := 0
+	return 1
+}
+
+;Registered with OnExit beside the macro's own handler rather than inside it -
+;upstream's exit path is not ours to edit, and OnExit takes more than one.
+ext_fleetOnExit(*) {
+	ext_fleetEndCoord()
+}
+
+;Something went wrong in a way nobody would otherwise hear about.
+;
+;Almost everything in this subsystem is wrapped in a bare try, which is right
+;for a repaint that failed and wrong for anything that matters. A fault goes in
+;the fleet's own log where the panel shows it, and the last one is kept so a
+;line of the panel can say so without scrolling.
+ext_fleetProblem(text) {
+	global ext_fleetEvents, ext_fleetLastProblem
+
+	ext_fleetLastProblem := FormatTime(A_Now, "HH:mm:ss") "  " text
+	ext_fleetEvents.InsertAt(1, ext_fleetLastProblem)
+	while (ext_fleetEvents.Length > 80)
+		ext_fleetEvents.Pop()
 	return 1
 }
 

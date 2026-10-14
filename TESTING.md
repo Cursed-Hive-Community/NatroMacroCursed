@@ -196,6 +196,29 @@ Needs: Sticker Stack enabled in the Boost tab, where the timer and item live.
 Not implemented and deliberately so: the **Kill** path, which is what an `atk`
 account is for. It waits for the queue - see the note above `ext_mondoDue`.
 
+### Limits and process lifecycle
+
+These are the two that can take a process down, and neither is cheaply testable
+with the harness that exists - which is a reason to write it down, not a reason
+to pretend otherwise.
+
+- [ ] a peer that stops reading is dropped once its send queue passes 1 MB
+      `loads` — needs a peer that does not drain its socket, and this library's
+      dispatcher always drains, so the harness cannot build one
+- [ ] a stream with no end of frame in 64 KB is dropped `loads` — testable only
+      by sending raw bytes with no newline, which would mean adding a raw send
+      to a library that is deliberately line-only, for the test's sake alone
+- [ ] closing the macro ends the coordinator it started (`OnExit`) `loads`
+- [ ] a coordinator whose macro was killed exits after 5 minutes alone `loads` —
+      correct by reading, and a test would have to wait out the 5 minutes
+- [ ] a macro does not start a second coordinator while its own still runs
+      `loads`
+- [ ] a coordinator that fails to launch says so instead of being retried in
+      silence `loads`
+
+The quickest real check for all six: open the macro, look in Task Manager for
+one `AutoHotkey64.exe` more than you started, close the macro, and look again.
+
 ### Enzymes, boosted only
 
 - [ ] ticked, an enzyme is held back until the field is boosted

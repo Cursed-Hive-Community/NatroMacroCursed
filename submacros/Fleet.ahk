@@ -39,6 +39,16 @@ FLEET_QUIET_SECS := 30
 ;the beacon goes out more often than the heartbeat, because it is what a
 ;macro starting up waits on before it can do anything at all
 FLEET_BEACON_SECS := 2
+;How long with nothing connected before this process gives up and goes.
+;
+;A coordinator is started by a macro and outlives it: the macro can be closed,
+;or crash, and this process carries on holding the port and broadcasting to the
+;network for as long as the machine is up. The macro ends the one it started,
+;which covers the ordinary case - this covers the rest. Five minutes, because a
+;macro reconnects within seconds of any interruption worth waiting out, and a
+;coordinator nobody has spoken to for five minutes is a coordinator nobody
+;wants.
+FLEET_IDLE_SECS := 300
 
 port := (A_Args.Length >= 1) ? Integer(A_Args[1]) : 47600
 secret := (A_Args.Length >= 2) ? A_Args[2] : ""
@@ -108,6 +118,9 @@ pingAt := Map()
 ;crash - has to be told where the hive is standing. Waiting for the main to
 ;change field means waiting for ever on a macro left on one field.
 leadField := ""
+
+;when a macro was last actually connected, for the idle timeout above
+lastSeated := nowUnix()
 
 fleet_Log("coordinator starting, port " port ", term " term ", row " hostRow)
 ;The port is the lock, and sock_Listen is asked to hold it exclusively - see
@@ -287,6 +300,21 @@ fleet_Touch(s) {
 		peers[row].lastSeen := nowUnix()
 }
 
+;How many macros are connected right now.
+;
+;Not peers.Count: a row that has gone keeps its place in that table, marked
+;offline, because the fleet is more useful knowing a macro is missing. So the
+;count that answers "is anybody there" is the one with a socket behind it.
+fleet_Seated() {
+	global peers
+	local p, n := 0
+
+	for _, p in peers
+		if p.socket
+			n++
+	return n
+}
+
 fleet_RowOf(s) {
 	global bySocket
 	return bySocket.Has(s) ? bySocket[s] : 0
@@ -389,7 +417,7 @@ fleet_Ping() {
 ;Say we are alive, and write off anyone who has not.
 fleet_Beat() {
 	global peers, term, hostRow, roster, rosterPath, rosterStamp
-	global servers, serversPath, serversStamp, rosterVer, serversVer
+	global servers, serversPath, serversStamp, rosterVer, serversVer, lastSeated
 	local p, stamp, fresh, ver
 
 	;pick up an edited roster without a restart
@@ -437,6 +465,13 @@ fleet_Beat() {
 			fleet_BumpServers()
 		fleet_Event("servers reloaded, " servers.Count " of them, version "
 			. serversVer.version)
+	}
+	;nobody connected for long enough that nobody wants us - see FLEET_IDLE_SECS
+	if fleet_Seated()
+		lastSeated := nowUnix()
+	else if ((nowUnix() - lastSeated) > FLEET_IDLE_SECS) {
+		fleet_Log("nothing has been connected for " FLEET_IDLE_SECS "s - exiting")
+		ExitApp 0
 	}
 	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
 	fleet_Ping()

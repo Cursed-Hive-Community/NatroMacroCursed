@@ -2763,6 +2763,12 @@ ext_fleetRosterWant := 0
 ;these are compared against before anything is written - see ext_fleetReplicate.
 ext_fleetRosterDisk := { version: 0, by: 0 }
 ext_fleetServerDisk := { version: 0, by: 0 }
+;the coordinator process this macro started, so it can be ended again. Nothing
+;else would ever end it - see ext_fleetEndCoord.
+ext_fleetCoordPid := 0
+;the last fault worth telling somebody about, and the row and secret handed
+;over by a bind that is waiting for a timer to finish it off
+ext_fleetLastProblem := "", ext_fleetBoundWith := ""
 ;which configuration this macro has already offered to the coordinator. Every
 ;row of a configuration arrives as its own frame, and without this each of them
 ;would provoke a hand-up of the whole thing.
@@ -3785,6 +3791,9 @@ SetLoadingProgress(100)
 ;Start, because the panel is worth watching while the macro sits idle - and a
 ;macro that is paused is still a seat in the server.
 ext_fleetStart()
+;beside upstream's own exit handler rather than inside it: OnExit takes more
+;than one, and GetOut is not ours to edit
+OnExit(ext_fleetOnExit)
 SetTimer ext_fleetTabStatus, 2000
 
 ;unlock tabs
