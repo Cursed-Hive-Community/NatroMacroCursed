@@ -272,6 +272,17 @@ It has its own port (47700), its own roster file and its own coordinator, and
 it cannot reach the real configuration. To use it, point a macro at 47700 in
 Fleet settings, Advanced.
 
+It also runs scripts, so a test can be written down, handed over and run
+again - which pressing six buttons in the right order is not. The commands are
+in the fleet's own idiom (`field 1 pepper`, `send 1 FIELD name=pepper`,
+`expect 2 GOTO field=pepper`, `reject 4 GOTO`), and `bench\` holds six of them.
+
+One is already proven rather than merely written:
+
+- [x] **`02-goto-reaches-residents.txt`** - five pretend macros against the real
+      coordinator: fuzzy and tad are sent the main's field, a guid and an atk
+      are not. Four checks, nothing failed.
+
 What it turns into a twenty-minute check:
 
 - [ ] **field following**: add a main to the bench, connect it, pick a field and
@@ -279,8 +290,7 @@ What it turns into a twenty-minute check:
       there on its next gather trip.
 - [ ] **the other direction**: let the real macro be the main and watch a GOTO
       arrive at the bench's fuzzy in the log.
-- [ ] **who follows**: give the bench a guid and an atk and confirm neither is
-      sent anything.
+- [x] **who follows**: `02-goto-reaches-residents.txt`, above.
 - [ ] **leaving**: press Leave the fleet and watch the row vanish from the real
       macro's panel.
 - [ ] **a macro out of step**: set Config to a version behind the fleet's and

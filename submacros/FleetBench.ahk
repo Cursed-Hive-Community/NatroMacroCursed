@@ -38,16 +38,25 @@ SetWorkingDir A_ScriptDir "\.."
 ;AutoHotkey, and the assignment destroys the function. The prefix is what saves
 ;the Fleet code from the same thing.
 
-;An error here cannot draw a dialog when this is started over SSH, and would
-;hang with nothing written. It can draw one on a desktop, which is where this
-;is used - so both: the file always, the dialog when there is somebody to see.
-OnError(bench_error)
-bench_error(err, mode) {
-	;a continuation line has to open with an operator or AutoHotkey reads it as a
-	;statement of its own - which is what the leading dot is doing here
-	try FileAppend "ERROR: " err.Message "`r`nline " err.Line "`r`n" err.Extra
-		. "`r`n" err.Stack, "settings\fleet_bench_error.txt", "UTF-8"
-	return 0
+;A fault goes to a file and into the bench's own log, and AutoHotkey's own
+;dialog is suppressed.
+;
+;Returning 0 here lets that dialog appear, which is right on a desktop and
+;fatal anywhere else: it cannot be drawn in a service session, so the process
+;sits there for ever with nothing written. That is exactly what happened the
+;first time this file was driven headlessly. The file is the record either way,
+;and the log line is what somebody sitting at the window reads.
+;
+;A continuation line has to open with an operator, or AutoHotkey reads it as a
+;statement of its own - which is what the leading dot below is for.
+OnError(bench_onError)
+bench_onError(err, mode) {
+	local text := "ERROR: " err.Message " (line " err.Line ") " err.Extra
+
+	try FileAppend text "`r`n" err.Stack "`r`n"
+		, "settings\fleet_bench_error.txt", "UTF-8"
+	try bench_say(text)
+	return 1
 }
 
 ;A port of its own, well clear of the real fleet's 47600. Nothing here can
@@ -73,14 +82,21 @@ bench_bySocket := Map()
 ;the newest lines last, as a window reads
 bench_log := []
 bench_coordPid := 0
+;the script being run, where it is up to, when it may resume, and the tally
+bench_script := [], bench_pc := 0, bench_resumeAt := 0
+bench_pass := 0, bench_fail := 0
 
-bench_gUI()
+bench_window()
 return
 
 ;--- the window --------------------------------------------------------------
 
-bench_gUI() {
+bench_window() {
 	global BenchGui, BENCH_PORT, BENCH_FIELDS
+	;UseTab belongs to the tab control and not to the window, which /Validate
+	;cannot tell you - a wrong method name is a runtime lookup, so only running
+	;it finds one
+	local tabs
 
 	BenchGui := Gui("+Resize", "Fleet bench - port " BENCH_PORT)
 	BenchGui.OnEvent("Close", bench_close)
@@ -94,7 +110,7 @@ bench_gUI() {
 	BenchGui.Add("GroupBox", "x8 y40 w602 h206", "Pretend macros")
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
 	BenchGui.Add("ListView", "x16 y58 w420 h178 -Multi vBenchSeats"
-		, ["Row", "Name", "Role", "State", "Last said"])
+		, ["Row", "Name", "Role", "State", "Said", "Told to go to"])
 	BenchGui.Add("Button", "x444 y58 w160 h24", "Add a macro")
 		.OnEvent("Click", bench_addSeat)
 	BenchGui.Add("Button", "x444 y86 w160 h24", "Remove this one")
@@ -108,48 +124,60 @@ bench_gUI() {
 	BenchGui.Add("Button", "x444 y214 w160 h24", "Disconnect them all")
 		.OnEvent("Click", bench_disconnectAll)
 
-	;Everything here acts on the macro selected above, which is the whole
-	;reason the seats are a list rather than six copies of this panel.
-	BenchGui.SetFont("s8 cDefault Bold", "Tahoma")
-	BenchGui.Add("GroupBox", "x8 y252 w602 h128", "Make the selected macro say something")
-	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
+	;Two ways to drive it. By hand is for finding out what happens; a script is
+	;for finding out again, and for being handed a list of tests to run.
+	tabs := BenchGui.Add("Tab3", "x8 y252 w602 h164 vBenchTabs", ["By hand", "Script"])
 
-	BenchGui.Add("Text", "x18 y274 w70", "Farming:")
-	BenchGui.Add("DropDownList", "x92 y270 w150 vBenchField Choose1", BENCH_FIELDS)
-	BenchGui.Add("Button", "x250 y269 w120 h22", "Say the field")
+	tabs.UseTab(1)
+	BenchGui.Add("Text", "x20 y286 w70", "Farming:")
+	BenchGui.Add("DropDownList", "x94 y282 w150 vBenchField Choose1", BENCH_FIELDS)
+	BenchGui.Add("Button", "x252 y281 w120 h22", "Say the field")
 		.OnEvent("Click", bench_sayField)
 	BenchGui.SetFont("c808080")
-	;y268 and not y274: at w226 this wraps to two lines, so it reaches y294 -
-	;and the Config edit below starts at y298. Four pixels of clearance,
-	;measured rather than assumed, because the first attempt overlapped by two.
-	BenchGui.Add("Text", "x378 y268 w226"
+	;measured rather than assumed: at this width the line wraps to two, so it
+	;reaches y306 and the row below starts at y310. The first attempt at this
+	;panel overlapped an edit box by two pixels.
+	BenchGui.Add("Text", "x380 y280 w216"
 		, "A main saying this is what sends every fuzzy and tad after it.")
 	BenchGui.SetFont("cDefault")
 
-	BenchGui.Add("Text", "x18 y302 w70", "In server:")
-	BenchGui.Add("Edit", "x92 y298 w150 h18 vBenchServer", "main")
-	BenchGui.Add("Button", "x250 y297 w120 h22", "Say the server")
+	BenchGui.Add("Text", "x20 y314 w70", "In server:")
+	BenchGui.Add("Edit", "x94 y310 w150 h18 vBenchServer", "main")
+	BenchGui.Add("Button", "x252 y309 w120 h22", "Say the server")
 		.OnEvent("Click", bench_sayServer)
-	BenchGui.Add("Text", "x378 y302 w60", "Config:")
-	BenchGui.Add("Edit", "x430 y298 w44 h18 Number vBenchCv", "0")
-	BenchGui.Add("Text", "x480 y302 w20", "by")
-	BenchGui.Add("Edit", "x500 y298 w34 h18 Number vBenchCby", "0")
-	BenchGui.Add("Button", "x540 y297 w64 h22", "Beat")
+	BenchGui.Add("Text", "x380 y314 w48", "Config:")
+	BenchGui.Add("Edit", "x430 y310 w44 h18 Number vBenchCv", "0")
+	BenchGui.Add("Text", "x480 y314 w18", "by")
+	BenchGui.Add("Edit", "x500 y310 w34 h18 Number vBenchCby", "0")
+	BenchGui.Add("Button", "x540 y309 w56 h22", "Beat")
 		.OnEvent("Click", bench_sayBeat)
 
-	BenchGui.Add("Text", "x18 y330 w70", "Raw frame:")
-	BenchGui.Add("Edit", "x92 y326 w390 h18 vBenchRaw", "")
-	BenchGui.Add("Button", "x490 y325 w114 h22", "Send it")
+	BenchGui.Add("Text", "x20 y342 w70", "Raw frame:")
+	BenchGui.Add("Edit", "x94 y338 w384 h18 vBenchRaw", "")
+	BenchGui.Add("Button", "x484 y337 w112 h22", "Send it")
 		.OnEvent("Click", bench_sendRaw)
-	BenchGui.SetFont("c808080")
-	BenchGui.Add("Text", "x18 y352 w380"
-		, "Anything the protocol can carry, so this window never needs updating`nwhen a verb is added. Try: GUIDING field=pepper until=0")
-	BenchGui.SetFont("cDefault")
-	BenchGui.Add("Button", "x490 y351 w114 h22", "Leave the fleet")
+	BenchGui.Add("Button", "x484 y366 w112 h22", "Leave the fleet")
 		.OnEvent("Click", bench_sayLeave)
+	BenchGui.SetFont("c808080")
+	BenchGui.Add("Text", "x20 y366 w450"
+		, "Anything the protocol can carry, so nothing here needs updating when a`nverb is added. Try: GUIDING field=pepper until=0")
+	BenchGui.SetFont("cDefault")
+
+	tabs.UseTab(2)
+	BenchGui.SetFont("s8", "Consolas")
+	BenchGui.Add("Edit", "x20 y278 w432 h128 +Multi -Wrap +VScroll vBenchScript", "")
+	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
+	BenchGui.Add("Button", "x462 y278 w134 h24", "Run the script")
+		.OnEvent("Click", bench_runScript)
+	BenchGui.Add("Button", "x462 y306 w134 h24", "Stop")
+		.OnEvent("Click", bench_stopScript)
+	BenchGui.Add("DropDownList", "x462 y344 w134 vBenchPick", bench_scriptList())
+	BenchGui.Add("Button", "x462 y372 w134 h24", "Load that one")
+		.OnEvent("Click", bench_loadScript)
+	tabs.UseTab()
 
 	BenchGui.SetFont("s8", "Consolas")
-	BenchGui.Add("Edit", "x8 y388 w602 h190 ReadOnly -Wrap +VScroll vBenchLog", "")
+	BenchGui.Add("Edit", "x8 y424 w602 h154 ReadOnly -Wrap +VScroll vBenchLog", "")
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
 	BenchGui.Add("Button", "x8 y586 w100 h26", "Clear the log")
 		.OnEvent("Click", bench_clearLog)
@@ -160,6 +188,8 @@ bench_gUI() {
 	bench_say("bench ready on port " BENCH_PORT ", secret `"" BENCH_SECRET "`"")
 	bench_say("point a macro at this port in Fleet settings, Advanced")
 	SetTimer bench_tick, 1000
+	SetTimer bench_beat, 10000
+	SetTimer bench_step, 100
 	BenchGui.Show("w618 h622")
 }
 
@@ -167,6 +197,8 @@ bench_close(*) {
 	global BenchGui
 
 	SetTimer bench_tick, 0
+	SetTimer bench_beat, 0
+	SetTimer bench_step, 0
 	bench_disconnectAll()
 	bench_endCoord()
 	if (IsSet(BenchGui) && IsObject(BenchGui))
@@ -222,7 +254,7 @@ bench_loadRoster() {
 	for r, e in rows
 		if !bench_seats.Has(r)
 			bench_seats[r] := { row: r, name: e.name, role: e.role
-				, socket: 0, said: "" }
+				, socket: 0, said: "", told: "", heard: [] }
 	return 1
 }
 
@@ -242,12 +274,13 @@ bench_drawSeats() {
 	for _, r in keys {
 		seat := bench_seats[r]
 		BenchGui["BenchSeats"].Add(, r, seat.name, seat.role
-			, seat.socket ? "connected" : "-", seat.said)
+			, seat.socket ? "connected" : "-", seat.said
+			, seat.told != "" ? seat.told : "-")
 	}
 	for _, r in keys
 		if (r = pick)
 			BenchGui["BenchSeats"].Modify(A_Index, "Select Focus")
-	Loop 5
+	Loop 6
 		BenchGui["BenchSeats"].ModifyCol(A_Index, "AutoHdr")
 	return 1
 }
@@ -286,7 +319,7 @@ bench_addSeat(*) {
 	;speak the protocol properly or it is testing something else
 	roster_Save(BENCH_ROSTER, rows, bench_rosterVersion() + 1, 1)
 	bench_seats[row] := { row: row, name: name, role: StrLower(role)
-		, socket: 0, said: "" }
+		, socket: 0, said: "", told: "", heard: [] }
 	bench_say("added row " row " (" name ", " role ")")
 	bench_drawSeats()
 }
@@ -409,14 +442,60 @@ bench_onSocket(s, event, data) {
 	bench_answer(row, data)
 }
 
-;The only frame a pretend macro has to answer. Everything else is for looking
-;at: a bench that acted on its own would stop being a window onto the wire.
+;What a pretend macro does with what it is told.
+;
+;The rule is that it reacts the way a real macro reacts on the protocol, and
+;decides nothing on its own. Both halves matter. Without the first, the test is
+;not faithful - a seat that never answers a ping is timed as unreachable, and
+;one that ignores a BYE goes on looking connected after it has been thrown out.
+;Without the second you could no longer tell what you caused from what the
+;bench did, which is the whole value of driving it by hand.
+;
+;So: answer a ping, obey a refusal, remember an order. Never report a field,
+;never leave, never stand for coordinator - those are yours to press.
 bench_answer(row, line) {
-	local frame := fleet_Parse(line)
+	global bench_seats
+	local frame := fleet_Parse(line), seat
 
-	if (!frame || (frame.verb != "PING"))
+	if !frame
 		return 0
-	return bench_send(row, fleet_Frame("ACK", Map("id", fleet_Field(frame, "id"))))
+	if !bench_seats.Has(row)
+		return 0
+	seat := bench_seats[row]
+	seat.heard.Push(frame)
+	;the history is for expect in a script, and only the recent past is ever
+	;asked about
+	while (seat.heard.Length > 200)
+		seat.heard.RemoveAt(1)
+	switch frame.verb {
+		case "PING":
+			return bench_send(row, fleet_Frame("ACK", Map("id", fleet_Field(frame, "id"))))
+		case "GOTO":
+			;the thing you are watching for when the real macro is the main, so
+			;it goes in the seat list rather than only scrolling past in the log
+			seat.told := fleet_Field(frame, "field")
+			bench_drawSeats()
+		case "BYE":
+			bench_say("row " row " was refused: " fleet_Field(frame, "why")
+				. (fleet_Field(frame, "final", "") != "" 
+					? " (final=" fleet_Field(frame, "final") ")" : ""))
+			bench_disconnectRow(row)
+	}
+	return 1
+}
+
+;A real macro beats every ten seconds, and a bench seat that does not is only
+;alive by accident - the coordinator's own ping happens to refresh it. Left
+;that way, a seat would be written off as quiet the moment pinging stopped,
+;and nothing about that would be the fault being tested.
+bench_beat() {
+	global bench_seats
+	local r, seat
+
+	for r, seat in bench_seats
+		if seat.socket
+			sock_SendLine(seat.socket, fleet_Frame("HEARTBEAT"))
+	return 1
 }
 
 bench_send(row, line) {
@@ -537,6 +616,279 @@ bench_endCoord() {
 	}
 	bench_coordPid := 0
 	return 1
+}
+
+;--- the script runner ------------------------------------------------------
+;
+;A handful of commands in the fleet's own idiom, so a test can be written down,
+;handed over, and run again. Pressing six buttons in the right order is not a
+;test anybody repeats, which is the whole reason this exists.
+;
+;	# a comment
+;	seat 2 fuzzy bench fuzzy    make sure row 2 exists, with this role
+;	connect all                 or: connect 2
+;	disconnect 2
+;	clear all                   forget what the seats have heard
+;	send 1 FIELD name=pepper    a frame exactly as it travels on the wire
+;	field 1 pepper              the same thing, shorter
+;	beat 1 9 1                  a heartbeat saying it holds config v9 by row 1
+;	leave 2
+;	coordinator start           or stop
+;	wait 2000
+;	expect 2 GOTO field=pepper  pass or fail, and the run says which
+;	reject 4 GOTO               passes when it was NOT heard
+;	say anything at all         one line in the log
+;
+;reject exists so that a script's right answer is always "nothing failed". A
+;test whose correct outcome is "two failed" is a trap for whoever runs it
+;tired, and half of what is worth checking here is that something did not
+;happen - a guid is not sent a field, a stale configuration is not taken.
+;
+;Stepped by a timer rather than run in a loop. A loop with sleeps would work -
+;AutoHotkey pumps messages during one - but the window would be dead while it
+;ran, and watching the log fill is half of why anybody drives this by hand.
+
+;The scripts checked in beside the macro. In bench\ rather than settings\
+;because they are handed over and versioned, not generated.
+bench_scriptList() {
+	local out := []
+
+	Loop Files, A_WorkingDir "\bench\*.txt"
+		out.Push(A_LoopFileName)
+	if !out.Length
+		out.Push("(none in bench\)")
+	return out
+}
+
+bench_loadScript(*) {
+	global BenchGui
+	local pick := BenchGui["BenchPick"].Text, path
+
+	if ((pick = "") || InStr(pick, "(none in"))
+		return
+	path := A_WorkingDir "\bench\" pick
+	if !FileExist(path) {
+		bench_say("no such script: " path)
+		return
+	}
+	try BenchGui["BenchScript"].Value := FileRead(path, "UTF-8")
+	bench_say("loaded " pick)
+}
+
+bench_runScript(*) {
+	global BenchGui, bench_script, bench_pc, bench_resumeAt, bench_pass, bench_fail
+
+	bench_script := StrSplit(BenchGui["BenchScript"].Value, "`n", "`r")
+	bench_pc := 1, bench_resumeAt := 0, bench_pass := 0, bench_fail := 0
+	bench_say("--- running " bench_script.Length " lines ---")
+}
+
+bench_stopScript(*) {
+	global bench_script, bench_pc
+
+	if bench_pc
+		bench_say("--- stopped at line " bench_pc " ---")
+	bench_script := [], bench_pc := 0
+}
+
+;One line per tick at most, and nothing while a wait is running.
+bench_step() {
+	global bench_script, bench_pc, bench_resumeAt, bench_pass, bench_fail
+	local line
+
+	if (!bench_pc || (bench_pc > bench_script.Length)) {
+		if bench_pc {
+			bench_say("--- done: " bench_pass " passed, " bench_fail " failed ---")
+			bench_pc := 0
+		}
+		return
+	}
+	if (A_TickCount < bench_resumeAt)
+		return
+	line := Trim(bench_script[bench_pc])
+	bench_pc++
+	if ((line = "") || (SubStr(line, 1, 1) = "#"))
+		return
+	bench_do(line)
+}
+
+bench_do(line) {
+	global bench_resumeAt
+	local parts := StrSplit(line, " "), verb := StrLower(parts[1]), rest
+
+	rest := (StrLen(line) > StrLen(parts[1]))
+		? Trim(SubStr(line, StrLen(parts[1]) + 1))
+		: ""
+	switch verb {
+		case "say":
+			bench_say(rest)
+		case "wait":
+			bench_resumeAt := A_TickCount + (fleet_Num(rest) ? fleet_Num(rest) : 1000)
+		case "seat":
+			bench_doSeat(parts)
+		case "connect":
+			if (StrLower(rest) = "all")
+				bench_connectAll()
+			else
+				bench_connectRow(fleet_Num(rest))
+		case "disconnect":
+			if (StrLower(rest) = "all")
+				bench_disconnectAll()
+			else
+				bench_disconnectRow(fleet_Num(rest))
+		case "clear":
+			bench_doClear(rest)
+		case "send":
+			bench_doRest(parts, rest, "send")
+		case "field":
+			bench_doRest(parts, rest, "field")
+		case "beat":
+			bench_doBeat(parts)
+		case "leave":
+			bench_send(fleet_Num(rest), fleet_Frame("LEAVE"))
+		case "coordinator":
+			if (StrLower(rest) = "stop")
+				bench_endCoord()
+			else
+				bench_startCoord()
+		case "expect":
+			bench_doExpect(parts, rest, 1)
+		case "reject":
+			bench_doExpect(parts, rest, 0)
+		default:
+			bench_say("? unknown command: " line)
+	}
+}
+
+;seat <row> <role> [name...]
+bench_doSeat(parts) {
+	global bench_seats, BENCH_ROSTER
+	local row := fleet_Num(parts[2]), role, name := "", i, rows
+
+	if !row {
+		bench_say("? seat needs a row number")
+		return
+	}
+	role := (parts.Length >= 3) ? StrLower(parts[3]) : "fuzzy"
+	i := 4
+	while (i <= parts.Length)
+		name .= (name = "" ? "" : " ") parts[i], i++
+	if (name = "")
+		name := "bench " row
+	rows := roster_Load(BENCH_ROSTER)
+	rows[row] := { row: row, name: name, role: role, user: ""
+		, machine: A_ComputerName }
+	roster_Save(BENCH_ROSTER, rows, bench_rosterVersion() + 1, 1)
+	if bench_seats.Has(row)
+		bench_seats[row].name := name, bench_seats[row].role := role
+	else
+		bench_seats[row] := { row: row, name: name, role: role
+			, socket: 0, said: "", told: "", heard: [] }
+	bench_say("seat " row " is " name " (" role ")")
+	bench_drawSeats()
+}
+
+bench_doClear(what) {
+	global bench_seats
+	local r, seat
+
+	for r, seat in bench_seats
+		if ((StrLower(what) = "all") || (r = fleet_Num(what)))
+			seat.heard := [], seat.told := ""
+	bench_drawSeats()
+}
+
+;send <row> <frame verbatim>, and field <row> <name>, which both take
+;everything after the row number as one value - a field name has spaces in it
+;and so does half the protocol.
+bench_doRest(parts, rest, what) {
+	global bench_seats
+	local row := fleet_Num(parts[2]), tail
+
+	tail := (StrLen(rest) > StrLen(parts[2]))
+		? Trim(SubStr(rest, StrLen(parts[2]) + 1))
+		: ""
+	if (!row || (tail = "")) {
+		bench_say("? " what " needs a row and something to send")
+		return
+	}
+	if (what = "send") {
+		bench_send(row, tail)
+		return
+	}
+	if bench_seats.Has(row)
+		bench_seats[row].said := "farming " tail
+	bench_send(row, fleet_Frame("FIELD", Map("name", tail)))
+	bench_drawSeats()
+}
+
+;beat <row> [version] [by]
+bench_doBeat(parts) {
+	local row := fleet_Num(parts[2])
+
+	if !row {
+		bench_say("? beat needs a row")
+		return
+	}
+	bench_send(row, fleet_Frame("HEARTBEAT"
+		, Map("cv", (parts.Length >= 3) ? fleet_Num(parts[3]) : 0
+		, "cby", (parts.Length >= 4) ? fleet_Num(parts[4]) : 0)))
+}
+
+;expect <row> <VERB> [field=value ...] - and reject, which wants the opposite.
+;
+;Against everything that seat has heard since the last clear, so a script reads
+;as a sequence rather than as a race. A failure does not stop the run: the
+;point of a list of tests is to learn everything that is wrong in one pass.
+bench_doExpect(parts, rest, wanted) {
+	global bench_seats, bench_pass, bench_fail
+	local row := fleet_Num(parts[2]), want, i, frame, k, v, at, ok, desc
+	local found := 0
+
+	if (!row || (parts.Length < 3) || !bench_seats.Has(row)) {
+		bench_say("FAIL  needs a known row and a verb: " rest)
+		bench_fail++
+		return
+	}
+	;A seat that is not connected heard nothing, which would make every reject
+	;pass for the wrong reason - and did, the first time this ran. Nothing is
+	;proved by a macro that was not there.
+	if !bench_seats[row].socket {
+		bench_say("FAIL  row " row " is not connected, so this proves nothing")
+		bench_fail++
+		return
+	}
+	want := StrUpper(parts[3])
+	;the row number is already in the message, so the description starts after it
+	desc := want
+	i := 4
+	while (i <= parts.Length)
+		desc .= " " parts[i], i++
+	for _, frame in bench_seats[row].heard {
+		if (frame.verb != want)
+			continue
+		ok := 1, i := 4
+		while (i <= parts.Length) {
+			if (at := InStr(parts[i], "=")) {
+				k := SubStr(parts[i], 1, at - 1)
+				v := fleet_Unescape(SubStr(parts[i], at + 1))
+				if (fleet_Field(frame, k) != v)
+					ok := 0
+			}
+			i++
+		}
+		if ok {
+			found := 1
+			break
+		}
+	}
+	if (!!found = !!wanted) {
+		bench_pass++
+		bench_say("PASS  row " row (wanted ? " heard " : " was not sent ") desc)
+		return
+	}
+	bench_fail++
+	bench_say("FAIL  row " row (wanted ? " never heard " : " was sent ") desc)
 }
 
 ;--- the log ----------------------------------------------------------------

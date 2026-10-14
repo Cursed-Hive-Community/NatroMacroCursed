@@ -1,0 +1,25 @@
+# Does a real fuzzy follow the main into its field?
+#
+# Set a real macro up as row 2 with the role fuzzy, pointed at port 47700,
+# then run this. The bench is the main. Watch the macro walk.
+#
+# What it cannot check: that it arrives, or gathers. That is for your eyes.
+
+# the seats go in before the coordinator reads the roster,
+# rather than relying on it to notice a reload
+seat 1 main bench main
+coordinator start
+wait 2500
+connect 1
+wait 1500
+clear all
+
+say --- telling the fleet the main is on pepper ---
+field 1 pepper
+wait 2000
+say now look at the real macro: its next gather trip should be pepper
+
+say --- and again, somewhere else ---
+field 1 sunflower
+wait 2000
+say the switch happens at the top of a trip, never mid-pattern
