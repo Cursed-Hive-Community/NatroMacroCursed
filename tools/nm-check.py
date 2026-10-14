@@ -36,7 +36,8 @@ OWNED = (["submacros/natro_macro.ahk",
           "lib/FleetServers.ahk",
           "submacros/Fleet.ahk", "submacros/FleetSelfTest.ahk",
           "submacros/SocketSelfTest.ahk",
-          "submacros/ExtensionSelfTest.ahk"]
+          "submacros/ExtensionSelfTest.ahk",
+          "submacros/FleetBench.ahk"]
          + sorted(glob.glob("submacros/extensions/*.ahk")))
 
 FUNC = re.compile(r"^(\w+)\([^)]*\)\s*\{", re.M)

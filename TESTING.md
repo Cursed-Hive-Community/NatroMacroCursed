@@ -256,6 +256,45 @@ one `AutoHotkey64.exe` more than you started, close the macro, and look again.
 
 ---
 
+## The bench, and what it reaches
+
+`submacros\FleetBench.ahk` is a fleet you drive by hand: it connects as as many
+pretend macros as you like, says whatever you tell it to say, and shows every
+frame crossing the wire in both directions. One of these and one real macro
+with the game running replaces most of "set up six accounts on three machines
+first", which is the reason almost nothing below was ever tried.
+
+```
+.\submacros\AutoHotkey64.exe /script .\submacros\FleetBench.ahk
+```
+
+It has its own port (47700), its own roster file and its own coordinator, and
+it cannot reach the real configuration. To use it, point a macro at 47700 in
+Fleet settings, Advanced.
+
+What it turns into a twenty-minute check:
+
+- [ ] **field following**: add a main to the bench, connect it, pick a field and
+      press Say the field. A real macro set up as fuzzy or tad should walk
+      there on its next gather trip.
+- [ ] **the other direction**: let the real macro be the main and watch a GOTO
+      arrive at the bench's fuzzy in the log.
+- [ ] **who follows**: give the bench a guid and an atk and confirm neither is
+      sent anything.
+- [ ] **leaving**: press Leave the fleet and watch the row vanish from the real
+      macro's panel.
+- [ ] **a macro out of step**: set Config to a version behind the fleet's and
+      press Beat. The real macro's account panel should say so.
+- [ ] **the socket ceilings**: paste a very long line into the raw box. The
+      connection should be dropped rather than the memory grown.
+- [ ] **an unknown verb**: send `WOBBLE x=1` and confirm it is logged and
+      ignored rather than breaking anything.
+
+What it does not reach: there is one machine, one network interface, no Roblox
+behind the pretend macros, and nothing of theirs ever walks anywhere. It puts
+the architecture under pressure from something other than its own self-test,
+which is the point, and it is not a fleet.
+
 ## Never run across machines
 
 This is the half that matters most and the half with no evidence at all. Two
