@@ -61,25 +61,28 @@ ext_boostLeaseCanRenew() {
 		return 0
 	return ((fieldOverrideReason = "None") || (fieldOverrideReason = "Boost"))
 }
+;The window arithmetic, with nothing read from anywhere.
+;
+;opens is how many seconds before the end of the lease the window opens. Three
+;functions used to carry three copies of this comparison with three different
+;numbers in them; one piece of arithmetic with the number as an argument is
+;both shorter and the only version that can be asserted against a table of
+;values. Before this, the whole behaviour of the feature could be checked only
+;by boosting a field and watching for fifteen minutes.
+ext_boostLeaseWindowAt(age, opens) {
+	return ((age >= (900 - opens)) && (age < 900))
+}
 ;Gathering: renew in the last thirty seconds. The macro is standing in the field
 ;with nothing else to do, so it can afford to wait for the latest possible
 ;moment and carry the most boost forward.
 ext_boostLeaseGatherWindow() {
-	local age
-	if !ext_boostLeaseCanRenew()
-		return 0
-	age := ext_boostLeaseAge()
-	return ((age >= 870) && (age < 900))
+	return ext_boostLeaseCanRenew() && ext_boostLeaseWindowAt(ext_boostLeaseAge(), 30)
 }
 ;Converting: renew in the last minute. Thirty seconds is not enough here - the
 ;macro still has to break off the convert and walk back to the field - so the
 ;window opens earlier and accepts losing half a minute of boost.
 ext_boostLeaseConvertWindow() {
-	local age
-	if !ext_boostLeaseCanRenew()
-		return 0
-	age := ext_boostLeaseAge()
-	return ((age >= 840) && (age < 900))
+	return ext_boostLeaseCanRenew() && ext_boostLeaseWindowAt(ext_boostLeaseAge(), 60)
 }
 ;Glitter is spammed rather than pressed once. The press is only registered while
 ;the character is idle enough for the game to accept a hotbar key, and five
@@ -137,10 +140,19 @@ ext_preGlitterDue(fieldName) {
 		return 0
 	if ((LastBlueBoostUse = "") || (LastBlueBoostUse <= 0))
 		return 0
-	;a glitter pressed inside the last fifteen minutes is still running
-	if ((nowUnix() - LastGlitter) <= 900)
-		return 0
 	untilBlue := 2700 - (nowUnix() - LastBlueBoostUse)
+	return ext_preGlitterDueAt(untilBlue, nowUnix() - LastGlitter)
+}
+
+;Ten to eleven minutes before the booster, and no glitter already running.
+;
+;Taken apart from the clocks for the same reason as the lease windows: this is
+;the whole of the decision, and three numbers deserve a test rather than a
+;quarter of an hour of watching. A glitter pressed inside the last fifteen
+;minutes is still running, which is what the second argument is for.
+ext_preGlitterDueAt(untilBlue, sinceGlitter) {
+	if (sinceGlitter <= 900)
+		return 0
 	return ((untilBlue <= 660) && (untilBlue > 600))
 }
 ;Press it, and remember when - the window that follows is what keeps the macro
@@ -183,10 +195,5 @@ ext_preGlitterClear() {
 ;the macro out of the field should renew before it goes, rather than come back
 ;to a boost that ran out on the way.
 ext_boostLeaseNearEnd(sec := 60) {
-	local age
-
-	if !ext_boostLeaseCanRenew()
-		return 0
-	age := ext_boostLeaseAge()
-	return ((age >= (900 - sec)) && (age < 900))
+	return ext_boostLeaseCanRenew() && ext_boostLeaseWindowAt(ext_boostLeaseAge(), sec)
 }

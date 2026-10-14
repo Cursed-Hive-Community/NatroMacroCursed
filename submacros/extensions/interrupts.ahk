@@ -18,7 +18,15 @@ ext_blueBoosterReady() {
 
 	if !BlueBoosterInterruptCheck
 		return 0
-	return ((nowUnix() - ((LastBlueBoostUse = "") ? 0 : LastBlueBoostUse)) >= 2660)
+	return ext_blueBoosterDueAt(nowUnix() - ((LastBlueBoostUse = "") ? 0 : LastBlueBoostUse))
+}
+
+;Forty seconds before the forty-five minute cooldown is up, which is roughly
+;how long the walk takes. Its own function so the number is asserted rather
+;than trusted - 2660 is a measured value and a typo in it would cost a boost an
+;hour without ever looking wrong.
+ext_blueBoosterDueAt(sinceUse) {
+	return (sinceUse >= 2660)
 }
 ;The booster was pressed. Start the clock again, and start a fresh boost lease
 ;with it - this is a new boost, so it is owed a renewal of its own.
@@ -56,13 +64,25 @@ ext_stickerStackDue() {
 
 	if (!StickerStackCheck || !StickerStackInterruptCheck)
 		return 0
-	if ((nowUnix() - LastStickerStack) <= StickerStackTimer)
+	return ext_stickerStackDueAt(nowUnix() - LastStickerStack, StickerStackTimer
+		, ext_stickerStackFailedAt ? (nowUnix() - ext_stickerStackFailedAt) : -1
+		, nowUnix() - ext_stickerStackUsedAt)
+}
+
+;Three conditions, and all three have cost something when they were wrong.
+;
+;sinceFail is -1 when nothing has failed, rather than a large number: a macro
+;that has never failed and one that failed an hour ago are the same thing here,
+;and saying so with a sentinel beats inventing an age for an event that never
+;happened.
+ext_stickerStackDueAt(sinceStack, timer, sinceFail, sinceUse) {
+	if (sinceStack <= timer)
 		return 0
 	;a placement that failed is worth retrying, but not on the next tick
-	if (ext_stickerStackFailedAt && ((nowUnix() - ext_stickerStackFailedAt) < 15))
+	if ((sinceFail >= 0) && (sinceFail < 15))
 		return 0
 	;and never twice inside a minute, whatever the timers say
-	return ((nowUnix() - ext_stickerStackUsedAt) >= 60)
+	return (sinceUse >= 60)
 }
 ;nm_StickerStack returns nothing, but it records the moment it succeeds, so
 ;that is what tells a placement from a failure here. Reading the clock it
@@ -133,10 +153,19 @@ ext_mondoDue() {
 	if (!MondoInterruptCheck || (MondoBuffCheck != 1) || (MondoAction != "Buff"))
 		return 0
 	utcMin := FormatTime(A_NowUTC, "m") + 0
+	return ext_mondoDueAt(utcMin, nowUnix() - LastMondoBuff)
+}
+
+;:59 to leave a minute early, :00 to :14 to catch up, and fifty-five minutes so
+;one spawn is never claimed twice.
+;
+;A minute window that is wrong by one is a trip made every five seconds for a
+;quarter of an hour, or none at all, and neither announces itself. Hence its
+;own function and a row in the table for each edge.
+ext_mondoDueAt(utcMin, sinceBuff) {
 	if !((utcMin = 59) || (utcMin <= 14))
 		return 0
-	;fifty-five minutes, so one spawn is never claimed twice
-	return ((nowUnix() - LastMondoBuff) > 3300)
+	return (sinceBuff > 3300)
 }
 ;A chick nobody has touched reads exactly 100, so the spawn counts as found once
 ;a bar is showing below full - which is what a fight underway looks like, and

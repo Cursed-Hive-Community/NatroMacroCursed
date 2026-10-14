@@ -48,17 +48,19 @@ COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/
 COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk"
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
+COVER_exttest="submacros/ExtensionSelfTest.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk"
 
 # entry point -> coverage var
-ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest"
+ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest"
 # self-test -> name:script:diagfile:coverage var
-TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest"
+TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest"
 
 # every owned file, for the full-run default
 ALL_FILES=(
   submacros/natro_macro.ahk
   lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk
   submacros/Fleet.ahk submacros/FleetSelfTest.ahk submacros/SocketSelfTest.ahk
+  submacros/ExtensionSelfTest.ahk
   submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk
 )
 

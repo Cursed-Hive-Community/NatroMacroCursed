@@ -83,6 +83,28 @@ and the real protocol. They are the strongest evidence in the repository.
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
 
+And thirty-four checks on the extensions' arithmetic — every window in time
+that any of them turns on, each with a row one second outside it, one exactly
+on its edge and one inside:
+
+- [x] the lease window at thirty, sixty and a hundred and five seconds, and the
+      upper edge being exclusive because at 900 the lease is over
+- [x] pre-glitter between ten and eleven minutes before the booster, and not
+      while a glitter is still running
+- [x] the blue booster at 2660 of its 2700 second cooldown
+- [x] the sticker stack past its timer, after a failure, and never twice inside
+      a minute
+- [x] Mondo at :59, through the :00 to :14 catch-up window, and the fifty-five
+      minute guard against claiming one spawn twice
+
+They run in well under a second: no socket, no sleep, no clock read. The
+functions they call were deliberately separated from the state they used to
+read, so they take their numbers as arguments.
+
+**This proves the arithmetic, not the feature.** That a window is the right
+thirty seconds says nothing about whether the macro presses the key when it
+opens.
+
 ### The gap inside that
 
 The self-test speaks the protocol **directly**. It is a pretend macro, not the
@@ -128,6 +150,10 @@ Never dumped:
 
 Everything below has `sieve` and `loads` and nothing more. Grouped by what you
 would sit and watch.
+
+The numbers in these windows are now checked by the extension self-test, so
+what is left in each line is the half a table of values cannot reach: that the
+macro notices the window, presses the right key, and goes to the right place.
 
 ### Boost lease - Glitter Extend
 
