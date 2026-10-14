@@ -3061,6 +3061,10 @@ MainGui.Add("Text", "x20 y158 w350 vFleetStripNext +BackgroundTrans", "")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y177 w180 h18 vFleetCheck Checked" FleetCheck
 	, "Talk to the other macros")).Section := "Fleet", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x202 y177 w14 h16", "?").OnEvent("Click", ext_FleetHelp)
+;the bench went in the Fleet settings' own Advanced window first, which is
+;three clicks deep - a diagnostic tool nobody can find is a diagnostic tool
+;nobody uses, so it sits beside the panel it diagnoses
+MainGui.Add("Button", "x268 y174 w104 h22", "Test bench").OnEvent("Click", ext_FleetBench)
 MainGui.Add("Button", "x380 y174 w100 h22", "Fleet panel").OnEvent("Click", ext_FleetGUI)
 
 ; STATUS TAB
@@ -4771,7 +4775,12 @@ ext_FleetHelp(*){
 
 	Open the Fleet panel, then Settings, to set a macro up. Nothing has to
 	be typed on two machines: the host opens its door, the macro walks in,
-	and the row number and the shared word are handed over."
+	and the row number and the shared word are handed over.
+
+	Test bench opens a fleet you drive by hand: it stands in for the other
+	macros, or for the coordinator, so a feature can be tried without
+	setting every account up first. It has its own port and its own files
+	and cannot reach the real fleet."
 	), "Fleet", 0x40040
 }
 ;update config

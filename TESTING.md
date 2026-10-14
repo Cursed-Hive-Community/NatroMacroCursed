@@ -121,14 +121,28 @@ and the macro:
 - [x] `ext_fleetHandUp` offered its v9 back, and the bench received the SETROW
       frames carrying it
 
+And then the bench staged losing a coordinator - serve a roster where rows 1
+and 2 are alive, let a real macro connect as row 3, and stop listening - which
+closed two more. Read out of the macro's own state as it happened:
+
+```
++0.5s   connected to the bench
++15.5s  the connection went. row 1 reads offline, row 2 reads online
++15.5s  ext_fleetSuccessor(0) says 2, with one passed over it says 3
++35.0s  TOOK OVER: started a coordinator, pid 11300, term 2
+```
+
+- [x] `ext_fleetLostCoord` took the coordinator's row out of the running at
+      once, and left row 2 alone - first-hand evidence only, which is the rule
+- [x] the election escalated: row 2 was elected, given a whole grace period,
+      and passed over. The takeover came 20 seconds after the loss, which is
+      two grace periods of ten - not one, and not never.
+
 Still never run:
 
-- [ ] `ext_fleetLostCoord` — marking a lost coordinator offline `loads`
-- [ ] `ext_fleetSuccessor` escalation — passing over a dead candidate `loads`
 - [ ] `ext_fleetReplicate` re-reading disk versions on a change of role `loads`
-
-Those three are all about losing a coordinator, which the bench can now stage
-(`stop` while a macro is connected) but which nobody has watched yet.
+      — needs a macro that coordinates and then stops coordinating, which is
+      two benches or two macros rather than one of each
 
 ---
 

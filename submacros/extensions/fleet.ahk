@@ -2284,18 +2284,8 @@ ext_FleetAdvanced(*) {
 		, "Only fuzzy and tad follow - a guid and an atk have their`nown work at their own times. Set this on the macro that leads.")
 	FleetAdvGui.SetFont("cDefault")
 
-	;The bench is here rather than on the Fleet tab because it is a thing you
-	;reach for when something is wrong, and because it has no business being one
-	;click from the panel somebody watches all night.
-	FleetAdvGui.SetFont("c808080")
-	FleetAdvGui.Add("Text", "x12 y326 w360"
-		, "The test bench stands in for the other macros, so a feature can be`ntried without setting them all up. Its own port and its own files.")
-	FleetAdvGui.SetFont("cDefault")
-	FleetAdvGui.Add("Button", "x12 y360 w170 h24", "Open the test bench")
-		.OnEvent("Click", ext_FleetBench)
-
-	FleetAdvGui.Add("Button", "x292 y360 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)
-	FleetAdvGui.Show("w384 h398")
+	FleetAdvGui.Add("Button", "x292 y326 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)
+	FleetAdvGui.Show("w384 h364")
 }
 
 ;One of the four, saved the way every other setting in the macro is.
