@@ -86,6 +86,23 @@ bench_coordPid := 0
 bench_script := [], bench_pc := 0, bench_resumeAt := 0
 bench_pass := 0, bench_fail := 0
 
+;Which side of the wire the bench is on.
+;
+;"macro" stands in for the other macros against a real coordinator. The seats
+;are ours and we connect out.
+;
+;"coordinator" is the other half, and the only way to put pressure on a real
+;macro's own share of the work - replicating a configuration, refusing to go
+;backwards, handing a better one up, noticing the coordinator has gone. The
+;self-test cannot reach any of that, because it speaks the protocol by hand
+;instead of driving a macro. Here the seats are the real macros that connected,
+;and the same table and the same expect hold for both.
+bench_mode := "macro"
+bench_listener := 0
+;what the heartbeat claims, so a macro can be told a term higher or lower than
+;the one it already obeys
+bench_term := 1
+
 bench_window()
 return
 
@@ -102,9 +119,10 @@ bench_window() {
 	BenchGui.OnEvent("Close", bench_close)
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
 
-	BenchGui.Add("Text", "x16 y12 w450 vBenchState", "")
-	BenchGui.Add("Button", "x470 y8 w140 h24 vBenchCoord", "Start a coordinator")
-		.OnEvent("Click", bench_coordToggle)
+	BenchGui.Add("Text", "x16 y12 w420 vBenchState", "")
+	BenchGui.Add("Text", "x444 y12 w36", "Mode:")
+	BenchGui.Add("DropDownList", "x482 y8 w128 vBenchMode Choose1"
+		, ["Pretend macros", "Be the coordinator"]).OnEvent("Change", bench_modeChanged)
 
 	BenchGui.SetFont("s8 cDefault Bold", "Tahoma")
 	BenchGui.Add("GroupBox", "x8 y40 w602 h206", "Pretend macros")
@@ -158,22 +176,26 @@ bench_window() {
 		.OnEvent("Click", bench_sendRaw)
 	BenchGui.Add("Button", "x484 y366 w112 h22", "Leave the fleet")
 		.OnEvent("Click", bench_sayLeave)
+	BenchGui.Add("Button", "x252 y366 w220 h22 vBenchCoord", "Start a coordinator")
+		.OnEvent("Click", bench_coordToggle)
 	BenchGui.SetFont("c808080")
-	BenchGui.Add("Text", "x20 y366 w450"
-		, "Anything the protocol can carry, so nothing here needs updating when a`nverb is added. Try: GUIDING field=pepper until=0")
+	BenchGui.Add("Text", "x20 y368 w224"
+		, "Anything the protocol can carry, so`nnothing here needs updating.")
 	BenchGui.SetFont("cDefault")
 
 	tabs.UseTab(2)
 	BenchGui.SetFont("s8", "Consolas")
-	BenchGui.Add("Edit", "x20 y278 w432 h128 +Multi -Wrap +VScroll vBenchScript", "")
+	BenchGui.Add("Edit", "x20 y278 w432 h128 +Multi -Wrap +VScroll vBenchScript"
+		, bench_reference())
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
-	BenchGui.Add("Button", "x462 y278 w134 h24", "Run the script")
+	BenchGui.Add("Button", "x462 y278 w134 h24", "Run")
 		.OnEvent("Click", bench_runScript)
 	BenchGui.Add("Button", "x462 y306 w134 h24", "Stop")
 		.OnEvent("Click", bench_stopScript)
-	BenchGui.Add("DropDownList", "x462 y344 w134 vBenchPick", bench_scriptList())
-	BenchGui.Add("Button", "x462 y372 w134 h24", "Load that one")
-		.OnEvent("Click", bench_loadScript)
+	BenchGui.Add("Button", "x462 y340 w134 h24", "Commands")
+		.OnEvent("Click", bench_commands)
+	BenchGui.Add("Button", "x462 y368 w134 h24", "Empty the box")
+		.OnEvent("Click", bench_clearScript)
 	tabs.UseTab()
 
 	BenchGui.SetFont("s8", "Consolas")
@@ -208,15 +230,23 @@ bench_close(*) {
 
 ;Once a second: the state line, and the seat list if anything moved.
 bench_tick() {
-	global BenchGui, BENCH_PORT, bench_coordPid
+	global BenchGui, BENCH_PORT, bench_coordPid, bench_mode, bench_listener, bench_term
 
 	if !(IsSet(BenchGui) && IsObject(BenchGui))
 		return
-	try BenchGui["BenchState"].Text := "Port " BENCH_PORT
-		. " - coordinator " (bench_coordPid && ProcessExist(bench_coordPid)
-			? "running, pid " bench_coordPid
-			: "not running")
-		. " - " bench_connectedCount() " of " bench_seats.Count " connected"
+	if (bench_mode = "coordinator") {
+		try BenchGui["BenchState"].Text := "Port " BENCH_PORT
+			. " - " (bench_listener ? "listening as the coordinator, term " bench_term
+				: "not listening yet - run: listen")
+			. " - " bench_connectedCount() " real macro(s) connected"
+	}
+	else {
+		try BenchGui["BenchState"].Text := "Port " BENCH_PORT
+			. " - coordinator " (bench_coordPid && ProcessExist(bench_coordPid)
+				? "running, pid " bench_coordPid
+				: "not running")
+			. " - " bench_connectedCount() " of " bench_seats.Count " connected"
+	}
 	try BenchGui["BenchCoord"].Text := (bench_coordPid && ProcessExist(bench_coordPid))
 		? "Stop the coordinator"
 		: "Start a coordinator"
@@ -462,11 +492,7 @@ bench_answer(row, line) {
 	if !bench_seats.Has(row)
 		return 0
 	seat := bench_seats[row]
-	seat.heard.Push(frame)
-	;the history is for expect in a script, and only the recent past is ever
-	;asked about
-	while (seat.heard.Length > 200)
-		seat.heard.RemoveAt(1)
+	bench_heard(row, frame)
 	switch frame.verb {
 		case "PING":
 			return bench_send(row, fleet_Frame("ACK", Map("id", fleet_Field(frame, "id"))))
@@ -489,12 +515,21 @@ bench_answer(row, line) {
 ;that way, a seat would be written off as quiet the moment pinging stopped,
 ;and nothing about that would be the fault being tested.
 bench_beat() {
-	global bench_seats
-	local r, seat
+	global bench_seats, bench_mode, bench_term, bench_listener
+	local r, seat, line
 
+	;as a macro, the beat says we are alive. As the coordinator, it says who is
+	;in charge and on which term, which is the frame a macro's whole failover
+	;decision turns on - and the one it has never been sent by anything but the
+	;real coordinator.
+	line := (bench_mode = "coordinator")
+		? fleet_Frame("HEARTBEAT", Map("term", bench_term, "row", 1, "at", nowUnix()))
+		: fleet_Frame("HEARTBEAT")
+	if ((bench_mode = "coordinator") && !bench_listener)
+		return 0
 	for r, seat in bench_seats
 		if seat.socket
-			sock_SendLine(seat.socket, fleet_Frame("HEARTBEAT"))
+			sock_SendLine(seat.socket, line)
 	return 1
 }
 
@@ -618,6 +653,217 @@ bench_endCoord() {
 	return 1
 }
 
+;--- being the coordinator --------------------------------------------------
+;
+;The other side of the wire, and the only way to put a real macro's own share
+;of the work under any pressure at all. Everything it does for itself - keeping
+;a replica of the configuration, refusing to write a worse one over a better,
+;handing a better one up, noticing the coordinator has gone and standing for
+;the job - happens in reaction to frames it is sent, and until now nothing
+;could send it a wrong one. The self-test cannot: it speaks the protocol by
+;hand rather than driving a macro.
+;
+;Here the seats are the real macros that connected, which means the same table
+;and the same expect and reject work for both modes.
+
+bench_modeChanged(*) {
+	global BenchGui, bench_mode
+
+	bench_setMode((BenchGui["BenchMode"].Value = 2) ? "coordinator" : "macro")
+}
+
+bench_setMode(which) {
+	global bench_mode, BenchGui
+
+	if (bench_mode = which)
+		return 0
+	;neither half of the wire survives becoming the other one: the sockets face
+	;the wrong way and the seats mean something else
+	bench_disconnectAll()
+	bench_stopListening()
+	bench_mode := which
+	try BenchGui["BenchMode"].Value := (which = "coordinator") ? 2 : 1
+	bench_say("mode: " which)
+	if (which = "coordinator")
+		bench_say("run: listen - then point a macro at port " BENCH_PORT)
+	bench_drawSeats()
+	return 1
+}
+
+;Exclusive, like the real coordinator's own listen. If a real one already has
+;the port, this says so rather than quietly listening alongside it and
+;splitting whatever connects.
+bench_listen() {
+	global bench_listener, BENCH_PORT, bench_mode
+
+	bench_setMode("coordinator")
+	if bench_listener
+		return 0
+	bench_listener := sock_Listen(BENCH_PORT, bench_onServer, 1)
+	if !bench_listener {
+		bench_say("could not listen on " BENCH_PORT " - something else has it"
+			. (sock_lastError != "" ? " (" sock_lastError ")" : ""))
+		return 0
+	}
+	bench_say("listening on " BENCH_PORT " as the coordinator")
+	return 1
+}
+
+bench_stopListening() {
+	global bench_listener, bench_seats
+	local r, seat
+
+	if !bench_listener
+		return 0
+	for r, seat in bench_seats
+		if seat.socket
+			sock_Close(seat.socket), seat.socket := 0
+	sock_Close(bench_listener)
+	bench_listener := 0
+	bench_say("stopped listening - a macro watching this should take over")
+	bench_drawSeats()
+	return 1
+}
+
+;A real macro arriving. Its row is whatever it claims, which is the point: the
+;bench admits anybody, because refusing is a thing to test on purpose rather
+;than a thing to do by default.
+bench_onServer(s, event, data) {
+	global bench_seats, bench_bySocket, bench_term
+	local row := bench_bySocket.Has(s) ? bench_bySocket[s] : 0, frame
+
+	if (event = "accept") {
+		bench_say("a macro connected, waiting for its HELLO")
+		return
+	}
+	if (event = "close") {
+		if (row && bench_seats.Has(row)) {
+			bench_seats[row].socket := 0
+			bench_say("row " row " went away")
+		}
+		bench_bySocket.Delete(s)
+		bench_drawSeats()
+		return
+	}
+	if (event != "line")
+		return
+	bench_logFrame(row, "<-", data)
+	if !(frame := fleet_Parse(data))
+		return
+	if (frame.verb = "HELLO") {
+		bench_onHello(s, frame)
+		return
+	}
+	if (!row || !bench_seats.Has(row))
+		return
+	bench_heard(row, frame)
+	;the two a macro reports about itself, shown where they can be seen rather
+	;than only scrolling past
+	if (frame.verb = "FIELD")
+		bench_seats[row].said := "farming " fleet_Field(frame, "name")
+	else if (frame.verb = "HEARTBEAT")
+		bench_seats[row].said := "config v" fleet_Field(frame, "cv", "?")
+			. " by " fleet_Field(frame, "cby", "?")
+	else if (frame.verb = "SETROW")
+		bench_seats[row].said := "handing up v" fleet_Field(frame, "v", "?")
+	bench_drawSeats()
+}
+
+bench_onHello(s, frame) {
+	global bench_seats, bench_bySocket, bench_term, BENCH_SECRET
+	local row := fleet_Num(fleet_Field(frame, "row"))
+
+	if !row {
+		bench_say("a macro said HELLO without a row")
+		return 0
+	}
+	if (fleet_Field(frame, "secret") != BENCH_SECRET)
+		bench_say("row " row " gave the secret `"" fleet_Field(frame, "secret")
+			. "`" - the bench wants `"" BENCH_SECRET "`", and is letting it in anyway")
+	bench_seats[row] := { row: row, name: fleet_Field(frame, "machine", "a macro")
+		, role: "real", socket: s, said: "", told: "", heard: [] }
+	bench_bySocket[s] := row
+	bench_say("row " row " is here, from " fleet_Field(frame, "machine", "somewhere"))
+	;a macro expects to be told who is in charge before anything else
+	sock_SendLine(s, fleet_Frame("HEARTBEAT"
+		, Map("term", bench_term, "row", 1, "at", nowUnix())))
+	bench_drawSeats()
+	return 1
+}
+
+;What a seat has heard, kept for expect. One place, because both modes need it
+;and only one of them used to have it.
+bench_heard(row, frame) {
+	global bench_seats
+
+	if !bench_seats.Has(row)
+		return 0
+	bench_seats[row].heard.Push(frame)
+	while (bench_seats[row].heard.Length > 200)
+		bench_seats[row].heard.RemoveAt(1)
+	return 1
+}
+
+;serve roster <version> <by> - the bench's own roster, as the configuration,
+;at whatever version you say. A version below what the macro holds is the whole
+;stale-copy case, staged in one line.
+bench_serve(parts) {
+	global BENCH_ROSTER, bench_seats, bench_mode
+	local what := (parts.Length >= 2) ? StrLower(parts[2]) : ""
+	local v := (parts.Length >= 3) ? fleet_Num(parts[3]) : 1
+	local by := (parts.Length >= 4) ? fleet_Num(parts[4]) : 1
+	local rows, r, e, n, line, seat
+
+	if (bench_mode != "coordinator") {
+		bench_say("? serve only means something as the coordinator")
+		return
+	}
+	if (what = "servers") {
+		rows := servers_Load(RegExReplace(BENCH_ROSTER, "i)\.ini$", "_servers.ini"))
+		n := rows.Count
+		for r, e in rows
+			bench_toAll(fleet_Frame("SERVER", Map("v", v, "by", by, "n", n
+				, "slot", e.slot, "name", e.name, "link", e.link
+				, "owner", e.owner, "kind", e.kind)))
+		bench_say("served " n " server(s) at v" v " by row " by)
+		return
+	}
+	rows := roster_Load(BENCH_ROSTER)
+	n := rows.Count
+	;an empty configuration still has to say so, exactly as the real
+	;coordinator does, or clearing one would reach nobody
+	if !n {
+		bench_toAll(fleet_Frame("ROW", Map("v", v, "by", by, "n", 0)))
+		bench_say("served an empty roster at v" v " by row " by)
+		return
+	}
+	for r, e in rows {
+		bench_toAll(fleet_Frame("ROW", Map("v", v, "by", by, "n", n
+			, "row", e.row, "name", e.name, "role", e.role
+			, "user", e.user, "machine", e.machine)))
+		;and the live half, so the macro's panel has something to draw
+		bench_toAll(fleet_Frame("ROSTER", Map("row", e.row, "name", e.name
+			, "role", e.role, "state", "online", "machine", e.machine
+			, "user", e.user, "server", "", "field", ""
+			, "guiding", "", "until", 0, "charge", 0
+			, "rtt", 1, "seen", nowUnix(), "cv", v, "cby", by)))
+	}
+	bench_say("served " n " row(s) at v" v " by row " by)
+}
+
+;To every connected macro, which in this mode is every real one.
+bench_toAll(line) {
+	global bench_seats
+	local r, seat, n := 0
+
+	for r, seat in bench_seats
+		if seat.socket
+			bench_send(r, line), n++
+	if !n
+		bench_say("nobody is connected, so that went nowhere")
+	return n
+}
+
 ;--- the script runner ------------------------------------------------------
 ;
 ;A handful of commands in the fleet's own idiom, so a test can be written down,
@@ -648,31 +894,55 @@ bench_endCoord() {
 ;AutoHotkey pumps messages during one - but the window would be dead while it
 ;ran, and watching the log fill is half of why anybody drives this by hand.
 
-;The scripts checked in beside the macro. In bench\ rather than settings\
-;because they are handed over and versioned, not generated.
-bench_scriptList() {
-	local out := []
-
-	Loop Files, A_WorkingDir "\bench\*.txt"
-		out.Push(A_LoopFileName)
-	if !out.Length
-		out.Push("(none in bench\)")
-	return out
+;What the console understands, as the console's own opening text.
+;
+;In the box you type into rather than in a folder of scripts somebody else
+;wrote: a tool you have to be handed tests for is a tool you cannot think
+;with. It can be deleted, and the Commands button brings it back.
+bench_reference() {
+	return "
+(
+# Type commands below and press Run. A line starting with # is ignored.
+#
+# either mode
+#   mode macro / mode coordinator   which side of the wire the bench is on
+#   wait 2000                       milliseconds
+#   say anything at all             one line in the log
+#   clear all / clear 2             forget what a seat has heard
+#   send 2 FIELD name=pepper        a frame exactly as it travels
+#   expect 2 GOTO field=pepper      pass or fail, and the log says which
+#   reject 2 GOTO                   passes when it was NOT heard
+#
+# pretending to be the other macros
+#   seat 2 fuzzy some name          declare one - do this before the coordinator
+#   connect all / connect 2
+#   disconnect all / disconnect 2
+#   field 2 pepper                  report a field, which is what a main does
+#   beat 2 9 1                      a heartbeat claiming config v9 by row 1
+#   leave 2
+#   coordinator start / coordinator stop
+#
+# being the coordinator, with a real macro connecting here
+#   listen / stop
+#   term 4                          what the heartbeat claims
+#   serve roster 9 1                the bench roster, at that version and author
+#   serve servers 3 1
+#   goto all pepper                 or: goto 2 pepper
+#   bye 2 1 you are not welcome     final=1, so the macro gives up for good
+#   gone 2
+)"
 }
 
-bench_loadScript(*) {
+bench_commands(*) {
 	global BenchGui
-	local pick := BenchGui["BenchPick"].Text, path
 
-	if ((pick = "") || InStr(pick, "(none in"))
-		return
-	path := A_WorkingDir "\bench\" pick
-	if !FileExist(path) {
-		bench_say("no such script: " path)
-		return
-	}
-	try BenchGui["BenchScript"].Value := FileRead(path, "UTF-8")
-	bench_say("loaded " pick)
+	BenchGui["BenchScript"].Value := bench_reference()
+}
+
+bench_clearScript(*) {
+	global BenchGui
+
+	BenchGui["BenchScript"].Value := ""
 }
 
 bench_runScript(*) {
@@ -755,9 +1025,70 @@ bench_do(line) {
 			bench_doExpect(parts, rest, 1)
 		case "reject":
 			bench_doExpect(parts, rest, 0)
+		case "mode":
+			bench_setMode((StrLower(rest) = "coordinator") ? "coordinator" : "macro")
+		case "listen":
+			bench_listen()
+		case "stop":
+			bench_stopListening()
+		case "term":
+			bench_doTerm(rest)
+		case "serve":
+			bench_serve(parts)
+		case "goto":
+			bench_doGoto(parts, rest)
+		case "bye":
+			bench_doBye(parts, rest)
+		case "gone":
+			bench_toAll(fleet_Frame("GONE", Map("row", fleet_Num(rest))))
 		default:
 			bench_say("? unknown command: " line)
 	}
+}
+
+;term <n> - what the heartbeat claims. A term below the one a macro already
+;obeys should be ignored by it; one above should make it follow this bench.
+bench_doTerm(rest) {
+	global bench_term
+
+	bench_term := fleet_Num(rest) ? fleet_Num(rest) : 1
+	bench_say("term is now " bench_term " - it rides on the next beat")
+}
+
+;goto <row|all> <field>, which is the order a resident acts on. The field name
+;takes the rest of the line because half of them have a space in.
+bench_doGoto(parts, rest) {
+	local who := (parts.Length >= 2) ? parts[2] : "", field
+
+	field := (StrLen(rest) > StrLen(who)) ? Trim(SubStr(rest, StrLen(who) + 1)) : ""
+	if (field = "") {
+		bench_say("? goto needs a row or all, and a field")
+		return
+	}
+	if (StrLower(who) = "all") {
+		bench_toAll(fleet_Frame("GOTO", Map("field", field)))
+		return
+	}
+	bench_send(fleet_Num(who), fleet_Frame("GOTO", Map("field", field)))
+}
+
+;bye <row> <final 0|1> <why...> - the refusal, and whether the macro should
+;treat it as something it can come back from. Getting that distinction wrong
+;once emptied a whole fleet, so it is worth being able to send both.
+bench_doBye(parts, rest) {
+	local row := fleet_Num(parts[2]), final, why := "", i
+
+	if !row {
+		bench_say("? bye needs a row")
+		return
+	}
+	final := (parts.Length >= 3) ? fleet_Num(parts[3]) : 1
+	i := 4
+	while (i <= parts.Length)
+		why .= (why = "" ? "" : " ") parts[i], i++
+	if (why = "")
+		why := "the bench says so"
+	bench_send(row, fleet_Frame("BYE", Map("why", why, "final", final)))
 }
 
 ;seat <row> <role> [name...]

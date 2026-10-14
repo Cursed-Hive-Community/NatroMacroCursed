@@ -2284,8 +2284,18 @@ ext_FleetAdvanced(*) {
 		, "Only fuzzy and tad follow - a guid and an atk have their`nown work at their own times. Set this on the macro that leads.")
 	FleetAdvGui.SetFont("cDefault")
 
-	FleetAdvGui.Add("Button", "x292 y326 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)
-	FleetAdvGui.Show("w384 h364")
+	;The bench is here rather than on the Fleet tab because it is a thing you
+	;reach for when something is wrong, and because it has no business being one
+	;click from the panel somebody watches all night.
+	FleetAdvGui.SetFont("c808080")
+	FleetAdvGui.Add("Text", "x12 y326 w360"
+		, "The test bench stands in for the other macros, so a feature can be`ntried without setting them all up. Its own port and its own files.")
+	FleetAdvGui.SetFont("cDefault")
+	FleetAdvGui.Add("Button", "x12 y360 w170 h24", "Open the test bench")
+		.OnEvent("Click", ext_FleetBench)
+
+	FleetAdvGui.Add("Button", "x292 y360 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)
+	FleetAdvGui.Show("w384 h398")
 }
 
 ;One of the four, saved the way every other setting in the macro is.
@@ -2296,6 +2306,24 @@ ext_FleetFollowBox(name, x, y, caption, value) {
 	(GuiCtrl := FleetAdvGui.Add("CheckBox", "x" x " y" y " w160 h18 v" name
 		" Checked" value, caption)).Section := "Fleet"
 	GuiCtrl.OnEvent("Click", nm_saveConfig)
+}
+
+;Open the bench, which is its own process. Not included into the macro: it
+;listens and connects on a port of its own, and a tool that shares this
+;process could reach the real fleet's state by accident.
+ext_FleetBench(*) {
+	global exe_path32
+	local pid := 0
+
+	try
+		Run '"' exe_path32 '" /script "' A_WorkingDir '\submacros\FleetBench.ahk"'
+			, , , &pid
+	catch as e {
+		ext_fleetProblem("could not open the test bench: " e.Message)
+		MsgBox "The test bench would not start.`n`n" e.Message, "Fleet", 0x40010
+		return 0
+	}
+	return pid
 }
 
 ext_FleetAdvClose(*) {

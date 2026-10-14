@@ -105,22 +105,30 @@ read, so they take their numbers as arguments.
 thirty seconds says nothing about whether the macro presses the key when it
 opens.
 
-### The gap inside that
+### The gap inside that, now half closed
 
 The self-test speaks the protocol **directly**. It is a pretend macro, not the
-real one. So the coordinator and the wire are proven; the macro's own half is
-not. These mirror the coordinator's logic "in miniature" in the test and have
-never actually run:
+real one. So the coordinator and the wire are proven by it; the macro's own
+half is not, and had never run at all.
 
-- [ ] `ext_fleetReplicate` — writing a replica, and refusing to go backwards `loads`
-- [ ] `ext_fleetHandUp` — offering a better configuration `loads`
+The bench's coordinator mode closed three of the five. Driven against the real
+extension code - the same functions the macro runs, with nothing of Natro
+around them - it served a configuration at version 9, then served version 2,
+and the macro:
+
+- [x] `ext_fleetReplicate` wrote the replica at v9
+- [x] refused to go backwards: the file still said v9 after v2 arrived
+- [x] `ext_fleetHandUp` offered its v9 back, and the bench received the SETROW
+      frames carrying it
+
+Still never run:
+
 - [ ] `ext_fleetLostCoord` — marking a lost coordinator offline `loads`
 - [ ] `ext_fleetSuccessor` escalation — passing over a dead candidate `loads`
 - [ ] `ext_fleetReplicate` re-reading disk versions on a change of role `loads`
 
-A test that drove two real macros instead of two pretend ones would close
-this, and would need two AutoHotkey processes with their own settings folders.
-Worth doing before trusting failover.
+Those three are all about losing a coordinator, which the bench can now stage
+(`stop` while a macro is connected) but which nobody has watched yet.
 
 ---
 
@@ -272,16 +280,22 @@ It has its own port (47700), its own roster file and its own coordinator, and
 it cannot reach the real configuration. To use it, point a macro at 47700 in
 Fleet settings, Advanced.
 
-It also runs scripts, so a test can be written down, handed over and run
-again - which pressing six buttons in the right order is not. The commands are
-in the fleet's own idiom (`field 1 pepper`, `send 1 FIELD name=pepper`,
-`expect 2 GOTO field=pepper`, `reject 4 GOTO`), and `bench\` holds six of them.
+It has a console rather than a folder of scripts: the commands are in the
+fleet's own idiom, the reference is the box's own opening text, and the
+Commands button brings it back if you clear it. `expect` and `reject` make a
+sequence of them a test rather than a demonstration.
 
-One is already proven rather than merely written:
+And it works from either side of the wire:
 
-- [x] **`02-goto-reaches-residents.txt`** - five pretend macros against the real
-      coordinator: fuzzy and tad are sent the main's field, a guid and an atk
-      are not. Four checks, nothing failed.
+- **Pretend macros** stand in for the others against a real coordinator. Proven:
+  five of them, fuzzy and tad sent the main's field and a guid and an atk not,
+  four checks and nothing failed.
+- **Be the coordinator** and a real macro connects to the bench instead, which
+  is the only way to press on the macro's own half - serve it a stale
+  configuration, refuse it, claim a higher term, or stop and watch it take
+  over. Proven: the stale-configuration case, above.
+
+There is a button for it in the Fleet advanced window.
 
 What it turns into a twenty-minute check:
 

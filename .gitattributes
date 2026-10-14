@@ -12,7 +12,3 @@
 *.ini text eol=crlf
 *.txt text eol=lf
 *.log text eol=lf
-
-# the bench's test scripts are opened in Notepad on Windows, which shows a
-# file with bare newlines as a single line
-bench/*.txt text eol=crlf
