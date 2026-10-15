@@ -56,12 +56,28 @@ bench_onError(err, mode) {
 	try FileAppend text "`r`n" err.Stack "`r`n"
 		, "settings\fleet_bench_error.txt", "UTF-8"
 	try bench_say(text)
+	;Carrying on is right when somebody is watching the log and can decide what
+	;to do about it. It is wrong in an automated run, where it leaves a process
+	;alive for ever holding the port - which is then the next run's failure,
+	;with nothing to connect the two. That has already happened here once.
+	if bench_quiet() {
+		try FileAppend "FAIL`n", "*"
+		ExitApp 2
+	}
 	return 1
 }
 
-;A port of its own, well clear of the real fleet's 47600. Nothing here can
-;reach a real coordinator unless somebody types this number into one.
-BENCH_PORT := 47700
+;Where the bench listens, and the one setting that lets a real macro join
+;without being reconfigured.
+;
+;47700 by default, well clear of the real fleet's 47600: the two can run side
+;by side and nothing here can reach a real coordinator. Set it to 47600 with
+;the port command and a real macro needs no changes at all - it listens for
+;beacons on 47601 and knocks on 47600, which is where this now is. The price
+;is that the bench and a real fleet can no longer share the machine, and the
+;exclusive bind is what says so rather than the two of them splitting
+;whatever connects.
+bench_port := 47700
 BENCH_SECRET := "bench"
 ;The identity of the bench's fleet. A macro bound to it keeps this fleet's
 ;configuration under settings\fleet\benchfleet\, so nothing the bench does
@@ -84,6 +100,20 @@ BENCH_FIELDS := ["sunflower", "dandelion", "mushroom", "blue flower", "clover"
 	, "pumpkin", "pine tree", "rose", "mountain top", "pepper", "coconut"]
 
 ;row -> what this pretend macro is and what its socket is doing
+;row -> what the bench knows about that seat.
+;
+;A seat has up to two sockets, and conflating them was a real fault: a fake
+;seat connecting to the bench's own coordinator was reclassified as a real
+;macro by its own HELLO, and became undrivable. So the two directions are
+;named separately.
+;
+;  socket  the bench speaking AS that macro. Only a fake seat has one.
+;  back    the bench speaking TO that macro, as the coordinator. Both kinds
+;          have one while the bench is listening.
+;
+;A fake seat talking to the bench's own listener therefore has both, which is
+;exactly right: it is a macro and the bench is its coordinator, and the bench
+;is both ends of that conversation.
 bench_seats := Map()
 ;socket -> row, for the reverse lookup a frame needs
 bench_bySocket := Map()
@@ -112,20 +142,45 @@ bench_listener := 0
 ;what the heartbeat claims, so a macro can be told a term higher or lower than
 ;the one it already obeys
 bench_term := 1
+;The beacon, so a real macro finds this bench the way it finds any fleet:
+;by hearing it, not by being told an address. Without one, joining the bench
+;meant typing a port and an address into the macro - which is exactly the
+;thing binding exists to avoid, and which nobody would have discovered on
+;their own.
+bench_beacon := 0
+;Until when the bench accepts macros it has never seen. Shut by default: an
+;open door is how a real macro ends up in the bench fleet, and that should be
+;a thing somebody asked for.
+bench_bindUntil := 0
+
+;Bound to an ephemeral port, like the coordinator's, so it never competes
+;with the listening port. Opened once: a socket is cheap and a bench that
+;could not be found is the whole problem being fixed here.
+bench_beacon := sock_UdpListen(0, (*) => 0)
+if !bench_beacon
+	bench_say("no UDP socket - a real macro will have to be given this"
+		. " address by hand")
+SetTimer bench_sendBeacon, 2000
 
 bench_window()
+;Driven without a mouse, when something hands it a file of commands.
+;
+;That is how the bench itself gets checked by the same harness as everything
+;else - and it is also how a scenario worth keeping gets kept: in a file you
+;wrote, not in a dropdown of tests somebody else wrote for you.
+bench_args()
 return
 
 ;--- the window --------------------------------------------------------------
 
 bench_window() {
-	global BenchGui, BENCH_PORT, BENCH_FIELDS
+	global BenchGui, bench_port, BENCH_FIELDS
 	;UseTab belongs to the tab control and not to the window, which /Validate
 	;cannot tell you - a wrong method name is a runtime lookup, so only running
 	;it finds one
 	local tabs
 
-	BenchGui := Gui("+Resize", "Fleet bench - port " BENCH_PORT)
+	BenchGui := Gui("+Resize", "Fleet bench - port " bench_port)
 	BenchGui.OnEvent("Close", bench_close)
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
 
@@ -224,12 +279,61 @@ bench_window() {
 
 	bench_loadRoster()
 	bench_drawSeats()
-	bench_say("bench ready on port " BENCH_PORT ", secret `"" BENCH_SECRET "`"")
+bench_say("bench ready on port " bench_port ", secret `"" BENCH_SECRET "`"")
+bench_say("to let a real macro in: accept - and set its Fleet port to "
+	. bench_port ", or run: port 47600")
 	bench_say("point a macro at this port in Fleet settings, Advanced")
 	SetTimer bench_tick, 1000
 	SetTimer bench_beat, 10000
 	SetTimer bench_step, 100
 	BenchGui.Show("w618 h622")
+}
+
+;A file of commands as the first argument is loaded into the box and run.
+;/quiet makes the run answer on standard output and exit when it finishes,
+;which is the shape the other self-tests already answer in.
+bench_args() {
+	global BenchGui
+	local path := "", text := "", a
+
+	for _, a in A_Args
+		if (SubStr(a, 1, 1) != "/")
+			path := a
+	if ((path = "") || !FileExist(path))
+		return 0
+	try text := FileRead(path, "UTF-8")
+	if (text = "")
+		return 0
+	BenchGui["BenchScript"].Value := text
+	bench_say("running " path)
+	;A run driven from outside has to end by itself, pass or hang. Killing the
+	;ssh connection that started it does not kill it - that has already left a
+	;process on the test machine which then interfered with a later run.
+	if bench_quiet()
+		SetTimer bench_giveUp, -90000
+	bench_runScript()
+	return 1
+}
+
+;The script never finished. Said out loud and then gone, because a bench left
+;holding a port is the next run's failure and nobody would connect the two.
+bench_giveUp() {
+	global bench_pc
+
+	if !bench_pc
+		return 0
+	bench_say("--- gave up: still on line " bench_pc " after 90 seconds ---")
+	FileAppend "FAIL`n", "*"
+	ExitApp 1
+}
+
+bench_quiet() {
+	local a
+
+	for _, a in A_Args
+		if (a = "/quiet")
+			return 1
+	return 0
 }
 
 bench_close(*) {
@@ -247,11 +351,11 @@ bench_close(*) {
 
 ;Once a second: the state line, and the seat list if anything moved.
 bench_tick() {
-	global BenchGui, BENCH_PORT, bench_coordPid, bench_coord, bench_listener, bench_term
+	global BenchGui, bench_port, bench_coordPid, bench_coord, bench_listener, bench_term
 
 	if !(IsSet(BenchGui) && IsObject(BenchGui))
 		return
-	try BenchGui["BenchState"].Text := "Port " BENCH_PORT " - "
+	try BenchGui["BenchState"].Text := "Port " bench_port " - "
 		. bench_coordWord() " - " bench_fakeCount() " fake, "
 		. bench_realCount() " real, " bench_connectedCount() " connected"
 	try BenchGui["BenchCoord"].Text := (bench_coordPid && ProcessExist(bench_coordPid))
@@ -260,12 +364,23 @@ bench_tick() {
 	bench_drawSeats()
 }
 
+;One seat, built in one place.
+;
+;Three places used to write this object out by hand, and when a second socket
+;was added to it two of them were not updated - so a seat loaded from the
+;roster file had no "back" property and the first frame aimed at it brought the
+;bench down. One constructor is the fix for the fault and for its cause.
+bench_newSeat(row, name, role, kind := "fake", socket := 0, back := 0) {
+	return { row: row, name: name, role: StrLower(role), kind: kind
+		, socket: socket, back: back, said: "", told: "", heard: [] }
+}
+
 bench_connectedCount() {
 	global bench_seats
 	local r, seat, n := 0
 
 	for r, seat in bench_seats
-		if seat.socket
+		if bench_wired(seat)
 			n++
 	return n
 }
@@ -324,8 +439,7 @@ bench_loadRoster() {
 	}
 	for r, e in rows
 		if !bench_seats.Has(r)
-			bench_seats[r] := { row: r, name: e.name, role: e.role, kind: "fake"
-				, socket: 0, said: "", told: "", heard: [] }
+			bench_seats[r] := bench_newSeat(r, e.name, e.role)
 	return 1
 }
 
@@ -345,7 +459,7 @@ bench_drawSeats() {
 	for _, r in keys {
 		seat := bench_seats[r]
 		BenchGui["BenchSeats"].Add(, r, seat.kind, seat.name, seat.role
-			, seat.socket ? "connected" : "-", seat.said
+			, bench_wired(seat) ? "connected" : "-", seat.said
 			, seat.told != "" ? seat.told : "-")
 	}
 	for _, r in keys
@@ -389,8 +503,7 @@ bench_addSeat(*) {
 	;the next version, because the coordinator compares them - the bench has to
 	;speak the protocol properly or it is testing something else
 	roster_Save(BENCH_ROSTER, rows, bench_rosterVersion() + 1, 1)
-	bench_seats[row] := { row: row, name: name, role: StrLower(role), kind: "fake"
-		, socket: 0, said: "", told: "", heard: [] }
+	bench_seats[row] := bench_newSeat(row, name, role)
 	bench_say("added row " row " (" name ", " role ")")
 	bench_drawSeats()
 }
@@ -446,7 +559,7 @@ bench_disconnectAll(*) {
 }
 
 bench_connectRow(row) {
-	global bench_seats, BENCH_PORT
+	global bench_seats, bench_port
 	local seat
 
 	if (!row || !bench_seats.Has(row))
@@ -454,7 +567,7 @@ bench_connectRow(row) {
 	seat := bench_seats[row]
 	if seat.socket
 		return 0
-	seat.socket := sock_Connect("127.0.0.1", BENCH_PORT, bench_onSocket)
+	seat.socket := sock_Connect("127.0.0.1", bench_port, bench_onSocket)
 	if !seat.socket {
 		bench_say("row " row " could not open a socket")
 		return 0
@@ -567,19 +680,21 @@ bench_beat() {
 	;real one gets the coordinator's. Which is the point of the two kinds living
 	;in one list.
 	for r, seat in bench_seats {
-		if !seat.socket
-			continue
-		if (seat.kind = "real") {
-			if bench_listener
-				sock_SendLine(seat.socket, fleet_Frame("HEARTBEAT"
-					, Map("term", bench_term, "row", 1, "at", nowUnix())))
-		}
-		else
+		;as the macro: a fake seat saying it is alive
+		if seat.socket
 			sock_SendLine(seat.socket, fleet_Frame("HEARTBEAT"))
+		;as the coordinator: who is in charge and on which term, which is the
+		;frame a macro's whole failover decision turns on. It goes to every seat
+		;the bench is coordinating, fake ones included - a fake seat connected to
+		;the bench is a macro whose coordinator this is.
+		if (bench_listener && seat.back)
+			sock_SendLine(seat.back, fleet_Frame("HEARTBEAT"
+				, Map("term", bench_term, "row", 1, "at", nowUnix())))
 	}
 	return 1
 }
 
+;Speak AS that macro: out of the socket the bench opened pretending to be it.
 bench_send(row, line) {
 	global bench_seats
 
@@ -587,6 +702,29 @@ bench_send(row, line) {
 		return 0
 	bench_logFrame(row, "->", line)
 	return sock_SendLine(bench_seats[row].socket, line)
+}
+
+;Speak TO that macro, as its coordinator: out of the accepted socket.
+;
+;A separate function because the same frame means opposite things on the two
+;sockets. GOTO sent as a macro is a macro giving its coordinator an order,
+;which is nonsense; sent as the coordinator it is the order a resident acts
+;on. They used to share one call and the wrong one was being used for every
+;coordinator verb aimed at a fake seat.
+bench_sendBack(row, line) {
+	global bench_seats
+
+	if (!row || !bench_seats.Has(row) || !bench_seats[row].back) {
+		bench_say("? row " row " has no connection the coordinator can answer on")
+		return 0
+	}
+	bench_logFrame(row, "=>", line)
+	return sock_SendLine(bench_seats[row].back, line)
+}
+
+;Connected at all, either way round.
+bench_wired(seat) {
+	return seat.socket || seat.back
 }
 
 ;--- saying things -----------------------------------------------------------
@@ -664,11 +802,14 @@ bench_coordToggle(*) {
 }
 
 bench_startCoord() {
-	global bench_coordPid, BENCH_PORT, BENCH_SECRET, BENCH_ROSTER, BENCH_FLEET_ID
+	global bench_coordPid, bench_port, BENCH_SECRET, BENCH_ROSTER, BENCH_FLEET_ID
 
 	try
-		Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' BENCH_PORT
-			. ' "' BENCH_SECRET '" 1 1 "' BENCH_ROSTER '" "' BENCH_FLEET_ID '"'
+		Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' bench_port
+			. ' "' BENCH_SECRET '" 1 1 "' BENCH_ROSTER '" "' BENCH_FLEET_ID '" 1'
+			;and what to call itself in a join window, so a real macro about to
+			;bind is told this is the bench and not its own fleet
+			. ' "the Natro Macro test bench"'
 			, , "Hide", &bench_coordPid
 	catch as e {
 		bench_coordPid := 0
@@ -726,7 +867,7 @@ bench_coordChanged(*) {
 ;which is what a macro does when a coordinator changes hands, and watching them
 ;do it is half of what this is for.
 bench_setCoord(which) {
-	global bench_coord, BenchGui, BENCH_PORT
+	global bench_coord, BenchGui, bench_port
 
 	if (bench_coord = which)
 		return 0
@@ -751,19 +892,19 @@ bench_setCoord(which) {
 ;the port, this says so rather than quietly listening alongside it and
 ;splitting whatever connects.
 bench_listen() {
-	global bench_listener, BENCH_PORT, bench_coord
+	global bench_listener, bench_port, bench_coord
 
 	bench_coord := "bench"
 	try BenchGui["BenchCoordBy"].Value := 3
 	if bench_listener
 		return 0
-	bench_listener := sock_Listen(BENCH_PORT, bench_onServer, 1)
+	bench_listener := sock_Listen(bench_port, bench_onServer, 1)
 	if !bench_listener {
-		bench_say("could not listen on " BENCH_PORT " - something else has it"
+		bench_say("could not listen on " bench_port " - something else has it"
 			. (sock_lastError != "" ? " (" sock_lastError ")" : ""))
 		return 0
 	}
-	bench_say("listening on " BENCH_PORT " as the coordinator")
+	bench_say("listening on " bench_port " as the coordinator")
 	;Said every time, because it is the one way this tool can do harm. A real
 	;macro pointed here writes the bench's configuration into its own files -
 	;the mark on it stops that configuration ever beating a real one, but the
@@ -773,15 +914,168 @@ bench_listen() {
 	return 1
 }
 
+;--- being found, and letting a real macro in --------------------------------
+;
+;A real macro finds a fleet by hearing its beacon and walks in through the
+;binding door. Until this, the bench had neither: joining it meant typing a
+;port and an address into the macro's advanced settings, which is precisely the
+;thing binding exists to avoid and which nobody would have found on their own.
+;So the bench beacons like a coordinator and binds like one.
+
+;Shout where this bench is. The label is the point of difference and it is not
+;decoration: it is what the join window repeats back to whoever is about to
+;press the button. On your own machine a bench fleet is otherwise
+;indistinguishable from the real one - same host name, same kind of account
+;count, same open door - and joining it takes that macro out of its fleet until
+;it is set up again.
+bench_sendBeacon() {
+	global bench_beacon, bench_port, bench_term, bench_seats, bench_bindUntil
+	global bench_listener, BENCH_SECRET
+
+	;only while the bench is the one coordinating. A Fleet.ahk it started does
+	;its own beaconing, and two beacons for one fleet are two answers to one
+	;question.
+	if (!bench_beacon || !bench_listener)
+		return 0
+	return sock_UdpSend(bench_beacon, "255.255.255.255", bench_port + 1
+		, fleet_Frame("FLEET", Map("port", bench_port, "term", bench_term
+			, "row", 1, "id", fleet_Fingerprint(BENCH_SECRET)
+			, "open", (nowUnix() < bench_bindUntil) ? 1 : 0
+			, "host", A_ComputerName, "size", bench_seats.Count
+			, "label", "the Natro Macro test bench")))
+}
+
+;accept [secs] - open the door, or shut it with 0.
+;
+;Routed by who is coordinating: the bench opens its own door, and a real
+;Fleet.ahk is asked through the protocol by the seat that holds its mandate,
+;which is the same path a macro's own Accept button takes.
+bench_accept(rest) {
+	global bench_bindUntil, bench_coord, bench_seats, bench_listener
+	local secs := fleet_Num(rest)
+
+	if (rest = "")
+		secs := 120
+	if (bench_coord = "real") {
+		if (!bench_seats.Has(1) || !bench_seats[1].socket) {
+			bench_say("? the real coordinator takes orders from row 1 - run:"
+				. " seat 1 main mandate, then connect 1")
+			return 0
+		}
+		bench_send(1, fleet_Frame("OPEN", Map("secs", secs)))
+		bench_say("asked the real coordinator to accept macros for " secs "s")
+		return 1
+	}
+	if !bench_listener {
+		bench_say("? nothing is coordinating here - run: listen")
+		return 0
+	}
+	if (secs <= 0) {
+		bench_bindUntil := 0
+		bench_say("the door is shut")
+		return 1
+	}
+	bench_bindUntil := nowUnix() + secs
+	bench_say("accepting new macros for " secs "s - a real macro will now see"
+		. " this bench in its own Set up this macro window")
+	return 1
+}
+
+;A macro asking to be let in. The one frame that arrives without a secret,
+;because handing the secret over is what binding is for.
+;
+;The row goes into the bench's own roster so the seat survives the macro
+;reconnecting, and the bench's fleet identity goes back with the secret - that
+;is what keeps this fleet's configuration in a folder of its own on that
+;macro's disk, well away from the real fleet it also belongs to.
+bench_onBind(s, frame) {
+	global bench_seats, bench_bySocket, bench_bindUntil, bench_term
+	global BENCH_SECRET, BENCH_FLEET_ID, BENCH_ROSTER
+	local row, rows
+
+	if (nowUnix() > bench_bindUntil) {
+		bench_say("refused a bind - the door is shut, run: accept")
+		sock_SendLine(s, fleet_Frame("BYE"
+			, Map("why", "the test bench is not accepting macros")))
+		return 0
+	}
+	rows := roster_Load(BENCH_ROSTER)
+	row := bench_freeRow(rows, fleet_Field(frame, "user")
+		, fleet_Field(frame, "machine"), fleet_Field(frame, "name"))
+	rows[row] := { row: row, name: fleet_Field(frame, "name", "row " row)
+		, role: fleet_Field(frame, "role", "guid")
+		, user: fleet_Field(frame, "user", "")
+		, machine: fleet_Field(frame, "machine", "") }
+	roster_Save(BENCH_ROSTER, rows, bench_rosterVersion() + 1, 1, 1)
+	bench_seats[row] := bench_newSeat(row, rows[row].name, rows[row].role
+		, "real", 0, s)
+	bench_seats[row].said := "just bound"
+	bench_bySocket[s] := row
+	bench_say("bound " rows[row].name " as row " row " of fleet " BENCH_FLEET_ID)
+	sock_SendLine(s, fleet_Frame("BOUND", Map("row", row
+		, "secret", BENCH_SECRET, "fid", BENCH_FLEET_ID)))
+	bench_drawSeats()
+	return 1
+}
+
+;The row this account already has, or the next free one. Same rule the real
+;coordinator uses: one account is one row, so a macro set up twice lands back
+;on its own seat instead of leaving a ghost behind.
+bench_freeRow(rows, user, machine, name) {
+	local r, e, best := 0
+
+	if (user != "")
+		for r, e in rows
+			if (e.user = user)
+				return r
+	if ((machine != "") && (name != ""))
+		for r, e in rows
+			if ((e.machine = machine) && (e.name = name))
+				return r
+	for r, _ in rows
+		if (r > best)
+			best := r
+	return best + 1
+}
+
+;port <n> - where the bench listens.
+;
+;Everything stops first. A listener and a beacon on the old port would keep
+;answering macros that are no longer being told about, which is the one state
+;harder to debug than nothing working at all.
+bench_doPort(rest) {
+	global bench_port, bench_coord
+	local want := fleet_Num(rest), was := bench_coord
+
+	if ((want < 1024) || (want > 65535)) {
+		bench_say("? port <1024-65535>, and 47600 is the real fleet's")
+		return 0
+	}
+	bench_setCoord("none")
+	bench_endCoord()
+	bench_port := want
+	bench_say("port is now " bench_port
+		. ((want = 47600) ? " - the real fleet's, so a macro needs no changes"
+			" and a real coordinator cannot run on this machine at the same time"
+			: " - set the same port in the macro's Fleet advanced settings"))
+	bench_state()
+	if (was != "none")
+		bench_say("nothing is coordinating any more - run: " ((was = "bench")
+			? "listen" : "coordinatedby real"))
+	return 1
+}
+
 bench_stopListening() {
 	global bench_listener, bench_seats
 	local r, seat
 
 	if !bench_listener
 		return 0
+	;the accepted side only. A fake seat's own socket is this process pretending
+	;to be a macro, and it closes itself when the listener goes.
 	for r, seat in bench_seats
-		if seat.socket
-			sock_Close(seat.socket), seat.socket := 0
+		if seat.back
+			sock_Close(seat.back), seat.back := 0
 	sock_Close(bench_listener)
 	bench_listener := 0
 	bench_say("stopped listening - a macro watching this should take over")
@@ -802,7 +1096,7 @@ bench_onServer(s, event, data) {
 	}
 	if (event = "close") {
 		if (row && bench_seats.Has(row)) {
-			bench_seats[row].socket := 0
+			bench_seats[row].back := 0
 			bench_say("row " row " went away")
 		}
 		bench_bySocket.Delete(s)
@@ -816,6 +1110,11 @@ bench_onServer(s, event, data) {
 		return
 	if (frame.verb = "HELLO") {
 		bench_onHello(s, frame)
+		return
+	}
+	;the one frame that arrives before a macro has a row at all
+	if (frame.verb = "BIND") {
+		bench_onBind(s, frame)
 		return
 	}
 	if (!row || !bench_seats.Has(row))
@@ -844,11 +1143,23 @@ bench_onHello(s, frame) {
 	if (fleet_Field(frame, "secret") != BENCH_SECRET)
 		bench_say("row " row " gave the secret `"" fleet_Field(frame, "secret")
 			. "`" - the bench wants `"" BENCH_SECRET "`", and is letting it in anyway")
-	bench_seats[row] := { row: row, name: fleet_Field(frame, "machine", "a macro")
-		, role: fleet_Field(frame, "role", "?"), kind: "real"
-		, socket: s, said: "", told: "", heard: [] }
-	bench_bySocket[s] := row
-	bench_say("row " row " is here, from " fleet_Field(frame, "machine", "somewhere"))
+	;A seat the bench already owns keeps its kind. This is the fault that made
+	;the whole point of one fleet with both kinds in it not work: a fake seat
+	;connecting to the bench's own coordinator arrived here, was rewritten as a
+	;real macro by its own HELLO, and could no longer be driven.
+	if (bench_seats.Has(row) && (bench_seats[row].kind = "fake")) {
+		bench_seats[row].back := s
+		bench_bySocket[s] := row
+		bench_say("row " row " reached the bench's own coordinator")
+	}
+	else {
+		bench_seats[row] := bench_newSeat(row
+			, fleet_Field(frame, "machine", "a macro")
+			, fleet_Field(frame, "role", "?"), "real", 0, s)
+		bench_bySocket[s] := row
+		bench_say("row " row " is here, from "
+			. fleet_Field(frame, "machine", "somewhere"))
+	}
 	;a macro expects to be told who is in charge before anything else
 	sock_SendLine(s, fleet_Frame("HEARTBEAT"
 		, Map("term", bench_term, "row", 1, "at", nowUnix())))
@@ -912,7 +1223,7 @@ bench_serve(parts) {
 		rows := servers_Load(RegExReplace(BENCH_ROSTER, "i)\.ini$", "_servers.ini"))
 		n := rows.Count
 		for r, e in rows
-			bench_toReal(fleet_Frame("SERVER", Map("v", v, "by", by, "bench", 1
+			bench_asCoord(fleet_Frame("SERVER", Map("v", v, "by", by, "bench", 1
 				, "n", n, "slot", e.slot, "name", e.name, "link", e.link
 				, "owner", e.owner, "kind", e.kind)))
 		bench_say("served " n " server(s) at v" v " by row " by)
@@ -923,7 +1234,7 @@ bench_serve(parts) {
 	;an empty configuration still has to say so, exactly as the real
 	;coordinator does, or clearing one would reach nobody
 	if !n {
-		bench_toReal(fleet_Frame("ROW", Map("v", v, "by", by, "bench", 1, "n", 0)))
+		bench_asCoord(fleet_Frame("ROW", Map("v", v, "by", by, "bench", 1, "n", 0)))
 		bench_say("served an empty roster at v" v " by row " by)
 		return
 	}
@@ -931,11 +1242,11 @@ bench_serve(parts) {
 		;bench=1 on every one. A real macro will write this into its own files,
 		;and the mark is what stops it ever being handed up and winning against
 		;a real fleet - see the note on Bench in FleetRoster.ahk.
-		bench_toReal(fleet_Frame("ROW", Map("v", v, "by", by, "bench", 1, "n", n
+		bench_asCoord(fleet_Frame("ROW", Map("v", v, "by", by, "bench", 1, "n", n
 			, "row", e.row, "name", e.name, "role", e.role
 			, "user", e.user, "machine", e.machine)))
 		;and the live half, so the macro's panel has something to draw
-		bench_toReal(fleet_Frame("ROSTER", Map("row", e.row, "name", e.name
+		bench_asCoord(fleet_Frame("ROSTER", Map("row", e.row, "name", e.name
 			, "role", e.role, "state", "online", "machine", e.machine
 			, "user", e.user, "server", "", "field", ""
 			, "guiding", "", "until", 0, "charge", 0
@@ -944,18 +1255,22 @@ bench_serve(parts) {
 	bench_say("served " n " row(s) at v" v " by row " by)
 }
 
-;A coordinator's frame goes to the real macros. Not to our own fakes: they are
-;this process's own sockets facing the other way, and a frame a coordinator
-;sends has no meaning arriving at one.
-bench_toReal(line) {
+;A coordinator's frame, to everybody this bench coordinates - real macros and
+;its own fakes alike.
+;
+;It was called bench_toReal and went only to the real seats, on the socket a
+;fake seat uses to speak rather than the one it listens on. That is why a fake
+;seat could never be sent an order, and the name was the clue: it named half
+;the set it should have been reaching.
+bench_asCoord(line) {
 	global bench_seats
 	local r, seat, n := 0
 
 	for r, seat in bench_seats
-		if (seat.socket && (seat.kind = "real"))
-			bench_send(r, line), n++
+		if seat.back
+			bench_sendBack(r, line), n++
 	if !n
-		bench_say("no real macro is connected, so that went nowhere")
+		bench_say("nothing is connected to this bench, so that went nowhere")
 	return n
 }
 
@@ -1023,6 +1338,11 @@ bench_reference() {
 #   bye 2 1 you are not welcome     final=1, so the macro gives up for good
 #   gone 2
 #
+# letting a real macro in - it finds this bench by beacon, like any fleet
+#   accept                       open the door for two minutes (accept 0 shuts it)
+#   port 47600                   take the real fleet's port, so a macro
+#                                needs no changes at all to join
+#
 # either kind
 #   wait 2000                       milliseconds
 #   say anything at all             one line in the log
@@ -1069,6 +1389,14 @@ bench_step() {
 		if bench_pc {
 			bench_say("--- done: " bench_pass " passed, " bench_fail " failed ---")
 			bench_pc := 0
+			;A run with nothing checked is not a pass. A script whose expects all
+			;failed to even parse would otherwise report success, which is the
+			;worst answer a test harness can give.
+			if bench_quiet() {
+				FileAppend (bench_fail || !bench_pass) ? "FAIL" : "PASS", "*"
+				FileAppend "`n", "*"
+				ExitApp (bench_fail || !bench_pass) ? 1 : 0
+			}
 		}
 		return
 	}
@@ -1129,6 +1457,10 @@ bench_do(line) {
 			bench_setCoord(bench_coordWord2(rest))
 		case "listen":
 			bench_setCoord("bench")
+		case "accept":
+			bench_accept(rest)
+		case "port":
+			bench_doPort(rest)
 		case "stop":
 			bench_setCoord("none")
 		case "term":
@@ -1140,7 +1472,7 @@ bench_do(line) {
 		case "bye":
 			bench_doBye(parts, rest)
 		case "gone":
-			bench_toReal(fleet_Frame("GONE", Map("row", fleet_Num(rest))))
+			bench_asCoord(fleet_Frame("GONE", Map("row", fleet_Num(rest))))
 		default:
 			bench_say("? unknown command: " line)
 	}
@@ -1166,10 +1498,10 @@ bench_doGoto(parts, rest) {
 		return
 	}
 	if (StrLower(who) = "all") {
-		bench_toReal(fleet_Frame("GOTO", Map("field", field)))
+		bench_asCoord(fleet_Frame("GOTO", Map("field", field)))
 		return
 	}
-	bench_send(fleet_Num(who), fleet_Frame("GOTO", Map("field", field)))
+	bench_sendBack(fleet_Num(who), fleet_Frame("GOTO", Map("field", field)))
 }
 
 ;bye <row> <final 0|1> <why...> - the refusal, and whether the macro should
@@ -1188,7 +1520,7 @@ bench_doBye(parts, rest) {
 		why .= (why = "" ? "" : " ") parts[i], i++
 	if (why = "")
 		why := "the bench says so"
-	bench_send(row, fleet_Frame("BYE", Map("why", why, "final", final)))
+	bench_sendBack(row, fleet_Frame("BYE", Map("why", why, "final", final)))
 }
 
 ;seat <row> <role> [name...]
@@ -1213,8 +1545,7 @@ bench_doSeat(parts) {
 	if bench_seats.Has(row)
 		bench_seats[row].name := name, bench_seats[row].role := role
 	else
-		bench_seats[row] := { row: row, name: name, role: role, kind: "fake"
-			, socket: 0, said: "", told: "", heard: [] }
+		bench_seats[row] := bench_newSeat(row, name, role)
 	bench_say("seat " row " is " name " (" role ")")
 	bench_drawSeats()
 }
@@ -1283,7 +1614,7 @@ bench_doExpect(parts, rest, wanted) {
 	;A seat that is not connected heard nothing, which would make every reject
 	;pass for the wrong reason - and did, the first time this ran. Nothing is
 	;proved by a macro that was not there.
-	if !bench_seats[row].socket {
+	if !bench_wired(bench_seats[row]) {
 		bench_say("FAIL  row " row " is not connected, so this proves nothing")
 		bench_fail++
 		return

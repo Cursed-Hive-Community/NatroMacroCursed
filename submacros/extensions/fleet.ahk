@@ -203,7 +203,9 @@ ext_fleetOpenFleets() {
 		out.Push({ addr: addr
 			, port: Integer(f.Has("port") ? f["port"] : 0)
 			, host: f.Has("host") ? f["host"] : addr
-			, size: f.Has("size") ? f["size"] : 0 })
+			, size: f.Has("size") ? f["size"] : 0
+			;what the fleet calls itself, which only a test fleet bothers to do
+			, label: f.Has("label") ? f["label"] : "" })
 	return out
 }
 
@@ -1886,8 +1888,12 @@ ext_FleetJoinRefresh() {
 	}
 	open := ext_fleetOpenFleets()
 	if open.Length {
+		;a fleet that says what it is gets to say it here. The test bench does,
+		;because a bench fleet on this machine otherwise looks exactly like the
+		;real one - and joining it takes this macro out of the real one.
 		FleetJoinGui["JoinFound"].Text := "Found " open[1].host
 			. " (" open[1].size " accounts), accepting new macros."
+			. ((open[1].label != "") ? "`nThis is " open[1].label "." : "")
 		FleetJoinGui["JoinButton"].Enabled := true
 	}
 	else {

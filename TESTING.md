@@ -98,9 +98,22 @@ layer and the real protocol. They are the strongest evidence in the repository.
 - [x] the mandated row hands the coordinator on: the order reaches every macro
       carrying the say, and the old process stands down
 - [x] the binding door refuses out loud rather than ignoring the request
+- [x] the beacon says where to knock, which fleet it is, whether the door is
+      open, and what the fleet calls itself
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
+
+And four checks on the bench's own wiring, in `tools/bench-selfcheck.txt`,
+which the bench loads and runs because it takes a file of commands as an
+argument. Every one of them failed before the seat model was split into the
+two sockets a seat has:
+
+- [x] a fake seat keeps its kind when it reaches the bench's own coordinator
+- [x] and can still be driven, and still be sent an order as the coordinator
+- [x] the coordinator's heartbeat, with its term, reaches a fake seat
+- [x] a newcomer that sends only BIND comes back with the bench's secret and
+      the bench's fleet identity
 
 And thirty-four checks on the extensions' arithmetic — every window in time
 that any of them turns on, each with a row one second outside it, one exactly
@@ -476,6 +489,12 @@ Not bugs to find - bugs already known about, with no fix yet.
   configuration into their own folder. Fixed in `ext_FleetLeave` and
   `ext_fleetStartFleet`. No self-test reaches it: both are window code behind a
   confirmation box, and the self-tests only speak the protocol.
+- **No real macro has ever joined the bench.** The beacon, the door and the
+  binding are all driven and checked, but by the bench's own fake seats
+  connecting to its own listener - which is a real socket, a real frame and a
+  real roster write, and still not a copy of natro_macro.ahk deciding to
+  join. That is the one thing left before the answer to "how do I connect a
+  real account" is proven rather than reasoned.
 - **Nothing sends `HOST` yet.** The verb, the permission and the macro's
   response to it are proven on the wire, driven by the self-test speaking the
   protocol directly. No window and no button asks for a handover - the bench

@@ -49,20 +49,23 @@ COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetR
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
 COVER_exttest="submacros/ExtensionSelfTest.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk"
-# the bench is driven by hand, so it is validated but never run here
-COVER_bench="submacros/FleetBench.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
+# the bench runs its own wiring check - tools/bench-selfcheck.txt, which the
+# bench loads and runs because it accepts a file of commands as an argument
+COVER_bench="submacros/FleetBench.ahk tools/bench-selfcheck.txt lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
 
 # entry point -> coverage var
 ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench"
-# self-test -> name:script:diagfile:coverage var
-TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest"
+# self-test -> name:script:diagfile:coverage var[:argument]
+# the fifth field is an argument the script takes before /quiet - only the
+# bench has one, because only the bench is driven by a file of commands
+TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest bench:submacros/FleetBench.ahk:fleet_bench.txt:COVER_bench:tools/bench-selfcheck.txt"
 
 # every owned file, for the full-run default
 ALL_FILES=(
   submacros/natro_macro.ahk
   lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk
   submacros/Fleet.ahk submacros/FleetSelfTest.ahk submacros/SocketSelfTest.ahk
-  submacros/ExtensionSelfTest.ahk submacros/FleetBench.ahk
+  submacros/ExtensionSelfTest.ahk submacros/FleetBench.ahk tools/bench-selfcheck.txt
   submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk
 )
 
@@ -173,12 +176,14 @@ fi
 echo "== 4. the affected self-tests =="
 ran_test=0
 for spec in $TEST_SPECS; do
-  IFS=: read -r name script diag covervar <<<"$spec"
+  IFS=: read -r name script diag covervar extra <<<"$spec"
   intersects "${!covervar}" || continue
   ran_test=1
   winscript="${script//\//\\}"
   code=0
-  timeout 120 $SSH "cd ${WIN_REPO} && .\\submacros\\AutoHotkey64.exe /script .\\${winscript} /quiet" >/dev/null 2>&1 || code=$?
+  winextra=""
+  [ -n "${extra:-}" ] && winextra=" .\\${extra//\//\\}"
+  timeout 120 $SSH "cd ${WIN_REPO} && .\\submacros\\AutoHotkey64.exe /script .\\${winscript}${winextra} /quiet" >/dev/null 2>&1 || code=$?
   if [ "$code" -eq 0 ]; then
     echo "   PASS  $name"
   else

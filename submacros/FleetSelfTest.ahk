@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Thirty-three things are checked, each because it is a way the design could be wrong
+;Thirty-five things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -46,6 +46,8 @@
 ;	31. a macro without it is refused          asking is not the same as being owed
 ;	32. the mandated row hands the job on      and the old process stands down
 ;	33. the binding door refuses out loud      a silent no looks like a yes
+;	34. the beacon says where and which fleet  discovery had no check at all
+;	35. and whether the door is open           that flag is the join button
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -122,6 +124,12 @@
 ;one beat is broadcast on the next - so the test runs for a few seconds longer
 ;than the others would need.
 ;
+;Thirty-four and thirty-five are the discovery beacon, which until now nothing
+;checked. It is how a macro finds a coordinator at all - without it an address
+;has to be typed on every machine, and it would be wrong the moment the router
+;hands out a new lease. Its open flag is what turns the join button on, and its
+;label is what stops somebody joining a test fleet believing it was theirs.
+;
 ;It leaves nothing running: the coordinator it started is closed at the end.
 
 #Include "%A_ScriptDir%\..\lib"
@@ -181,6 +189,12 @@ try FileDelete RegExReplace(HANDROSTER, "i)\.ini$", ".log")
 handPid := 0, hand1 := 0, hand2 := 0
 handRefused := ""           ;what row 2 was told when it asked for a handover
 handDoor := ""              ;and when it tried to open the binding door
+;The beacon, which had never been checked by anything. It is the whole of
+;discovery - a macro that cannot hear one has to be given an address by hand -
+;and it is also what the join window reads to decide whether a fleet is
+;accepting macros and what it calls itself.
+beaconSeen := Map()
+beaconSock := sock_UdpListen(HANDPORT + 1, OnBeacon)
 handTold := Map()           ;the order, as each client received it
 
 coordPid := 0, rivalPid := 0, finished := 0
@@ -256,11 +270,27 @@ SetTimer Blank, -8000
 ;has already been broadcast and can be checked
 SetTimer Leave, -11500
 ;The handover, on its own coordinator: row 2 asks and is refused, then row 1
-;asks and is obeyed. The process stands down two and a half seconds after
-;the order, so this has to finish well before the report is written.
+;asks and is obeyed. Seven and a half seconds all told - a bind, two clients,
+;a pause long enough for a beacon to go out with the door open, the order, and
+;two and a half more before the process stands down. The report waits for all
+;of it: at twenty-two seconds it was reading ProcessExist half a second before
+;the process went, and calling a handover that worked a failure.
 SetTimer Handover, -15000
-SetTimer Report, -22000
+SetTimer Report, -25000
 return
+
+;Every beacon from the handover coordinator, kept by field so the report can
+;say which one was missing rather than only that something was.
+OnBeacon(s, event, data, from) {
+	global beaconSeen
+	local frame := fleet_Parse(data), name
+
+	if (!frame || (frame.verb != "FLEET"))
+		return
+	for _, name in ["port", "id", "open", "host", "size", "label", "term", "row"]
+		beaconSeen[name] := fleet_Field(frame, name)
+	beaconSeen["from"] := from
+}
 
 ;--- the handover -----------------------------------------------------------
 ;
@@ -272,7 +302,9 @@ Handover(*) {
 	global HANDPORT, SECRET, HANDROSTER, handPid
 
 	Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' HANDPORT
-		. ' ' SECRET ' 1 1 "' HANDROSTER '" fhandover 1'
+		;the eighth argument is what the fleet calls itself in a join window - a
+		;bench fleet on your own machine otherwise looks exactly like the real one
+		. ' ' SECRET ' 1 1 "' HANDROSTER '" fhandover 1 "a test fleet"'
 		, , , &handPid
 	SetTimer HandoverJoin, -1200
 }
@@ -286,13 +318,16 @@ HandoverJoin(*) {
 ;Row 2 asking. It is in the roster and connected, so nothing but the mandate
 ;stands between it and the fleet changing hands.
 HandoverWrongRow(*) {
-	global hand2
+	global hand1, hand2
 
 	;the binding door is the same privilege, and it used to be refused in
 	;silence - which made the button that asks for it look as though it worked
 	sock_SendLine(hand2, fleet_Frame("OPEN", Map("secs", 60)))
 	sock_SendLine(hand2, fleet_Frame("HOST", Map("row", 2)))
-	SetTimer HandoverRightRow, -900
+	;and from the row that may: the beacon has to be caught with its door open,
+	;because that flag is what turns the join button on
+	sock_SendLine(hand1, fleet_Frame("OPEN", Map("secs", 60)))
+	SetTimer HandoverRightRow, -2600
 }
 HandoverRightRow(*) {
 	global hand1
@@ -652,6 +687,7 @@ OnBad(s, event, data) {
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
 	global HANDROSTER, handPid, handRefused, handTold, handDoor
+	global beaconSeen, HANDPORT, beaconSock
 	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe, boundFid
 	global srv, srvGen, srvMainLink, srvMainOwner
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
@@ -827,6 +863,27 @@ Report(*) {
 	;the same privilege, and the refusal that used to be silent
 	allOk := Check(lines, "the binding door says no instead of ignoring it"
 		, InStr(handDoor, "only row 1")) && allOk
+
+	;--- the beacon ---------------------------------------------------------
+	;
+	;Nothing had ever checked it, and it is the whole of discovery: a macro that
+	;hears no beacon has to be given an address by hand, which is the state this
+	;fork exists to get away from. It also carries the two things the join
+	;window decides on - whether the door is open, and what the fleet calls
+	;itself.
+	allOk := Check(lines, "the beacon says where to knock and which fleet it is"
+		, (fleet_Num(beaconSeen.Has("port") ? beaconSeen["port"] : 0) = HANDPORT)
+		&& (beaconSeen.Has("id")
+			&& (beaconSeen["id"] = fleet_Fingerprint(SECRET)))
+		&& (beaconSeen.Has("host") && (beaconSeen["host"] != ""))
+		&& (beaconSeen.Has("from") && (beaconSeen["from"] != ""))) && allOk
+	;the open flag is what turns the join button on, and the label is what stops
+	;somebody joining a test fleet believing it was theirs
+	allOk := Check(lines, "and whether it is accepting macros, and what it is"
+		, (beaconSeen.Has("open") && (beaconSeen["open"] = "1"))
+		&& (beaconSeen.Has("label") && (beaconSeen["label"] = "a test fleet"))
+		&& (fleet_Num(beaconSeen.Has("size") ? beaconSeen["size"] : -1) = 2))
+		&& allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"

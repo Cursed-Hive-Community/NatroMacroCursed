@@ -12,7 +12,8 @@
 ;
 ;Launched by whichever macro the panel names as host:
 ;
-;	AutoHotkey64.exe /script submacros\Fleet.ahk <port> <secret> <term> <row> [roster] [id]
+;	AutoHotkey64.exe /script submacros\Fleet.ahk <port> <secret> <term> <row>
+;		[roster] [id] [mandate] [label]
 ;
 ;The term is what keeps two coordinators from fighting. Every takeover starts a
 ;higher one, it rides on every heartbeat, and a macro obeys only the highest it
@@ -82,6 +83,12 @@ fleetId := (A_Args.Length >= 6) ? A_Args[6] : fleet_LegacyId(secret)
 ;Defaulting to the starter keeps every older launcher and the test bench
 ;behaving exactly as they did.
 mandate := (A_Args.Length >= 7) ? Integer(A_Args[7]) : startedBy
+
+;What this fleet is, for the window where somebody is about to join one. Empty
+;for an ordinary fleet and set by the test bench, because a bench fleet on your
+;own machine otherwise looks exactly like the real one: same machine name, same
+;kind of account count, same open door.
+label := (A_Args.Length >= 8) ? A_Args[8] : ""
 
 ;row number -> what we know about that macro. The row is assigned by the panel
 ;and is the one thing a macro carries locally, so it is the identity here too.
@@ -830,7 +837,7 @@ fleet_ApplyRoster() {
 ;the secret on the wire; the port says where to knock. 255.255.255.255 reaches
 ;every machine on this subnet, which is as far as a fleet ever spans.
 fleet_Beacon() {
-	global beacon, port, term, startedBy, secret, bindUntil, roster
+	global beacon, port, term, startedBy, secret, bindUntil, roster, label
 
 	if !beacon
 		return 0
@@ -838,7 +845,8 @@ fleet_Beacon() {
 		, fleet_Frame("FLEET", Map("port", port, "term", term, "row", startedBy
 			, "id", fleet_Fingerprint(secret)
 			, "open", (nowUnix() < bindUntil) ? 1 : 0
-			, "host", A_ComputerName, "size", roster.Count)))
+			, "host", A_ComputerName, "size", roster.Count
+			, "label", label)))
 }
 
 ;Open the door. Only the host may ask, and never for longer than five
