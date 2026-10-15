@@ -53,9 +53,15 @@ FLEET_IDLE_SECS := 300
 port := (A_Args.Length >= 1) ? Integer(A_Args[1]) : 47600
 secret := (A_Args.Length >= 2) ? A_Args[2] : ""
 term := (A_Args.Length >= 3) ? Integer(A_Args[3]) : 1
-;the row that started us. It rides on every heartbeat so the macro the panel
-;named as host can tell whether it is being stood in for, and take its job back.
-hostRow := (A_Args.Length >= 4) ? Integer(A_Args[4]) : 0
+;The row that started us. It rides on every heartbeat, so a macro can tell
+;whether the fleet is being run by itself or by somebody else - and because a
+;coordinator reads its configuration out of its starter's folder, this also
+;names the macro whose files the fleet is living out of.
+;
+;It is not the row that may give this process orders. Those were one number
+;until the mandate below, which meant a macro standing in for five minutes
+;inherited the say over the fleet.
+startedBy := (A_Args.Length >= 4) ? Integer(A_Args[4]) : 0
 
 ;The fleet this coordinates, which is the name of the folder each macro keeps
 ;this fleet's configuration in. Handed to a newcomer during binding, so
@@ -68,6 +74,14 @@ hostRow := (A_Args.Length >= 4) ? Integer(A_Args[4]) : 0
 ;two jobs, and keeping them apart is what lets a macro on the old build still
 ;find a coordinator on this one.
 fleetId := (A_Args.Length >= 6) ? A_Args[6] : fleet_LegacyId(secret)
+
+;The row this coordinator runs on behalf of: the only one it takes orders
+;from. See fleet_MayCommand for why that is a different question from who
+;started it, and for the escape hatch when the mandated account is gone.
+;
+;Defaulting to the starter keeps every older launcher and the test bench
+;behaving exactly as they did.
+mandate := (A_Args.Length >= 7) ? Integer(A_Args[7]) : startedBy
 
 ;row number -> what we know about that macro. The row is assigned by the panel
 ;and is the one thing a macro carries locally, so it is the identity here too.
@@ -134,7 +148,8 @@ leadField := ""
 ;when a macro was last actually connected, for the idle timeout above
 lastSeated := nowUnix()
 
-fleet_Log("coordinator starting, port " port ", term " term ", row " hostRow)
+fleet_Log("coordinator starting, port " port ", term " term ", row " startedBy
+	. ((mandate != startedBy) ? ", on behalf of row " mandate : ""))
 ;The port is the lock, and sock_Listen is asked to hold it exclusively - see
 ;the note there. Failing to take it means a coordinator is already up and this
 ;process has nothing to do but get out of the way, which is far better than
@@ -191,6 +206,8 @@ fleet_OnLine(s, line) {
 			fleet_OnBeat(s, frame)
 		case "OPEN":
 			fleet_OnOpen(s, frame)
+		case "HOST":
+			fleet_OnHost(s, frame)
 		case "BIND":
 			fleet_OnBind(s, frame)
 		case "LEAVE":
@@ -217,7 +234,7 @@ fleet_OnLine(s, line) {
 ;role come from the roster file, so the fleet cannot end up with two versions
 ;of who row 2 is depending on which machine was edited last.
 fleet_OnHello(s, frame) {
-	global peers, bySocket, secret, term, hostRow, roster, leadField
+	global peers, bySocket, secret, term, startedBy, mandate, roster, leadField
 	local row, name, previous
 
 	;final says whether the macro being turned away can do anything about it.
@@ -263,7 +280,8 @@ fleet_OnHello(s, frame) {
 	fleet_Event("row " row " (" name ") joined")
 	;tell the newcomer who is in charge before anything else, so it knows which
 	;term to obey, then bring everyone's picture up to date
-	sock_SendLine(s, fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
+	sock_SendLine(s, fleet_Frame("HEARTBEAT", Map("term", term, "row", startedBy
+		, "mandate", mandate, "at", nowUnix())))
 	fleet_Broadcast()
 	;neither list is in fleet_Broadcast, which runs on every report a macro
 	;makes. They change when somebody edits them, so they go out on a join and
@@ -450,7 +468,7 @@ fleet_Ping() {
 
 ;Say we are alive, and write off anyone who has not.
 fleet_Beat() {
-	global peers, term, hostRow, roster, rosterPath, rosterStamp
+	global peers, term, startedBy, mandate, roster, rosterPath, rosterStamp
 	global servers, serversPath, serversStamp, rosterVer, serversVer, lastSeated
 	local p, stamp, fresh, ver
 
@@ -508,7 +526,10 @@ fleet_Beat() {
 		fleet_Log("nothing has been connected for " FLEET_IDLE_SECS "s - exiting")
 		ExitApp 0
 	}
-	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", hostRow, "at", nowUnix())))
+	;the mandate rides along so a macro that ends up taking over carries the say
+	;with it rather than claiming it
+	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", startedBy
+		, "mandate", mandate, "at", nowUnix())))
 	fleet_Ping()
 	fleet_BroadcastRoster()
 	fleet_BroadcastServers()
@@ -613,11 +634,11 @@ fleet_Send(line) {
 ;fleet cannot see: every macro compares versions to decide whether what it has
 ;been sent is worth keeping, and an unchanged version reads as "nothing to do".
 fleet_BumpRoster() {
-	global roster, rosterPath, rosterStamp, rosterVer, hostRow
+	global roster, rosterPath, rosterStamp, rosterVer, startedBy
 
 	;the mark is carried forward: a coordinator reading a bench's file is still
 	;serving a bench's configuration, and nothing it does to it changes that
-	rosterVer := { version: rosterVer.version + 1, by: hostRow
+	rosterVer := { version: rosterVer.version + 1, by: startedBy
 		, bench: fleet_IsBench(rosterVer) }
 	;A write that failed is not a detail. This file is what a replacement
 	;coordinator reads, so a settings folder gone read-only - or a full disk -
@@ -633,9 +654,9 @@ fleet_BumpRoster() {
 	return 1
 }
 fleet_BumpServers() {
-	global servers, serversPath, serversStamp, serversVer, hostRow
+	global servers, serversPath, serversStamp, serversVer, startedBy
 
-	serversVer := { version: serversVer.version + 1, by: hostRow
+	serversVer := { version: serversVer.version + 1, by: startedBy
 		, bench: fleet_IsBench(serversVer) }
 	if !servers_Save(serversPath, servers, serversVer.version, serversVer.by
 		, fleet_IsBench(serversVer))
@@ -809,12 +830,12 @@ fleet_ApplyRoster() {
 ;the secret on the wire; the port says where to knock. 255.255.255.255 reaches
 ;every machine on this subnet, which is as far as a fleet ever spans.
 fleet_Beacon() {
-	global beacon, port, term, hostRow, secret, bindUntil, roster
+	global beacon, port, term, startedBy, secret, bindUntil, roster
 
 	if !beacon
 		return 0
 	return sock_UdpSend(beacon, "255.255.255.255", port + 1
-		, fleet_Frame("FLEET", Map("port", port, "term", term, "row", hostRow
+		, fleet_Frame("FLEET", Map("port", port, "term", term, "row", startedBy
 			, "id", fleet_Fingerprint(secret)
 			, "open", (nowUnix() < bindUntil) ? 1 : 0
 			, "host", A_ComputerName, "size", roster.Count)))
@@ -823,11 +844,22 @@ fleet_Beacon() {
 ;Open the door. Only the host may ask, and never for longer than five
 ;minutes - the point of a window is that it closes.
 fleet_OnOpen(s, frame) {
-	global bindUntil, hostRow
+	global bindUntil, mandate, roster
 	local row := fleet_RowOf(s), secs := Integer(fleet_Field(frame, "secs", 120))
 
-	if (!row || (hostRow && (row != hostRow)))
+	;The mandate rather than the starter: a stand-in used to inherit this door.
+	;
+	;Said rather than ignored. A macro that is running the coordinator but does
+	;not hold the say still offers its own Accept button, and a refusal in
+	;silence made that button look as though it had worked.
+	if !fleet_MayCommand(mandate, row, roster) {
+		fleet_Log("refused to open the door for row " row
+			. " - row " mandate " holds the say over this fleet")
+		if row
+			sock_SendLine(s, fleet_Frame("FAIL", Map("verb", "OPEN"
+				, "why", "only row " mandate " may accept new macros")))
 		return
+	}
 	;secs<=0 is the host shutting the door early rather than waiting it out -
 	;the toggle on its own button sends this
 	if (secs <= 0) {
@@ -873,6 +905,60 @@ fleet_OnBind(s, frame) {
 	;a new account is a new configuration, and it travels at once for the same
 	;reason a departure does
 	fleet_BroadcastRoster()
+}
+
+;"Row N takes the coordinator from here."
+;
+;Only from the macro the mandate names. The order is broadcast rather than
+;sent to N alone, and not only so everybody stops expecting this process:
+;every macro keeps a local preference for who coordinates by default, and one
+;that still named itself would reclaim the job within five seconds and undo
+;the handover. The preference has to move with the order or the order does
+;not hold.
+;
+;Then this process ends. A coordinator that has handed over has no job, and on
+;one machine it has to go for the handover to work at all: the port is
+;exclusive, so N could not bind while this one holds it. Not at once, because
+;the order has to reach N and N has to get a process started - which it does
+;against a listener that retries its bind for five seconds.
+fleet_OnHost(s, frame) {
+	global peers, roster, mandate, term
+	local row := fleet_RowOf(s), want := Integer(fleet_Field(frame, "row", 0))
+
+	if !fleet_MayCommand(mandate, row, roster) {
+		fleet_Log("refused a handover asked for by row " row
+			. " - row " mandate " holds the say over this fleet")
+		sock_SendLine(s, fleet_Frame("FAIL", Map("verb", "HOST"
+			, "why", "only row " mandate " may hand the coordinator on")))
+		return
+	}
+	if (!want || !roster.Has(want)) {
+		fleet_Log("refused a handover to row " want " - not in the roster")
+		sock_SendLine(s, fleet_Frame("FAIL", Map("verb", "HOST"
+			, "why", "row " want " is not in this fleet")))
+		return
+	}
+	;a row that is configured but not connected cannot start anything, and
+	;handing the fleet to it would leave nobody coordinating until the grace
+	;period ran out and an election picked somebody else anyway
+	if (!peers.Has(want) || !peers[want].socket) {
+		fleet_Log("refused a handover to row " want " - it is not connected")
+		sock_SendLine(s, fleet_Frame("FAIL", Map("verb", "HOST"
+			, "why", "row " want " is not connected")))
+		return
+	}
+	fleet_Event("row " want " was asked to take the coordinator on behalf of row "
+		. mandate)
+	fleet_Send(fleet_Frame("TAKEOVER", Map("row", want, "mandate", mandate
+		, "term", term)))
+	SetTimer fleet_HandedOver, -2500
+}
+
+;Stand down. Its own function and its own timer so the order is out on the
+;wire before the process that sent it goes.
+fleet_HandedOver() {
+	fleet_Log("handed the coordinator on - stopping")
+	ExitApp 0
 }
 
 ;The row this account already has, or 0.

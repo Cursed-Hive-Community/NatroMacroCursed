@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Twenty-eight things are checked, each because it is a way the design could be wrong
+;Thirty-three things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -41,6 +41,11 @@
 ;	26. an id never starts with a digit        an ini would eat the leading zero
 ;	27. an old fleet's id is its fingerprint   every machine agrees without being told
 ;	28. binding hands the identity over        a newcomer writes in the right folder
+;	29. only the mandated row may command      standing in is not being in charge
+;	30. a mandate nobody holds passes on       an account that never comes back
+;	31. a macro without it is refused          asking is not the same as being owed
+;	32. the mandated row hands the job on      and the old process stands down
+;	33. the binding door refuses out loud      a silent no looks like a yes
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -49,6 +54,13 @@
 ;real coordinator takes it. A tool built to protect the fleet would have
 ;replaced its roster. So a configuration the bench made loses to one it did
 ;not, whatever the versions say, in the comparison and on the wire.
+;
+;Twenty-nine to thirty-three are the mandate. A coordinator is a process any macro
+;can start, so "who may give it orders" was answered by "whoever launched
+;it" - and after a failover that is a macro which stood in for five minutes
+;and now holds the binding door. The mandate travels with the order instead,
+;and its escape hatch is the roster rather than a clock: an account removed
+;from the fleet can no longer hold the say over it.
 ;
 ;Twenty-three to twenty-eight are the folder per fleet. A macro belongs to the
 ;real fleet and to the bench over its life, and the two configurations used to
@@ -155,6 +167,22 @@ roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
 	;to be offered and refused
 	, 5, 1)
 
+;The handover gets a coordinator of its own, on its own port and its own
+;roster. Everything else here shares one, and this is the one check whose
+;whole point is that the coordinator stops - running it against the shared
+;one would end the test two thirds of the way through.
+HANDPORT := 47656
+HANDROSTER := A_ScriptDir "\..\settings\fleet_roster_handover.ini"
+roster_Save(HANDROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
+		, machine: "selftest" }
+	, 2, { row: 2, name: "fuzzy 1", role: "fuzzy", user: ""
+		, machine: "selftest" }), 1, 1)
+try FileDelete RegExReplace(HANDROSTER, "i)\.ini$", ".log")
+handPid := 0, hand1 := 0, hand2 := 0
+handRefused := ""           ;what row 2 was told when it asked for a handover
+handDoor := ""              ;and when it tried to open the binding door
+handTold := Map()           ;the order, as each client received it
+
 coordPid := 0, rivalPid := 0, finished := 0
 boundRow := -1              ;which row a second setup of row 3 was handed back
 boundFid := ""              ;and which fleet it was told it had joined
@@ -227,8 +255,82 @@ SetTimer Blank, -8000
 ;the fuzzy macro leaves on purpose, late enough that its measured round trip
 ;has already been broadcast and can be checked
 SetTimer Leave, -11500
+;The handover, on its own coordinator: row 2 asks and is refused, then row 1
+;asks and is obeyed. The process stands down two and a half seconds after
+;the order, so this has to finish well before the report is written.
+SetTimer Handover, -15000
 SetTimer Report, -22000
 return
+
+;--- the handover -----------------------------------------------------------
+;
+;A coordinator is a process any macro can start, so "who may give it orders"
+;used to be answered by "whoever launched it" - and after a failover that is a
+;macro which stood in for five minutes. The mandate is passed explicitly here,
+;as row 1, so row 2 is a macro in the fleet that does not hold the say.
+Handover(*) {
+	global HANDPORT, SECRET, HANDROSTER, handPid
+
+	Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' HANDPORT
+		. ' ' SECRET ' 1 1 "' HANDROSTER '" fhandover 1'
+		, , , &handPid
+	SetTimer HandoverJoin, -1200
+}
+HandoverJoin(*) {
+	global HANDPORT, hand1, hand2
+
+	hand1 := sock_Connect("127.0.0.1", HANDPORT, OnHand1)
+	hand2 := sock_Connect("127.0.0.1", HANDPORT, OnHand2)
+	SetTimer HandoverWrongRow, -1200
+}
+;Row 2 asking. It is in the roster and connected, so nothing but the mandate
+;stands between it and the fleet changing hands.
+HandoverWrongRow(*) {
+	global hand2
+
+	;the binding door is the same privilege, and it used to be refused in
+	;silence - which made the button that asks for it look as though it worked
+	sock_SendLine(hand2, fleet_Frame("OPEN", Map("secs", 60)))
+	sock_SendLine(hand2, fleet_Frame("HOST", Map("row", 2)))
+	SetTimer HandoverRightRow, -900
+}
+HandoverRightRow(*) {
+	global hand1
+
+	sock_SendLine(hand1, fleet_Frame("HOST", Map("row", 2)))
+}
+OnHand1(s, event, data) {
+	HandHandle(1, "main", s, event, data)
+}
+OnHand2(s, event, data) {
+	HandHandle(2, "fuzzy 1", s, event, data)
+}
+HandHandle(row, name, s, event, data) {
+	global SECRET, handRefused, handTold, handDoor
+	local frame
+
+	if (event = "connect") {
+		if (data = "")
+			sock_SendLine(s, fleet_Frame("HELLO", Map("row", row, "name", name
+				, "role", (row = 1) ? "main" : "fuzzy", "secret", SECRET
+				, "machine", A_ComputerName)))
+		return
+	}
+	if ((event != "line") || !(frame := fleet_Parse(data)))
+		return
+	if (frame.verb = "FAIL") {
+		if (fleet_Field(frame, "verb") = "OPEN")
+			handDoor := fleet_Field(frame, "why")
+		else
+			handRefused := fleet_Field(frame, "why")
+	}
+	else if (frame.verb = "TAKEOVER")
+		;both clients must hear it: the preference for who coordinates by
+		;default lives on every macro, and one that still named itself would
+		;reclaim the job and undo the handover
+		handTold[row] := fleet_Field(frame, "row")
+			. "/" fleet_Field(frame, "mandate")
+}
 
 ;A resident arriving after everyone else, which is a resident that crashed and
 ;came back. It should be told where the hive is standing without the main
@@ -549,6 +651,7 @@ OnBad(s, event, data) {
 
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
+	global HANDROSTER, handPid, handRefused, handTold, handDoor
 	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe, boundFid
 	global srv, srvGen, srvMainLink, srvMainOwner
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
@@ -556,7 +659,7 @@ Report(*) {
 	global ROSTER, gotoField
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
-	local idsOk, idsSeen, newId
+	local idsOk, idsSeen, newId, mandRoster, handLog
 	global LOGFILE
 
 	if finished
@@ -687,6 +790,43 @@ Report(*) {
 	;would write this fleet's configuration into the folder of its last one
 	allOk := Check(lines, "binding hands over the fleet's identity"
 		, fleet_IsId(boundFid)) && allOk
+
+	;--- the mandate --------------------------------------------------------
+	;
+	;Written before the verb that reads it. The row that launched a coordinator
+	;is not the row entitled to command it: after a failover those are different
+	;macros, and the second had been given the first one's say.
+	mandRoster := Map(1, { row: 1 }, 3, { row: 3 })
+	allOk := Check(lines, "only the mandated row may command the coordinator"
+		, fleet_MayCommand(1, 1, mandRoster)
+		&& !fleet_MayCommand(1, 3, mandRoster)
+		&& !fleet_MayCommand(1, 0, mandRoster)
+		;a coordinator with no mandate named obeys the fleet, which is how the
+		;bench and every older build keep working
+		&& fleet_MayCommand(0, 3, mandRoster)) && allOk
+	;the escape hatch: the mandated account is no longer in the fleet, so the
+	;say passes to the rows that are - and only to them
+	allOk := Check(lines, "a mandate nobody holds any more passes to the fleet"
+		, fleet_MayCommand(9, 3, mandRoster)
+		&& fleet_MayCommand(9, 1, mandRoster)
+		&& !fleet_MayCommand(9, 7, mandRoster)) && allOk
+	;and the same on the wire, against a coordinator told its mandate is row 1
+	handLog := ""
+	try handLog := FileRead(RegExReplace(HANDROSTER, "i)\.ini$", ".log"), "UTF-8")
+	allOk := Check(lines, "a macro without the mandate is refused the handover"
+		, InStr(handRefused, "only row 1")
+		&& InStr(handLog, "refused a handover asked for by row 2")) && allOk
+	;the order reaches everybody, carries the say with it, and the process that
+	;handed over stops - which on one machine is the only way the next one can
+	;have the port
+	allOk := Check(lines, "the mandated row hands the coordinator on, and it stops"
+		, (handTold.Has(1) && (handTold[1] = "2/1"))
+		&& (handTold.Has(2) && (handTold[2] = "2/1"))
+		&& InStr(handLog, "handed the coordinator on")
+		&& !ProcessExist(handPid)) && allOk
+	;the same privilege, and the refusal that used to be silent
+	allOk := Check(lines, "the binding door says no instead of ignoring it"
+		, InStr(handDoor, "only row 1")) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"

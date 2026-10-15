@@ -2741,6 +2741,10 @@ ext_stickerStackFailedAt := 0, ext_stickerStackUsedAt := 0
 ;the fleet as this macro currently sees it. All of it is rebuilt from the
 ;coordinator on connect, so none of it is saved.
 ext_fleetSock := 0, ext_fleetTerm := 0, ext_fleetCoordRow := 0
+;the row the coordinator takes orders on behalf of, and the row a handover
+;order named - see ext_fleetOnTakeOver. Both learnt from the fleet, never set
+;here: a macro that decided its own mandate would be deciding it had the say.
+ext_fleetMandate := 0, ext_fleetTakeOverTo := 0
 ext_fleetCoordSeen := 0, ext_fleetBackoff := 0, ext_fleetTrying := ""
 ext_fleetPeers := Map()
 ;where the last beacon came from, and the socket that listens for them.

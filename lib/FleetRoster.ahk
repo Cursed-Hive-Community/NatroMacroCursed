@@ -411,3 +411,36 @@ fleet_MigrateConfig(base, id) {
 	}
 	return ""
 }
+
+;--- who may command a coordinator -------------------------------------------
+;
+;A coordinator is a process, not an account: any macro can start one, and after
+;a failover the one running it is rarely the one that was meant to. So two
+;different questions had been answered by one number - "whose files is the
+;fleet living out of" and "who is allowed to give this coordinator orders" -
+;and the second was quietly answered by "whoever launched it". A macro that
+;stood in for five minutes therefore took over the binding door.
+;
+;The mandate is the row a coordinator runs on behalf of, and it travels with
+;the order rather than staying with the process: a macro that takes over, by
+;election or because it was asked to, carries the mandate it last saw. The
+;account that set the fleet up keeps the say over it without having to be the
+;machine that happens to be running the process.
+;
+;The escape hatch is the roster, not a timer. If the mandated row is not in the
+;roster any more, every row in it may command - so to move the say off an
+;account that is never coming back, you remove that account from the fleet,
+;which is a deliberate act somebody has to perform and can see the result of.
+;A clock would have done it by itself at the worst moment.
+fleet_MayCommand(mandate, row, roster) {
+	if !row
+		return 0
+	;no mandate named: a coordinator launched by something that does not know
+	;about them, which is every bench and every older build
+	if !mandate
+		return 1
+	if (row = mandate)
+		return 1
+	;the mandated account is gone from the fleet, so the say passes to it
+	return !roster.Has(mandate) && roster.Has(row)
+}

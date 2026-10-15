@@ -97,6 +97,48 @@ ext_fleetConnect(again := 0) {
 	return 1
 }
 
+;An order to move the coordinator to another macro.
+;
+;Everybody acts on it, not only the macro named. FleetHostRow is a local
+;preference for who coordinates by default, and a macro that still named
+;itself would reclaim the job within five seconds and undo the handover - so
+;the preference moves with the order, which also makes the choice survive a
+;restart.
+;
+;Deferred, because what follows starts a process and writes two settings, and
+;neither belongs inside a socket dispatch holding Critical.
+ext_fleetOnTakeOver(frame) {
+	global ext_fleetTakeOverTo, ext_fleetMandate, ext_fleetTerm
+	local want := fleet_Num(fleet_Field(frame, "row"))
+	local said := fleet_Num(fleet_Field(frame, "term"))
+
+	if !want
+		return 0
+	ext_fleetMandate := fleet_Num(fleet_Field(frame, "mandate"))
+	;so the coordinator that starts next is one term above this one, which is
+	;what makes the fleet follow it instead of the process being replaced
+	if (said > ext_fleetTerm)
+		ext_fleetTerm := said
+	ext_fleetTakeOverTo := want
+	SetTimer ext_fleetFinishTakeOver, -50
+	return 1
+}
+
+ext_fleetFinishTakeOver() {
+	global ext_fleetTakeOverTo, FleetRow, FleetHostRow
+	local want := ext_fleetTakeOverTo, wanted
+
+	ext_fleetTakeOverTo := 0
+	if !want
+		return 0
+	wanted := (want = FleetRow) ? FleetRow : 0
+	if (FleetHostRow != wanted)
+		ext_FleetSave("FleetHostRow", wanted)
+	if (want != FleetRow)
+		return 1
+	return ext_fleetTakeOver("asked to coordinate")
+}
+
 ;Listen for the coordinator's beacon. One socket, opened once and kept for the
 ;life of the macro: it is how a coordinator that has moved gets found again
 ;without anybody editing anything.
@@ -367,6 +409,7 @@ ext_fleetOnLine(line) {
 	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock, ext_fleetRefused
 	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant
 	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant
+	global ext_fleetMandate
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -380,6 +423,10 @@ ext_fleetOnLine(line) {
 				return
 			ext_fleetTerm := term
 			ext_fleetCoordRow := Integer(fleet_Field(frame, "row", 0))
+			;who may give this coordinator orders, which is not who is running
+			;it. Kept so that a macro taking over carries the say rather than
+			;helping itself to it - see fleet_MayCommand.
+			ext_fleetMandate := fleet_Num(fleet_Field(frame, "mandate"))
 			ext_fleetCoordSeen := nowUnix()
 		case "ROSTER":
 			if (row := Integer(fleet_Field(frame, "row", 0)))
@@ -392,6 +439,17 @@ ext_fleetOnLine(line) {
 				. fleet_Field(frame, "text"))
 			while (ext_fleetEvents.Length > 80)
 				ext_fleetEvents.Pop()
+			ext_fleetCoordSeen := nowUnix()
+		case "TAKEOVER":
+			ext_fleetOnTakeOver(frame)
+		case "FAIL":
+			;something this macro asked for was turned down. It reached the
+			;problem line rather than being dropped, because the things that get
+			;refused here are button presses - and a button that is refused in
+			;silence looks exactly like a button that worked.
+			ext_fleetProblem("the fleet refused "
+				. ext_FleetOr(fleet_Field(frame, "verb"), "that") ": "
+				. ext_FleetOr(fleet_Field(frame, "why"), "no reason given"))
 			ext_fleetCoordSeen := nowUnix()
 		case "PING":
 			;answered first and with nothing else done: the coordinator is
@@ -890,7 +948,7 @@ ext_fleetWatch() {
 	;the host reclaiming: only once the stand-in has actually been heard from,
 	;so a host starting up does not fight a coordinator that is about to answer
 	if ((FleetRow = FleetHostRow) && ext_fleetCoordRow && (ext_fleetCoordRow != FleetRow))
-		ext_fleetTakeOver("host reclaiming from row " ext_fleetCoordRow)
+		ext_fleetTakeOver("taking the coordinator back from row " ext_fleetCoordRow)
 }
 
 ;Whose turn it is to coordinate. Ours counts even when the roster is empty - a
@@ -920,7 +978,7 @@ ext_fleetSuccessor(skip := 0) {
 ;we are replacing.
 ext_fleetTakeOver(why) {
 	global ext_fleetTerm, ext_fleetSock, ext_fleetCoordSeen, ext_fleetCoordPid
-	global FleetPort, FleetSecret, FleetRow, exe_path32
+	global FleetPort, FleetSecret, FleetRow, exe_path32, ext_fleetMandate
 
 	;A coordinator we started and which is still running is the coordinator. A
 	;second one would be refused the port anyway, and leaving the first behind
@@ -939,6 +997,11 @@ ext_fleetTakeOver(why) {
 			;which fleet it is coordinating: the folder to read the roster out of,
 			;and the identity to hand to the next macro that binds
 			. ' "' ext_fleetRosterFile() '" "' ext_fleetId() '"'
+			;and on whose behalf. The say travels with the order rather than
+			;staying with the process, so standing in does not take it over; a
+			;macro that has never seen a coordinator is creating the fleet and
+			;holds its own.
+			. ' ' (ext_fleetMandate ? ext_fleetMandate : FleetRow)
 			, , "Hide", &ext_fleetCoordPid
 	catch as e {
 		ext_fleetCoordPid := 0
@@ -1021,7 +1084,7 @@ ext_fleetStart() {
 	;the designated host starts a coordinator without waiting to discover there
 	;is none - it is the expected state at the beginning of a session
 	if (FleetRow = FleetHostRow)
-		ext_fleetTakeOver("designated host")
+		ext_fleetTakeOver("this macro coordinates by default")
 	else
 		ext_fleetConnect()
 	SetTimer ext_fleetBeat, 10000
@@ -1663,10 +1726,18 @@ ext_FleetWhoDraw() {
 	;the coordinator only obeys the row that started it.
 	if ext_fleetCoordinating() {
 		left := ext_fleetBindOpenUntil - nowUnix()
+		;The door belongs to the macro the fleet takes orders from, and after a
+		;failover that is not the one running the process. So the button is not
+		;offered here, and the line says where it is instead - a button that gets
+		;refused looks exactly like a button that worked.
 		FleetSetupGui["FleetWho"].Text := me "`nThis macro is running the fleet."
-		ext_FleetButton("FleetAct1", (left > 0)
-			? "Stop accepting (" Floor(left / 60) ":" Format("{:02}", Mod(left, 60)) ")"
-			: "Accept new macros")
+			. (ext_fleetMayCommand() ? ""
+				: "  New macros are accepted on row " ext_fleetMandate ".")
+		ext_FleetButton("FleetAct1", !ext_fleetMayCommand()
+			? ""
+			: (left > 0)
+				? "Stop accepting (" Floor(left / 60) ":" Format("{:02}", Mod(left, 60)) ")"
+				: "Accept new macros")
 		ext_FleetButton("FleetAct2", "Leave the fleet")
 		return
 	}
@@ -1776,7 +1847,7 @@ ext_FleetJoinGUI(*) {
 	FleetJoinGui.Add("Button", "x208 y150 w196 h26", "Start a new fleet here").OnEvent("Click", ext_FleetHostDo)
 	FleetJoinGui.SetFont("c808080")
 	FleetJoinGui.Add("Text", "x18 y182 w386"
-		, "To join, open the door on the macro that hosts the fleet first - settings, Accept new macros.")
+		, "To join, open the door on the macro that coordinates the fleet first - settings, Accept new macros.")
 	FleetJoinGui.SetFont("cDefault")
 
 	FleetJoinGui.Add("Button", "x312 y220 w100 h26", "Cancel").OnEvent("Click", ext_FleetJoinClose)
@@ -1844,7 +1915,7 @@ ext_FleetHostDo(*) {
 		, FleetJoinGui["JoinRole"].Text
 		, Trim(FleetJoinGui["JoinUser"].Value))
 	ext_FleetJoinClose()
-	MsgBox "This macro now hosts the fleet.`n`nTo add another, press Accept new macros here, then set that macro up.", "Fleet", 0x40040
+	MsgBox "This macro now coordinates the fleet.`n`nTo add another, press Accept new macros here, then set that macro up.", "Fleet", 0x40040
 	ext_FleetWhoDraw()
 }
 
@@ -1895,6 +1966,22 @@ ext_fleetServerHost() {
 	global FleetRow
 
 	return (FleetRow <= 0) || ext_fleetCoordinating()
+}
+
+;May this macro give the coordinator orders?
+;
+;A different question from whether it is running one. The two were one number
+;until the mandate, so a macro that stood in for five minutes inherited the
+;binding door - and now the opposite has to be guarded instead: a stand-in
+;runs the process and does not hold the say, so it must not be offered a door
+;the coordinator will refuse.
+;
+;The fleet as this macro sees it is the roster for the escape hatch - if the
+;mandated account is gone from it, the say has passed to the rows that remain.
+ext_fleetMayCommand() {
+	global FleetRow, ext_fleetMandate, ext_fleetPeers
+
+	return fleet_MayCommand(ext_fleetMandate, FleetRow, ext_fleetPeers)
 }
 
 ;Is this macro the one running the coordinator right now?
@@ -2047,7 +2134,7 @@ ext_FleetServerDraw() {
 
 	try FleetServersGui["FleetServerNote"].Text := editable
 		? "Set here once. The coordinator hands the list to every macro in the fleet."
-		: "Shown as the fleet broadcast it. Change it on the macro that hosts the fleet."
+		: "Shown as the fleet broadcast it. Change it on " ext_FleetOr(ext_fleetCoordWho(), "whichever macro coordinates") "."
 	for _, slot in ["FleetServerName", "FleetServerLink", "FleetServerOwner"
 		, "FleetServerUpdate", "FleetServerAdd", "FleetServerDel"]
 		try FleetServersGui[slot].Enabled := editable

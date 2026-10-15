@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These twenty-eight checks run the real coordinator process, the real socket
+These thirty-three checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -90,6 +90,14 @@ layer and the real protocol. They are the strongest evidence in the repository.
 - [x] an old fleet's id is the fingerprint of its secret, so every machine in
       it reaches the same answer without being told
 - [x] binding hands the fleet's identity over beside the secret
+- [x] only the mandated row may command a coordinator, and a coordinator told
+      no mandate obeys the fleet
+- [x] a mandate nobody holds any more passes to the rows that are still in the
+      roster, and to no others
+- [x] a macro without the mandate is refused a handover, on the wire
+- [x] the mandated row hands the coordinator on: the order reaches every macro
+      carrying the say, and the old process stands down
+- [x] the binding door refuses out loud rather than ignoring the request
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -468,6 +476,16 @@ Not bugs to find - bugs already known about, with no fix yet.
   configuration into their own folder. Fixed in `ext_FleetLeave` and
   `ext_fleetStartFleet`. No self-test reaches it: both are window code behind a
   confirmation box, and the self-tests only speak the protocol.
+- **Nothing sends `HOST` yet.** The verb, the permission and the macro's
+  response to it are proven on the wire, driven by the self-test speaking the
+  protocol directly. No window and no button asks for a handover - the bench
+  is where the first caller goes, and choosing the coordinator from a macro's
+  own settings is part of P4.
+- **The mandate is in no window.** It rides on every heartbeat and appears in
+  the coordinator's first log line, and the settings window says where new
+  macros are accepted when this macro cannot accept them - but nothing names
+  the mandated row outright. Deliberate: the interface says who coordinates and
+  nothing else, which is the vocabulary that was asked for.
 - **P3, split brain across machines.** `SO_EXCLUSIVEADDRUSE` stops two
   coordinators on one machine. Two machines can still each run one, and
   `ext_fleetOnBeacon` latches onto the first beacon whose fingerprint matches
