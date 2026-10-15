@@ -3061,10 +3061,6 @@ MainGui.Add("Text", "x20 y158 w350 vFleetStripNext +BackgroundTrans", "")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y177 w180 h18 vFleetCheck Checked" FleetCheck
 	, "Talk to the other macros")).Section := "Fleet", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x202 y177 w14 h16", "?").OnEvent("Click", ext_FleetHelp)
-;the bench went in the Fleet settings' own Advanced window first, which is
-;three clicks deep - a diagnostic tool nobody can find is a diagnostic tool
-;nobody uses, so it sits beside the panel it diagnoses
-MainGui.Add("Button", "x268 y174 w104 h22", "Test bench").OnEvent("Click", ext_FleetBench)
 MainGui.Add("Button", "x380 y174 w100 h22", "Fleet panel").OnEvent("Click", ext_FleetGUI)
 
 ; STATUS TAB
@@ -4777,10 +4773,11 @@ ext_FleetHelp(*){
 	be typed on two machines: the host opens its door, the macro walks in,
 	and the row number and the shared word are handed over.
 
-	Test bench opens a fleet you drive by hand: it stands in for the other
-	macros, or for the coordinator, so a feature can be tried without
-	setting every account up first. It has its own port and its own files
-	and cannot reach the real fleet."
+	The Advanced tab has a Fleet Test Bench: a fleet you drive by hand. It
+	stands in for the other macros, and can coordinate them too, so a
+	feature can be tried without setting every account up first. It has its
+	own port and its own files, and what it serves is marked so it can
+	never replace a real fleet's own."
 	), "Fleet", 0x40040
 }
 ;update config
@@ -10485,6 +10482,11 @@ nm_AdvancedGUI(init:=0){
 	MainGui.Add("CheckBox", "x413 y174 vTestMsgBox", "MsgBox")
 	MainGui.Add("Button", "x325 y197 w100 h24", "Start Test").OnEvent("Click", nm_testButton)
 	MainGui.Add("Button", "x15 y164 w220 h22 vMainLoopPriorityButton", "Main Loop Priority List").OnEvent("Click", nm_priorityListGui)
+	;The fleet bench, on the tab you have to earn by clicking the version. It
+	;belongs with the other things here: nothing about it is for an ordinary
+	;session, it starts processes and listens on a port, and it is reached when
+	;something is already wrong.
+	MainGui.Add("Button", "x15 y196 w220 h24", "Fleet Test Bench").OnEvent("Click", ext_FleetBench)
 	if (init = 1)
 	{
 		TabCtrl.Choose("Advanced")

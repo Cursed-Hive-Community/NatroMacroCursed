@@ -26,6 +26,16 @@
 ;	[fleet]
 ;	Version=7
 ;	By=1
+;	Bench=0
+;
+;Bench marks a configuration the test bench produced, and it exists because of
+;a path nobody would notice until it had happened: point a real macro at the
+;bench, and the macro replicates the bench's configuration into its own files.
+;Point it back at the real fleet, and it hands that configuration up - and if
+;its version happens to be the higher one, the real coordinator takes it. A
+;test tool would have replaced a real roster. So a marked configuration loses
+;to an unmarked one whatever its version, everywhere, and the mark travels on
+;the wire with it.
 ;
 ;Role is one of main, fuzzy, tad, guid, atk. User is the exact Roblox username,
 ;needed only to force a kick.
@@ -126,9 +136,9 @@ roster_Load(path) {
 ;version and by are not optional in spirit, whatever the defaults say: every
 ;writer knows which version it is producing, and a file written without one
 ;loses to every other copy in the fleet.
-roster_Save(path, rows, version := 1, by := 0) {
+roster_Save(path, rows, version := 1, by := 0, bench := 0) {
 	local out := ";the fleet roster - written by the macro, safe to read by hand`r`n`r`n"
-		. fleet_MetaSection(version, by)
+		. fleet_MetaSection(version, by, bench)
 	local keys := [], r
 
 	for r, _ in rows
@@ -145,8 +155,9 @@ roster_Save(path, rows, version := 1, by := 0) {
 }
 
 ;The [fleet] section every configuration file opens with.
-fleet_MetaSection(version, by) {
-	return "[fleet]`r`nVersion=" version "`r`nBy=" by "`r`n`r`n"
+fleet_MetaSection(version, by, bench := 0) {
+	return "[fleet]`r`nVersion=" version "`r`nBy=" by
+		. "`r`nBench=" (bench ? 1 : 0) "`r`n`r`n"
 }
 
 ;Which row a section heading names, or 0 when it does not name one.
@@ -167,13 +178,19 @@ fleet_Num(v) {
 	return fleet_IsNumber(v) ? Integer(v) : 0
 }
 
+;Was this configuration made by the test bench? Absent means no, so every file
+;and every frame written before the mark existed reads as a real one.
+fleet_IsBench(cfg) {
+	return (cfg.HasOwnProp("bench") && cfg.bench) ? 1 : 0
+}
+
 ;The version a configuration file is on, and the row that wrote it.
 ;
 ;Read separately from the entries so that every caller of roster_Load and
 ;servers_Load carries on working unchanged. These files are a few hundred bytes
 ;and read once per change, so reading one twice costs nothing worth saving.
 fleet_ConfigVersion(path) {
-	local line, at, k, v, out := { version: 0, by: 0 }, inMeta := 0
+	local line, at, k, v, out := { version: 0, by: 0, bench: 0 }, inMeta := 0
 
 	if !FileExist(path)
 		return out
@@ -193,13 +210,21 @@ fleet_ConfigVersion(path) {
 			out.version := fleet_Num(v)
 		else if (k = "by")
 			out.by := fleet_Num(v)
+		else if (k = "bench")
+			out.bench := fleet_Num(v) ? 1 : 0
 	}
 	return out
 }
 
 ;Should configuration a replace configuration b?
 ;
-;A higher version always wins. Equal versions written by different rows is the
+;A configuration the test bench produced loses to one it did not, whatever the
+;versions say - see the note on Bench at the top of this file. That rule comes
+;first because it is the only one protecting a real fleet from a tool, and a
+;version cannot carry the distinction: the bench is free to invent any number
+;it likes, and being able to is half of what it is for.
+;
+;Otherwise a higher version always wins. Equal versions written by different rows is the
 ;one case a version cannot settle - both sides of a network split were edited
 ;separately - and the lowest row wins it. Lowest rather than highest for no
 ;deeper reason than that it is the same rule the coordinator election uses, and
@@ -207,6 +232,8 @@ fleet_ConfigVersion(path) {
 ;decided the same way on every machine without anybody sending a message about
 ;it, and that the copy that loses is kept rather than thrown away.
 fleet_ConfigBeats(a, b) {
+	if (fleet_IsBench(a) != fleet_IsBench(b))
+		return !fleet_IsBench(a)
 	if (a.version != b.version)
 		return (a.version > b.version)
 	if (a.by = b.by)

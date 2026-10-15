@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Twenty things are checked, each because it is a way the design could be wrong
+;Twenty-two things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -33,6 +33,16 @@
 ;	18. a tie keeps one and files the other    nothing is lost deciding
 ;	19. a roster cleared on purpose is applied  a wipe is not an unreadable file
 ;	20. a macro's own version reaches the fleet a divergence has somewhere to show
+;	21. a bench configuration never wins       a test tool cannot replace a fleet
+;	22. and not over the wire either           the same rule, between processes
+;
+;Twenty-one and twenty-two guard a path nobody would notice until it had
+;happened. Point a real macro at the test bench and it replicates the bench's
+;configuration into its own files; point it back at the real fleet and it hands
+;that configuration up, and if the version happens to be the higher one the
+;real coordinator takes it. A tool built to protect the fleet would have
+;replaced its roster. So a configuration the bench made loses to one it did
+;not, whatever the versions say, in the comparison and on the wire.
 ;
 ;Nineteen is the other half of the guard behind seven. An empty roster has to
 ;be refused when it is a file caught mid-write and obeyed when somebody cleared
@@ -141,6 +151,7 @@ cfgGen := "", cfgWant := 0
 cfgMost := 0                ;the most rows a single generation ever promised
 cfgUnseen := ""             ;a configured row that had not connected when it arrived
 cfgLowVer := 9999           ;the lowest version the coordinator ever served
+cfgHighVer := 0             ;and the highest, which a bench must never reach
 cfgTookUp := 0              ;the version at which the handed-up roster came back
 byeFinal := Map()           ;what each refusal said about being final
 seenBy := Map()             ;client label -> Map of row -> roster frame it received
@@ -186,6 +197,7 @@ SetTimer Wipe, -14000
 SetTimer HandUpStale, -7500
 SetTimer HandUpBetter, -10500
 SetTimer HandUpTie, -11000
+SetTimer HandUpBench, -11200
 ;a macro with the right secret and a row that is not in the roster, which is
 ;what every macro looks like to a coordinator that came up without one
 SetTimer Stranger, -9500
@@ -326,14 +338,22 @@ HandUpTie(*) {
 }
 
 ;One SETROW frame per row, which is how a whole configuration travels.
-Push(sock, version, by, names) {
+Push(sock, version, by, names, bench := 0) {
 	local row, name
 
 	for row, name in names
 		sock_SendLine(sock, fleet_Frame("SETROW", Map("v", version, "by", by
-			, "n", names.Count, "row", row, "name", name
+			, "bench", bench, "n", names.Count, "row", row, "name", name
 			, "role", (row = 1) ? "main" : "fuzzy"
 			, "user", "", "machine", "selftest")))
+}
+
+;The test bench, offering a configuration at a version nothing real could
+;reach. It must still lose, because of the mark and not the number.
+HandUpBench(*) {
+	global clientA
+
+	Push(clientA, 999, 7, Map(1, "hijacked by the bench"), 1)
 }
 
 ;One server deleted. The macro's copy has to end up holding one and not two,
@@ -382,7 +402,8 @@ Handle(label, row, name, s, event, data) {
 	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRows
 	global bothSeen, row2, rttSeen, lateField
 	global srv, srvGen, srvMainLink, srvMainOwner
-	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgTookUp, myCv
+	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
+	global cfgTookUp, myCv
 	local frame
 
 	if (event = "connect") {
@@ -440,6 +461,8 @@ Handle(label, row, name, s, event, data) {
 		cfg[Integer(fleet_Field(frame, "row", 0))] := frame
 		if (Integer(fleet_Field(frame, "v", 0)) < cfgLowVer)
 			cfgLowVer := Integer(fleet_Field(frame, "v", 0))
+		if (Integer(fleet_Field(frame, "v", 0)) > cfgHighVer)
+			cfgHighVer := Integer(fleet_Field(frame, "v", 0))
 		;the handed-up roster coming back out of the coordinator is the only
 		;way to see that it was taken rather than merely accepted in silence
 		if ((fleet_Field(frame, "name") == "handed up") && !cfgTookUp)
@@ -503,7 +526,8 @@ Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
 	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe
 	global srv, srvGen, srvMainLink, srvMainOwner
-	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgTookUp, byeFinal
+	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
+	global cfgTookUp, byeFinal
 	global ROSTER, gotoField
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
@@ -583,6 +607,17 @@ Report(*) {
 		, InStr(logText, "roster reloaded, 0 rows, version 11")) && allOk
 	allOk := Check(lines, "a macro's own configuration version reaches the fleet"
 		, myCv = 42) && allOk
+	;the comparison itself, with nothing on the wire: version 1 marked as the
+	;bench's against version 999 that is not, and the mark has to decide it
+	allOk := Check(lines, "a bench configuration loses to a real one"
+		, !fleet_ConfigBeats({ version: 999, by: 1, bench: 1 }
+			, { version: 1, by: 1 })
+		&& fleet_ConfigBeats({ version: 1, by: 1 }
+			, { version: 999, by: 1, bench: 1 })) && allOk
+	;and the same between processes: the bench offered version 999 and the
+	;coordinator must never have served it
+	allOk := Check(lines, "a bench configuration is refused over the wire"
+		, cfgHighVer < 999) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -601,6 +636,8 @@ Report(*) {
 	lines.Push("the main said it held v42 and got back: "
 		. ((myCv >= 0) ? "v" myCv : "nothing")
 		. ", rows struck before the wipe: " goneAtWipe)
+	lines.Push("versions served: lowest " cfgLowVer ", highest " cfgHighVer
+		. " (999 would mean the bench won)")
 	lines.Push("lowest version ever served: " cfgLowVer
 		. ", handed-up roster came back at: " (cfgTookUp ? cfgTookUp : "never"))
 	lines.Push("configured rows: " cfgMost " promised at the fullest, "

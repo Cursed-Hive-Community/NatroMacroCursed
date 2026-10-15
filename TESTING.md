@@ -79,6 +79,8 @@ and the real protocol. They are the strongest evidence in the repository.
 - [x] a tie keeps ours and files theirs as `.conflict`
 - [x] a roster cleared on purpose is applied, where an unreadable one is not
 - [x] a macro's own configuration version reaches the fleet
+- [x] a bench configuration loses to a real one, in the comparison
+- [x] and is refused over the wire, at version 999 against a real 10
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -299,17 +301,28 @@ fleet's own idiom, the reference is the box's own opening text, and the
 Commands button brings it back if you clear it. `expect` and `reject` make a
 sequence of them a test rather than a demonstration.
 
-And it works from either side of the wire:
+**It is one fleet with two kinds of member.** The bench always has its fake
+macros, which are yours to drive; real macros join the same port and sit in it
+beside them. The only choice is who coordinates - nobody, a real `Fleet.ahk`
+the bench starts, or the bench itself. Fakes and reals together is the
+arrangement that presses on both halves at once: a real coordinator with a
+crowd of fakes tests what it does with a crowd, the bench coordinating a real
+macro tests what that macro does when it is told something wrong, and both at
+the same time tests the crowd and the lie together.
 
-- **Pretend macros** stand in for the others against a real coordinator. Proven:
-  five of them, fuzzy and tad sent the main's field and a guid and an atk not,
-  four checks and nothing failed.
-- **Be the coordinator** and a real macro connects to the bench instead, which
-  is the only way to press on the macro's own half - serve it a stale
-  configuration, refuse it, claim a higher term, or stop and watch it take
-  over. Proven: the stale-configuration case, above.
+What it has already proven is listed in the two sections above: five fakes
+against a real coordinator, and the stale-configuration and lost-coordinator
+cases against a real macro.
 
-There is a button for it in the Fleet advanced window.
+**What it serves is marked as the bench's**, and a marked configuration loses
+to an unmarked one whatever its version. Without that, a real macro pointed
+here would replicate the bench's configuration and then hand it up to the real
+coordinator, which would take it if the number happened to be higher - a test
+tool replacing a real roster. Checked two ways, in the comparison and on the
+wire.
+
+The button is on Natro's own **Advanced** tab, the one that appears after
+clicking the version several times.
 
 What it turns into a twenty-minute check:
 

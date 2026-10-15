@@ -559,12 +559,12 @@ fleet_BroadcastRoster() {
 	;version, while a missing or half-written file parses to none.
 	if !roster.Count {
 		fleet_Send(fleet_Frame("ROW", Map("v", rosterVer.version, "by", rosterVer.by
-			, "n", 0)))
+			, "bench", fleet_IsBench(rosterVer), "n", 0)))
 		return
 	}
 	for r, e in roster
 		fleet_Send(fleet_Frame("ROW", Map("v", rosterVer.version, "by", rosterVer.by
-			, "n", roster.Count
+			, "bench", fleet_IsBench(rosterVer), "n", roster.Count
 			, "row", e.row, "name", e.name, "role", e.role
 			, "user", e.user, "machine", e.machine)))
 }
@@ -580,7 +580,7 @@ fleet_BroadcastServers() {
 
 	for s, e in servers
 		fleet_Send(fleet_Frame("SERVER", Map("v", serversVer.version, "by", serversVer.by
-			, "n", servers.Count
+			, "bench", fleet_IsBench(serversVer), "n", servers.Count
 			, "slot", e.slot, "name", e.name, "link", e.link
 			, "owner", e.owner, "kind", e.kind)))
 }
@@ -603,12 +603,16 @@ fleet_Send(line) {
 fleet_BumpRoster() {
 	global roster, rosterPath, rosterStamp, rosterVer, hostRow
 
-	rosterVer := { version: rosterVer.version + 1, by: hostRow }
+	;the mark is carried forward: a coordinator reading a bench's file is still
+	;serving a bench's configuration, and nothing it does to it changes that
+	rosterVer := { version: rosterVer.version + 1, by: hostRow
+		, bench: fleet_IsBench(rosterVer) }
 	;A write that failed is not a detail. This file is what a replacement
 	;coordinator reads, so a settings folder gone read-only - or a full disk -
 	;quietly costs the fleet the one thing that lets it survive losing this
 	;machine, and it would have gone unmentioned.
-	if !roster_Save(rosterPath, roster, rosterVer.version, rosterVer.by)
+	if !roster_Save(rosterPath, roster, rosterVer.version, rosterVer.by
+		, fleet_IsBench(rosterVer))
 		fleet_Event("COULD NOT WRITE THE ROSTER to " rosterPath
 			. " - the fleet will not survive losing this machine")
 	;our own write would otherwise look like an outside edit and cost a
@@ -619,8 +623,10 @@ fleet_BumpRoster() {
 fleet_BumpServers() {
 	global servers, serversPath, serversStamp, serversVer, hostRow
 
-	serversVer := { version: serversVer.version + 1, by: hostRow }
-	if !servers_Save(serversPath, servers, serversVer.version, serversVer.by)
+	serversVer := { version: serversVer.version + 1, by: hostRow
+		, bench: fleet_IsBench(serversVer) }
+	if !servers_Save(serversPath, servers, serversVer.version, serversVer.by
+		, fleet_IsBench(serversVer))
 		fleet_Event("COULD NOT WRITE THE SERVERS to " serversPath)
 	serversStamp := fleet_ServersStamp()
 	return 1
@@ -649,7 +655,10 @@ fleet_OnSetRow(s, frame) {
 	if !fleet_RowOf(s)
 		return 0
 	ver := { version: fleet_Num(fleet_Field(frame, "v"))
-		, by: fleet_Num(fleet_Field(frame, "by")) }
+		, by: fleet_Num(fleet_Field(frame, "by"))
+		;a configuration the bench made can never beat a real one, which is the
+		;whole of what stops a test tool replacing a fleet's roster
+		, bench: fleet_Num(fleet_Field(frame, "bench")) }
 	if ((upRow.version != ver.version) || (upRow.by != ver.by))
 		upRow := { version: ver.version, by: ver.by, want: want, rows: Map() }
 	if (row := fleet_Num(fleet_Field(frame, "row")))
@@ -665,7 +674,7 @@ fleet_OnSetRow(s, frame) {
 		return 0
 	}
 	roster := upRow.rows, rosterVer := ver
-	roster_Save(rosterPath, roster, ver.version, ver.by)
+	roster_Save(rosterPath, roster, ver.version, ver.by, fleet_IsBench(ver))
 	rosterStamp := fleet_RosterStamp()
 	fleet_Event("took the roster row " ver.by " handed up, version " ver.version
 		. ", " roster.Count " rows")
@@ -682,7 +691,8 @@ fleet_OnSetServer(s, frame) {
 	if !fleet_RowOf(s)
 		return 0
 	ver := { version: fleet_Num(fleet_Field(frame, "v"))
-		, by: fleet_Num(fleet_Field(frame, "by")) }
+		, by: fleet_Num(fleet_Field(frame, "by"))
+		, bench: fleet_Num(fleet_Field(frame, "bench")) }
 	if ((upServer.version != ver.version) || (upServer.by != ver.by))
 		upServer := { version: ver.version, by: ver.by, want: want, rows: Map() }
 	if (slot := fleet_Num(fleet_Field(frame, "slot")))
@@ -698,7 +708,7 @@ fleet_OnSetServer(s, frame) {
 		return 0
 	}
 	servers := servers_FixMain(upServer.rows), serversVer := ver
-	servers_Save(serversPath, servers, ver.version, ver.by)
+	servers_Save(serversPath, servers, ver.version, ver.by, fleet_IsBench(ver))
 	serversStamp := fleet_ServersStamp()
 	fleet_Event("took the servers row " ver.by " handed up, version " ver.version)
 	fleet_BroadcastServers()
@@ -713,6 +723,11 @@ fleet_OnSetServer(s, frame) {
 ;and the copy it discards is exactly the one somebody will want to look at. So
 ;that one is written beside the file it lost to, and said out loud.
 fleet_KeepConflict(path, rows, lost, kept, what) {
+	if fleet_IsBench(lost) {
+		fleet_Log("ignored a " what " handed up by the test bench - a bench "
+			. "configuration never beats a real one, whatever its version")
+		return 0
+	}
 	if (lost.version != kept.version) {
 		fleet_Log("ignored a " what " handed up at version " lost.version
 			. " - ours is " kept.version)

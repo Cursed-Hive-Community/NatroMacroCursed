@@ -498,7 +498,8 @@ ext_fleetReplicaFlush() {
 	if ext_fleetReplicaWhole(ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant) {
 		if fleet_ConfigBeats(ext_fleetRosterVer, ext_fleetRosterDisk) {
 			if roster_Save(ext_fleetRosterFile(), ext_fleetRosterRows()
-				, ext_fleetRosterVer.version, ext_fleetRosterVer.by)
+				, ext_fleetRosterVer.version, ext_fleetRosterVer.by
+				, fleet_IsBench(ext_fleetRosterVer))
 				ext_fleetRosterDisk := ext_fleetRosterVer
 			else
 				ext_fleetProblem("could not write the roster replica to "
@@ -513,7 +514,8 @@ ext_fleetReplicaFlush() {
 	if ext_fleetReplicaWhole(ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant) {
 		if fleet_ConfigBeats(ext_fleetServerVer, ext_fleetServerDisk) {
 			if servers_Save(ext_fleetServersFile(), ext_fleetServerRows()
-				, ext_fleetServerVer.version, ext_fleetServerVer.by)
+				, ext_fleetServerVer.version, ext_fleetServerVer.by
+				, fleet_IsBench(ext_fleetServerVer))
 				ext_fleetServerDisk := ext_fleetServerVer
 			else
 				ext_fleetProblem("could not write the servers replica to "
@@ -595,7 +597,8 @@ ext_fleetHandUp(what) {
 		rows := roster_Load(ext_fleetRosterFile())
 		for row, e in rows
 			sock_SendLine(ext_fleetSock, fleet_Frame("SETROW"
-				, Map("v", mine.version, "by", mine.by, "n", rows.Count
+				, Map("v", mine.version, "by", mine.by
+				, "bench", fleet_IsBench(mine), "n", rows.Count
 				, "row", e.row, "name", e.name, "role", e.role
 				, "user", e.user, "machine", e.machine)))
 		return rows.Count
@@ -603,7 +606,8 @@ ext_fleetHandUp(what) {
 	rows := servers_Load(ext_fleetServersFile())
 	for row, e in rows
 		sock_SendLine(ext_fleetSock, fleet_Frame("SETSERVER"
-			, Map("v", mine.version, "by", mine.by, "n", rows.Count
+			, Map("v", mine.version, "by", mine.by
+			, "bench", fleet_IsBench(mine), "n", rows.Count
 			, "slot", e.slot, "name", e.name, "link", e.link
 			, "owner", e.owner, "kind", e.kind)))
 	return rows.Count
@@ -612,7 +616,10 @@ ext_fleetHandUp(what) {
 ;The version a frame says its configuration is on.
 ext_fleetFrameVer(frame) {
 	return { version: fleet_Num(fleet_Field(frame, "v"))
-		, by: fleet_Num(fleet_Field(frame, "by")) }
+		, by: fleet_Num(fleet_Field(frame, "by"))
+		;carried so that a configuration this macro took from the bench cannot
+		;later be handed up to a real coordinator and win
+		, bench: fleet_Num(fleet_Field(frame, "bench")) }
 }
 ext_fleetSameVer(ver, frame) {
 	return (ver.version = fleet_Num(fleet_Field(frame, "v")))
