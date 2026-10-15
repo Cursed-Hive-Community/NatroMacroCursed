@@ -201,14 +201,15 @@ ext_fleetOnBindSocket(s, event, data) {
 	if !(frame := fleet_Parse(data))
 		return
 	if (frame.verb = "BOUND")
-		ext_fleetBound(Integer(fleet_Field(frame, "row", 0)), fleet_Field(frame, "secret"))
+		ext_fleetBound(Integer(fleet_Field(frame, "row", 0))
+			, fleet_Field(frame, "secret"), fleet_Field(frame, "fid"))
 	else if (frame.verb = "BYE")
 		ext_fleetBindResult := fleet_Field(frame, "why", "refused")
 }
 
 ;We are in. Keep the row and the secret, and join properly - the binding
 ;socket has done its one job and is dropped.
-ext_fleetBound(row, newSecret) {
+ext_fleetBound(row, newSecret, newId := "") {
 	global ext_fleetBoundWith
 
 	if (row <= 0)
@@ -218,16 +219,28 @@ ext_fleetBound(row, newSecret) {
 	;settings to disk and then close that very socket and restart the fleet -
 	;none of which belongs inside a dispatch holding Critical, and none of which
 	;wants to happen while the frame that triggered it is still in flight.
-	ext_fleetBoundWith := { row: row, secret: newSecret }
+	ext_fleetBoundWith := { row: row, secret: newSecret, id: newId }
 	SetTimer ext_fleetFinishBind, -50
 	return 1
 }
 
 ext_fleetFinishBind() {
 	global ext_fleetBoundWith, ext_fleetBindSock, ext_fleetBindResult
+	local joined
 
 	if !IsObject(ext_fleetBoundWith)
 		return 0
+	;The fleet's identity first, because it decides which folder every path
+	;below resolves to. A coordinator too old to send one belongs to a fleet
+	;whose identity is derived from its secret, and keeping ours would file
+	;this fleet's configuration in the last fleet's folder - which is the
+	;exact fault the folders were introduced to end.
+	joined := fleet_IsId(ext_fleetBoundWith.id)
+		? ext_fleetBoundWith.id
+		: fleet_LegacyId(ext_fleetBoundWith.secret)
+	if (joined != "")
+		ext_FleetSave("FleetId", joined)
+	ext_fleetEnsureDir()
 	ext_FleetSave("FleetRow", ext_fleetBoundWith.row)
 	ext_FleetSave("FleetHostRow", 0)
 	if (ext_fleetBoundWith.secret != "")
@@ -247,16 +260,29 @@ ext_fleetFinishBind() {
 ;empty roster, and take row one.
 ext_fleetStartFleet(name, role, user) {
 	global FleetSecret
-	local path := ext_fleetRosterFile(), rows
+	local path, rows
 
+	;The secret and the identity before the path, because the path is inside
+	;the folder the identity names. A fleet created without one would write
+	;into the flat file every fleet used to share, which is what this leaves
+	;behind.
+	;
+	;Both are minted, and the secret used to be kept if there was one. That was
+	;a way round the folders: leave fleet A, create fleet B, and B carried A's
+	;secret - two fleets with one secret share a beacon fingerprint, so a macro
+	;of either could find the other's coordinator, be let in on a row number
+	;that exists in both rosters, and replicate that fleet's configuration into
+	;its own folder. Separate folders holding each other's contents.
+	ext_FleetSave("FleetSecret", fleet_NewSecret())
+	ext_FleetSave("FleetId", fleet_NewId())
+	ext_fleetEnsureDir()
+	path := ext_fleetRosterFile()
 	rows := roster_Load(path)
 	rows[1] := { row: 1, name: name, role: role, user: user
 		, machine: A_ComputerName }
 	;version one, written by row one: a fleet being created has no history to
 	;compare against and this is the first thing anybody will compare to
 	roster_Save(path, rows, 1, 1)
-	if (FleetSecret = "")
-		ext_FleetSave("FleetSecret", fleet_NewSecret())
 	ext_FleetSave("FleetRow", 1)
 	ext_FleetSave("FleetHostRow", 1)
 	ext_FleetSave("FleetCheck", 1)
@@ -630,11 +656,65 @@ ext_fleetSameVer(ver, frame) {
 ;rather than wherever a window happens to want them, because the replica is
 ;written whether or not anybody has a window open - and because the coordinator
 ;derives the second name from the first in exactly this way.
+;Which fleet this macro belongs to: the name of the folder its configuration
+;lives in. Not the fingerprint the beacon carries - see fleet_NewId.
+;
+;A macro holding a secret and no id has not been through ext_fleetMigrate yet,
+;so the answer is derived rather than left empty: an empty id resolves to the
+;flat file every fleet used to share, and a macro would read one fleet's
+;roster while believing it was in another.
+ext_fleetId() {
+	global FleetId, FleetSecret
+
+	return (FleetId != "") ? FleetId : fleet_LegacyId(FleetSecret)
+}
 ext_fleetRosterFile() {
-	return A_WorkingDir "\settings\fleet_roster.ini"
+	return fleet_RosterPath(A_WorkingDir, ext_fleetId())
 }
 ext_fleetServersFile() {
-	return A_WorkingDir "\settings\fleet_roster_servers.ini"
+	return fleet_ServersPath(A_WorkingDir, ext_fleetId())
+}
+
+;Where this fleet's files are, for somebody about to go and look at them. The
+;roster rather than the folder: the folder holds two files and this is the one
+;anybody opens.
+ext_fleetConfigDirLine() {
+	return "This fleet's roster: " ext_FleetShort(ext_fleetRosterFile(), 52)
+}
+
+;The folder, created if it is not there.
+;
+;Said out loud when it cannot be, because every replica write and every edit
+;goes into it: a folder that cannot be created would otherwise show up as a
+;string of write failures with no first cause. A macro with no fleet yet has
+;no folder to make, which is not a fault.
+ext_fleetEnsureDir() {
+	local why := fleet_EnsureDir(A_WorkingDir, ext_fleetId())
+
+	if (why = "")
+		return 1
+	if (ext_fleetId() != "")
+		ext_fleetProblem(why)
+	return 0
+}
+
+;Move a configuration written before fleets had folders into this fleet's.
+;
+;Once per macro. The identity is written down rather than recomputed every
+;time, so the fingerprint of the secret is used exactly once: the day the
+;secret changes - a rebinding does it today - the folder does not move and
+;nothing looks lost.
+ext_fleetMigrate() {
+	global FleetId, FleetSecret
+	local why
+
+	if ((FleetId != "") || (FleetSecret = ""))
+		return 0
+	ext_FleetSave("FleetId", fleet_LegacyId(FleetSecret))
+	if ((why := fleet_MigrateConfig(A_WorkingDir, FleetId)) != "")
+		ext_fleetProblem("this fleet's configuration could not be moved into a"
+			. " folder of its own: " why)
+	return 1
 }
 
 ;The replicas as roster_Save and servers_Save want them: a frame is a Map of
@@ -856,6 +936,9 @@ ext_fleetTakeOver(why) {
 	try
 		Run '"' exe_path32 '" /script "' A_WorkingDir '\submacros\Fleet.ahk" '
 			. FleetPort ' "' FleetSecret '" ' ext_fleetTerm ' ' FleetRow
+			;which fleet it is coordinating: the folder to read the roster out of,
+			;and the identity to hand to the next macro that binds
+			. ' "' ext_fleetRosterFile() '" "' ext_fleetId() '"'
 			, , "Hide", &ext_fleetCoordPid
 	catch as e {
 		ext_fleetCoordPid := 0
@@ -912,10 +995,20 @@ ext_fleetProblem(text) {
 ext_fleetStart() {
 	global FleetCheck, FleetRow, FleetHostRow, ext_fleetRefused
 	global ext_fleetRosterDisk, ext_fleetServerDisk
+	global FleetRosterPath, FleetServersPath
 
 	;a refusal is forgotten the moment somebody sets this macro up again -
 	;that is what being set up again means
 	ext_fleetRefused := ""
+	;before anything resolves a path: this fleet's configuration may still be
+	;sitting in the one pair of files every fleet used to share
+	ext_fleetMigrate()
+	ext_fleetEnsureDir()
+	;the two paths the settings window reads. Set here rather than only when
+	;that window opens, so they follow a binding that moved this macro to
+	;another fleet while the window was shut.
+	FleetRosterPath := ext_fleetRosterFile()
+	FleetServersPath := ext_fleetServersFile()
 	;what this machine already holds, so the first configuration that arrives
 	;can be compared against it rather than trusted on sight
 	ext_fleetRosterDisk := fleet_ConfigVersion(ext_fleetRosterFile())
@@ -1560,6 +1653,10 @@ ext_FleetWhoDraw() {
 	me := FleetRoster.Has(FleetRow)
 		? FleetRoster[FleetRow].name " (" FleetRoster[FleetRow].role ")"
 		: "row " FleetRow
+	;which fleet, because a macro can be in the real one this minute and the
+	;test bench the next, and "whose configuration am I looking at" has to be
+	;answerable from the window rather than by opening folders
+	me .= "  -  fleet " ext_fleetId()
 	;Against who is coordinating, not who was named as host. The two differ
 	;after a takeover, and this said "hosts the fleet" on a macro that did not -
 	;then offered it a door to open that the coordinator would refuse, because
@@ -1616,7 +1713,15 @@ ext_FleetAct2(*) {
 }
 
 ;Forget the fleet. The roster file is left alone: this macro leaving is not a
-;reason to lose everyone else's details, and the coordinator keeps its own copy.
+;reason to lose everyone else's details, and the coordinator keeps its own copy -
+;which is now in a folder of its own, so rejoining this same fleet finds it
+;still there and downloads nothing.
+;
+;The secret and the identity go, because they belong to the fleet and not to
+;this macro. Keeping them let a macro create a second fleet carrying the
+;first one's secret - see ext_fleetStartFleet for what that cost. Both come
+;back from the coordinator the next time this macro binds, so forgetting them
+;loses nothing a setup does not restore.
 ext_FleetLeave() {
 	if (MsgBox("Leave the fleet?`n`nThis macro will stop talking to the others until it is set up again.",
 		"Fleet", 0x40024) != "Yes")
@@ -1628,6 +1733,8 @@ ext_FleetLeave() {
 	ext_FleetSave("FleetCheck", 0)
 	ext_FleetSave("FleetRow", 0)
 	ext_FleetSave("FleetHostRow", 0)
+	ext_FleetSave("FleetSecret", "")
+	ext_FleetSave("FleetId", "")
 	ext_FleetWhoDraw()
 }
 
@@ -2242,6 +2349,8 @@ ext_FleetAdvanced(*) {
 	local GuiCtrl
 
 	if (IsSet(FleetAdvGui) && IsObject(FleetAdvGui)) {
+		;a binding can have moved this macro to another fleet since it was built
+		try FleetAdvGui["FleetConfigDir"].Text := ext_fleetConfigDirLine()
 		FleetAdvGui.Show()
 		return
 	}
@@ -2292,7 +2401,21 @@ ext_FleetAdvanced(*) {
 	FleetAdvGui.SetFont("cDefault")
 
 	FleetAdvGui.Add("Button", "x292 y326 w80 h24", "Close").OnEvent("Click", ext_FleetAdvClose)
-	FleetAdvGui.Show("w384 h364")
+
+	;Each fleet keeps its configuration in a folder of its own, so a macro that
+	;moves between the real fleet and the test bench never writes one over the
+	;other. Shown because it is the folder somebody opens when something looks
+	;wrong, and nothing else on screen says where it is.
+	;
+	;A footer rather than a field: it sits under everything because there is no
+	;room between the address hint and the group box. That hint is three lines in
+	;the source and sixty-five pixels on screen - it wraps - so the gap that
+	;looked like twenty-nine pixels was nineteen pixels of overlap.
+	FleetAdvGui.SetFont("c808080")
+	FleetAdvGui.Add("Text", "x12 y356 w360 vFleetConfigDir"
+		, ext_fleetConfigDirLine())
+	FleetAdvGui.SetFont("cDefault")
+	FleetAdvGui.Show("w384 h382")
 }
 
 ;One of the four, saved the way every other setting in the macro is.

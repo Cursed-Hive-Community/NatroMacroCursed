@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Twenty-two things are checked, each because it is a way the design could be wrong
+;Twenty-eight things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -35,6 +35,12 @@
 ;	20. a macro's own version reaches the fleet a divergence has somewhere to show
 ;	21. a bench configuration never wins       a test tool cannot replace a fleet
 ;	22. and not over the wire either           the same rule, between processes
+;	23. an empty id does not build a path      a fleet with no identity is not a folder
+;	24. a path with a separator in it is out   the id arrives from the wire
+;	25. two fleets are two folders             the whole point of the change
+;	26. an id never starts with a digit        an ini would eat the leading zero
+;	27. an old fleet's id is its fingerprint   every machine agrees without being told
+;	28. binding hands the identity over        a newcomer writes in the right folder
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -43,6 +49,20 @@
 ;real coordinator takes it. A tool built to protect the fleet would have
 ;replaced its roster. So a configuration the bench made loses to one it did
 ;not, whatever the versions say, in the comparison and on the wire.
+;
+;Twenty-three to twenty-eight are the folder per fleet. A macro belongs to the
+;real fleet and to the bench over its life, and the two configurations used to
+;share one pair of files - so binding to the bench wrote over the real roster.
+;Each fleet now owns a folder named by its identity, which is handed over at
+;binding beside the secret.
+;
+;Twenty-three and twenty-four are the dangerous half. The id reaches a macro
+;from the wire, and both an empty one and one with a separator in it would
+;decide which folder that macro writes its configuration into. Twenty-six is
+;the trap that nearly shipped: these are stored in an ini, nm_importConfig
+;turns anything IsInteger accepts into an Integer, and an identity of 00123456
+;would have come back as 123456 - a folder name that stopped matching the one
+;it was written as, about once in every two hundred fleets.
 ;
 ;Nineteen is the other half of the guard behind seven. An empty roster has to
 ;be refused when it is a file caught mid-write and obeyed when somebody cleared
@@ -137,6 +157,7 @@ roster_Save(ROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
 
 coordPid := 0, rivalPid := 0, finished := 0
 boundRow := -1              ;which row a second setup of row 3 was handed back
+boundFid := ""              ;and which fleet it was told it had joined
 clientD := 0, clientE := 0
 srvGen := ""                ;the generation of the server list last seen
 srv := Map()                ;the server list as the main macro holds it
@@ -237,7 +258,7 @@ Rebind(*) {
 }
 
 OnRebind(s, event, data) {
-	global boundRow
+	global boundRow, boundFid
 	local frame
 
 	if (event = "connect") {
@@ -246,8 +267,12 @@ OnRebind(s, event, data) {
 				, "role", "fuzzy", "user", "fuzzy2", "machine", "a new machine")))
 		return
 	}
-	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BOUND"))
+	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BOUND")) {
 		boundRow := Integer(fleet_Field(frame, "row", 0))
+		;the fleet's identity rides along with the secret, so a newcomer knows
+		;which folder its copy of this configuration belongs in
+		boundFid := fleet_Field(frame, "fid")
+	}
 }
 
 ;A second coordinator on the same port, which is what every handover starts.
@@ -524,13 +549,14 @@ OnBad(s, event, data) {
 
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
-	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe
+	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe, boundFid
 	global srv, srvGen, srvMainLink, srvMainOwner
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
 	global cfgTookUp, byeFinal
 	global ROSTER, gotoField
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
+	local idsOk, idsSeen, newId
 	global LOGFILE
 
 	if finished
@@ -619,6 +645,49 @@ Report(*) {
 	allOk := Check(lines, "a bench configuration is refused over the wire"
 		, cfgHighVer < 999) && allOk
 
+	;--- a folder per fleet -------------------------------------------------
+	;
+	;Written before the mechanism was, and these two are why: an id is a folder
+	;name that arrives from the wire. An empty one has to fall back to the old
+	;flat file rather than build settings\fleet\\roster.ini, and one carrying a
+	;separator has to be refused outright - a coordinator must not be able to
+	;choose where a macro writes.
+	allOk := Check(lines, "an empty fleet id falls back to the old flat file"
+		, (fleet_RosterPath("C:\nm", "") = "C:\nm\settings\fleet_roster.ini")
+		&& !fleet_IsId("")) && allOk
+	allOk := Check(lines, "an id with a separator in it is refused"
+		, !fleet_IsId("..\..\settings") && !fleet_IsId("a/b") && !fleet_IsId("a.b")
+		&& fleet_IsId("f3a9c1b2")) && allOk
+	;the whole point: two fleets cannot reach each other's files, so a stale or
+	;a bench copy can no longer be compared with a real one at all
+	allOk := Check(lines, "two fleets keep two folders, roster and servers"
+		, (fleet_RosterPath("C:\nm", "fone") != fleet_RosterPath("C:\nm", "ftwo"))
+		&& (fleet_ServersPath("C:\nm", "fone")
+			= "C:\nm\settings\fleet\fone\roster_servers.ini")) && allOk
+	;an ini turns 00123456 into 123456, so an identity that opens with a digit
+	;is a folder name that stops matching itself. Two hundred draws is enough to
+	;catch a generator that merely usually starts with a letter.
+	idsOk := 1, idsSeen := Map()
+	Loop 200 {
+		newId := fleet_NewId()
+		idsSeen[newId] := 1
+		if (!fleet_IsId(newId) || IsInteger(newId) || !RegExMatch(newId, "^[a-z]"))
+			idsOk := 0
+	}
+	allOk := Check(lines, "a new fleet id is a folder name an ini cannot eat"
+		, idsOk && (idsSeen.Count > 190)) && allOk
+	;a fleet that predates the idea: every machine in it has to reach the same
+	;answer from the secret alone, because nobody is going to tell them
+	allOk := Check(lines, "an old fleet's id is the fingerprint of its secret"
+		, (fleet_LegacyId("abc") = fleet_LegacyId("abc"))
+		&& (fleet_LegacyId("abc") != fleet_LegacyId("abd"))
+		&& fleet_IsId(fleet_LegacyId("abc"))
+		&& (fleet_LegacyId("") = "")) && allOk
+	;and the wire half: a macro being bound is told which fleet it joined, or it
+	;would write this fleet's configuration into the folder of its last one
+	allOk := Check(lines, "binding hands over the fleet's identity"
+		, fleet_IsId(boundFid)) && allOk
+
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
 			, "  name=" fleet_Field(row2, "name")
@@ -632,7 +701,8 @@ Report(*) {
 		. ", still in the roster file=" (leftRoster.Has(2) ? "yes" : "no"))
 	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing"))
 	lines.Push("row 3 set itself up again and was handed row "
-		. ((boundRow >= 0) ? boundRow : "nothing at all"))
+		. ((boundRow >= 0) ? boundRow : "nothing at all")
+		. " of fleet " ((boundFid != "") ? boundFid : "(it was not told)"))
 	lines.Push("the main said it held v42 and got back: "
 		. ((myCv >= 0) ? "v" myCv : "nothing")
 		. ", rows struck before the wipe: " goneAtWipe)

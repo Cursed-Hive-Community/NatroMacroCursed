@@ -944,6 +944,11 @@ nm_importConfig()
 		, "FleetHostRow", 1
 		, "FleetPort", 47600
 		, "FleetSecret", ""
+		;which fleet this macro belongs to, and so which folder under
+		;settings\fleet\ its roster and servers live in. Handed over during
+		;binding - see fleet_NewId. Empty until the macro joins or creates one,
+		;and filled in from the secret for a fleet that predates folders.
+		, "FleetId", ""
 		, "FleetAddress", ""
 		, "FleetGraceSecs", 45
 		;legacy: the two links that used to be typed on every machine. They are

@@ -56,8 +56,8 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These eighteen checks run the real coordinator process, the real socket layer
-and the real protocol. They are the strongest evidence in the repository.
+These twenty-eight checks run the real coordinator process, the real socket
+layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
 - [x] both rows reach the fuzzy macro
@@ -81,6 +81,15 @@ and the real protocol. They are the strongest evidence in the repository.
 - [x] a macro's own configuration version reaches the fleet
 - [x] a bench configuration loses to a real one, in the comparison
 - [x] and is refused over the wire, at version 999 against a real 10
+- [x] an empty fleet id falls back to the old flat file, and is refused as a
+      folder name
+- [x] an id carrying a path separator is refused - it arrives from the wire
+- [x] two fleets keep two folders, roster and servers
+- [x] a new fleet id always opens with a letter, over two hundred draws, so an
+      ini cannot read `00123456` back as `123456`
+- [x] an old fleet's id is the fingerprint of its secret, so every machine in
+      it reaches the same answer without being told
+- [x] binding hands the fleet's identity over beside the secret
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -441,6 +450,24 @@ From earlier commits, and partly used in anger already.
 
 Not bugs to find - bugs already known about, with no fix yet.
 
+- **One folder per fleet is proven on the wire, not across fleets.** The
+  identity reaches a macro during binding and names the folder its
+  configuration lives in, so a macro that belongs to the real fleet and to the
+  test bench can no longer write one roster over the other. What the self-test
+  cannot show is a macro actually moving between two fleets and finding both
+  configurations intact afterwards - that needs the bench and a real macro,
+  which is the next brick.
+- **The coordinator's log moved.** It is derived from the roster path, and the
+  roster now lives in a folder per fleet, so it is
+  `settings\fleet\<id>\roster.log` rather than `settings\fleet_log.txt`. The
+  old file is left where it is; nothing reads it.
+- **Leaving a fleet now forgets its secret, reasoned but never driven by a
+  test.** Keeping it let one macro create a second fleet carrying the first
+  one's secret, and two fleets with one secret share a beacon fingerprint - so
+  either one's macros could reach the other's coordinator and replicate its
+  configuration into their own folder. Fixed in `ext_FleetLeave` and
+  `ext_fleetStartFleet`. No self-test reaches it: both are window code behind a
+  confirmation box, and the self-tests only speak the protocol.
 - **P3, split brain across machines.** `SO_EXCLUSIVEADDRUSE` stops two
   coordinators on one machine. Two machines can still each run one, and
   `ext_fleetOnBeacon` latches onto the first beacon whose fingerprint matches

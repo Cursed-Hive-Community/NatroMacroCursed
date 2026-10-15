@@ -63,6 +63,14 @@ bench_onError(err, mode) {
 ;reach a real coordinator unless somebody types this number into one.
 BENCH_PORT := 47700
 BENCH_SECRET := "bench"
+;The identity of the bench's fleet. A macro bound to it keeps this fleet's
+;configuration under settings\fleet\benchfleet\, so nothing the bench does
+;can reach the files of the real fleet that macro also belongs to - which is
+;what made a real macro safe to invite in the first place.
+;
+;Fixed rather than minted, because it has to be recognisable: a folder called
+;benchfleet is one anybody can delete without wondering what it was.
+BENCH_FLEET_ID := "benchfleet"
 BENCH_ROSTER := A_WorkingDir "\settings\fleet_bench_roster.ini"
 BENCH_LOGFILE := A_WorkingDir "\settings\fleet_bench.txt"
 ;the log in the window is capped: it is read by scrolling, and a hundred
@@ -656,11 +664,12 @@ bench_coordToggle(*) {
 }
 
 bench_startCoord() {
-	global bench_coordPid, BENCH_PORT, BENCH_SECRET, BENCH_ROSTER
+	global bench_coordPid, BENCH_PORT, BENCH_SECRET, BENCH_ROSTER, BENCH_FLEET_ID
 
 	try
 		Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' BENCH_PORT
-			. ' "' BENCH_SECRET '" 1 1 "' BENCH_ROSTER '"', , "Hide", &bench_coordPid
+			. ' "' BENCH_SECRET '" 1 1 "' BENCH_ROSTER '" "' BENCH_FLEET_ID '"'
+			, , "Hide", &bench_coordPid
 	catch as e {
 		bench_coordPid := 0
 		bench_say("could not start a coordinator: " e.Message)

@@ -12,7 +12,7 @@
 ;
 ;Launched by whichever macro the panel names as host:
 ;
-;	AutoHotkey64.exe /script submacros\Fleet.ahk <port> <secret> <term> <row> [roster]
+;	AutoHotkey64.exe /script submacros\Fleet.ahk <port> <secret> <term> <row> [roster] [id]
 ;
 ;The term is what keeps two coordinators from fighting. Every takeover starts a
 ;higher one, it rides on every heartbeat, and a macro obeys only the highest it
@@ -56,6 +56,18 @@ term := (A_Args.Length >= 3) ? Integer(A_Args[3]) : 1
 ;the row that started us. It rides on every heartbeat so the macro the panel
 ;named as host can tell whether it is being stood in for, and take its job back.
 hostRow := (A_Args.Length >= 4) ? Integer(A_Args[4]) : 0
+
+;The fleet this coordinates, which is the name of the folder each macro keeps
+;this fleet's configuration in. Handed to a newcomer during binding, so
+;nobody types it and nobody has to be told it twice.
+;
+;A run given none belongs to a fleet that predates folders per fleet, and its
+;identity is derived from its secret - the same answer on every machine in it,
+;without a message being sent about it. Note this is not what the beacon
+;carries: identifying a fleet on the network and naming its folder on disk are
+;two jobs, and keeping them apart is what lets a macro on the old build still
+;find a coordinator on this one.
+fleetId := (A_Args.Length >= 6) ? A_Args[6] : fleet_LegacyId(secret)
 
 ;row number -> what we know about that macro. The row is assigned by the panel
 ;and is the one thing a macro carries locally, so it is the identity here too.
@@ -834,7 +846,7 @@ fleet_OnOpen(s, frame) {
 ;has to remember which machine is which - the macro stores what it is told
 ;and uses it for every reconnection afterwards.
 fleet_OnBind(s, frame) {
-	global roster, rosterPath, rosterStamp, bindUntil, secret
+	global roster, rosterPath, rosterStamp, bindUntil, secret, fleetId
 	local row, again
 
 	if (nowUnix() > bindUntil) {
@@ -854,7 +866,10 @@ fleet_OnBind(s, frame) {
 	fleet_Event((again ? "rebound " : "bound ") roster[row].name
 		. " (" roster[row].role ") from "
 		. fleet_Field(frame, "machine", "somewhere"))
-	sock_SendLine(s, fleet_Frame("BOUND", Map("row", row, "secret", secret)))
+	;the identity goes with the secret: a macro that was told one but not the
+	;other would file this fleet's configuration in the last fleet's folder
+	sock_SendLine(s, fleet_Frame("BOUND"
+		, Map("row", row, "secret", secret, "fid", fleetId)))
 	;a new account is a new configuration, and it travels at once for the same
 	;reason a departure does
 	fleet_BroadcastRoster()

@@ -284,3 +284,130 @@ roster_Sort(keys) {
 	}
 	return keys
 }
+
+;--- one configuration per fleet ---------------------------------------------
+;
+;A macro belongs to more than one fleet over its life - the real one, and the
+;test bench - and the two configurations must never meet. They shared
+;settings\fleet_roster.ini, so binding to the bench wrote over the real roster
+;and binding back wrote over the test one. The Bench marker caught the worst of
+;that on the wire; nothing could stop one file from being asked to be two
+;things.
+;
+;So a fleet has an identity, and its configuration lives in a folder of its
+;own. Replication only ever happens inside one fleet, so two fleets' copies can
+;no longer be compared, handed up, or written over each other - the whole class
+;is gone rather than guarded against. It also makes two fleets on one machine
+;possible at all: before this the second silently overwrote the first.
+;
+;The identity is handed over at binding, beside the secret, rather than being
+;derived from it. A secret can be rotated - a rebinding does it today, and a
+;shared phrase would do it later - and an identity derived from the secret
+;would change with it, leaving a macro looking into an empty folder and
+;believing it had lost its configuration.
+;
+;Note what does not change: the discovery beacon still carries the fingerprint
+;of the secret. Identifying a fleet on the network and naming its folder on disk
+;are two different jobs, and keeping them apart means a macro on the old build
+;still finds a coordinator on the new one.
+
+;An identity for a fleet being created. Always opens with a letter, which is
+;not cosmetic: these are stored in an ini, nm_importConfig turns anything
+;IsInteger accepts into an Integer, and "00123456" would come back as 123456 -
+;a folder name that quietly stopped matching the one it was written as.
+fleet_NewId() {
+	static alphabet := "abcdefghjkmnpqrstuvwxyz23456789"
+	static letters := "abcdefghjkmnpqrstuvwxyz"
+	local out := SubStr(letters, Random(1, StrLen(letters)), 1)
+
+	Loop 7
+		out .= SubStr(alphabet, Random(1, StrLen(alphabet)), 1)
+	return out
+}
+
+;The identity of a fleet that predates all this: it has a secret and no id.
+;
+;The fingerprint of its secret, so every macro in an existing fleet computes
+;the same answer without being told and they all land in the same folder. The
+;leading letter is there for the ini, as above.
+fleet_LegacyId(secret) {
+	return (secret = "") ? "" : "f" fleet_Fingerprint(secret)
+}
+
+;Is this something we are willing to make a folder out of?
+;
+;Checked rather than trusted, because the id arrives from the wire: a
+;coordinator sending "..\..\settings" or a name with a separator in it would
+;otherwise choose which folder a macro writes its configuration into.
+fleet_IsId(id) {
+	if ((id = "") || (StrLen(id) > 32))
+		return 0
+	return !RegExMatch(id, "[^a-zA-Z0-9_-]")
+}
+
+;Where this fleet keeps its roster.
+;
+;An id we will not make a folder out of falls back to the old flat path. That
+;is the case worth being careful about and it is the first thing checked: an
+;empty id would otherwise build settings\fleet\\roster.ini, which is not a
+;path anybody can predict.
+fleet_RosterPath(base, id) {
+	if !fleet_IsId(id)
+		return base "\settings\fleet_roster.ini"
+	return base "\settings\fleet\" id "\roster.ini"
+}
+
+;The servers file beside it, by the same rule the coordinator derives its log
+;with - so what a fleet's folder holds is decided in one place.
+fleet_ServersPath(base, id) {
+	return RegExReplace(fleet_RosterPath(base, id), "i)\.ini$", "_servers.ini")
+}
+
+;Make sure the folder is there, and say why not.
+;
+;Called wherever a fleet's identity is settled rather than from the path
+;getters: a getter runs constantly and must not have a side effect. Returns ""
+;on success and a reason otherwise, because a folder that cannot be created is
+;a macro that will fail to write every replica it is ever sent, and silence
+;would cost exactly the guarantee this exists to provide.
+fleet_EnsureDir(base, id) {
+	local dir
+
+	if !fleet_IsId(id)
+		return "no fleet id, so the old shared files are still in use"
+	dir := base "\settings\fleet\" id
+	if DirExist(dir)
+		return ""
+	try {
+		DirCreate dir
+	} catch as e {
+		return "could not create " dir ": " e.Message
+	}
+	return DirExist(dir) ? "" : "could not create " dir
+}
+
+;Bring a pre-id configuration into its fleet's folder. Once, on the first run
+;after the update.
+;
+;A file already in the folder is left alone and the old one stays where it is:
+;the folder copy is the one being used, and a move would replace it with
+;something older.
+fleet_MigrateConfig(base, id) {
+	local why := fleet_EnsureDir(base, id), pair, from, to
+
+	if (why != "")
+		return why
+	for _, pair in [["fleet_roster.ini", "roster.ini"]
+		, ["fleet_roster_servers.ini", "roster_servers.ini"]] {
+		from := base "\settings\" pair[1]
+		to := base "\settings\fleet\" id "\" pair[2]
+		if (!FileExist(from) || FileExist(to))
+			continue
+		try {
+			FileMove from, to, 0
+		} catch as e {
+			return "could not move " from ": " e.Message
+		}
+	}
+	return ""
+}
