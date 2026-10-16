@@ -38,3 +38,29 @@ send 7 BIND name=newcomer role=guid user=benchnewcomer machine=OTHERPC
 wait 900
 expect 7 BOUND secret=bench
 expect 7 BOUND fid=benchfleet
+
+# --- choosing the coordinator ------------------------------------------------
+#
+# The bench itself, under another row's name. Its beat carries that row, which
+# is what a macro reads to decide who is in charge and whether to stand for the
+# job itself.
+coordinator 2 puppet
+wait 300
+beat
+wait 300
+expect 1 HEARTBEAT row=2
+
+# And the real thing: an actual Fleet.ahk on behalf of row 1, asked by row 1 to
+# hand the coordinator to row 2. This is the production handover path - the
+# bench only asks, and the coordinator decides whether the asker is entitled
+# to. Nothing had ever driven it from the asking end.
+coordinator 1 real
+wait 2000
+disconnect all
+wait 400
+connect all
+wait 1200
+host 2
+wait 1200
+expect 2 TAKEOVER row=2
+expect 2 TAKEOVER mandate=1

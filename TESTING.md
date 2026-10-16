@@ -104,7 +104,7 @@ layer and the real protocol. They are the strongest evidence in the repository.
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
 
-And four checks on the bench's own wiring, in `tools/bench-selfcheck.txt`,
+And seven checks on the bench's own wiring, in `tools/bench-selfcheck.txt`,
 which the bench loads and runs because it takes a file of commands as an
 argument. Every one of them failed before the seat model was split into the
 two sockets a seat has:
@@ -114,6 +114,10 @@ two sockets a seat has:
 - [x] the coordinator's heartbeat, with its term, reaches a fake seat
 - [x] a newcomer that sends only BIND comes back with the bench's secret and
       the bench's fleet identity
+- [x] the bench coordinating under another row's name says so on its beat
+- [x] a real `Fleet.ahk` started on behalf of a row, asked by that row to hand
+      the coordinator to another - the production handover path, driven from
+      the asking end for the first time
 
 And thirty-four checks on the extensions' arithmetic — every window in time
 that any of them turns on, each with a row one second outside it, one exactly
@@ -495,11 +499,16 @@ Not bugs to find - bugs already known about, with no fix yet.
   real roster write, and still not a copy of natro_macro.ahk deciding to
   join. That is the one thing left before the answer to "how do I connect a
   real account" is proven rather than reasoned.
-- **Nothing sends `HOST` yet.** The verb, the permission and the macro's
-  response to it are proven on the wire, driven by the self-test speaking the
-  protocol directly. No window and no button asks for a handover - the bench
-  is where the first caller goes, and choosing the coordinator from a macro's
-  own settings is part of P4.
+- **No window asks for a handover.** The bench does, with `host <row>`, and
+  that path is checked end to end. Choosing the coordinator from a macro's own
+  settings is still part of P4.
+- **The split brain can be staged but not asserted.** `coordinator 3 real
+  keep` leaves the previous coordinator running, and the bench's state line
+  says "2 real coordinators are running at once - a split brain". On one
+  machine the second is refused the port, which is the exclusive bind doing
+  its job rather than the term doing its job - so what this stages is the
+  refusal, not the thing P3 is about. Two machines are still needed for that,
+  and `expect` can only assert what a seat heard.
 - **The mandate is in no window.** It rides on every heartbeat and appears in
   the coordinator's first log line, and the settings window says where new
   macros are accepted when this macro cannot accept them - but nothing names

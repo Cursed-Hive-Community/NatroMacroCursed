@@ -50,6 +50,19 @@ SetWorkingDir A_ScriptDir "\.."
 ;A continuation line has to open with an operator, or AutoHotkey reads it as a
 ;statement of its own - which is what the leading dot below is for.
 OnError(bench_onError)
+;Whoever starts a process ends it, on every path out and not only the close
+;button. A /quiet run ends with ExitApp from the script runner and an error
+;ends with ExitApp from the handler above - neither goes anywhere near the
+;window - and a coordinator left holding the port is the next run's failure,
+;with nothing to connect the two. One was already found alive from an earlier
+;run doing exactly that.
+OnExit(bench_onExit)
+bench_onExit(*) {
+	bench_endCoord()
+	;0 lets the exit go ahead, which is the whole point of being here
+	return 0
+}
+
 bench_onError(err, mode) {
 	local text := "ERROR: " err.Message " (line " err.Line ") " err.Extra
 
@@ -119,7 +132,16 @@ bench_seats := Map()
 bench_bySocket := Map()
 ;the newest lines last, as a window reads
 bench_log := []
-bench_coordPid := 0
+;Every coordinator this bench has started. A list rather than one pid, because
+;two coordinators at once is a thing to stage on purpose - the split brain,
+;which one machine cannot otherwise reproduce and which nothing has ever
+;tested. Whoever starts a process ends it, and that holds for the second one.
+bench_coordPids := []
+;Which row the bench's coordination answers for: the row its heartbeat names,
+;and the row a real Fleet.ahk it starts takes orders from. One, until you say
+;otherwise - "coordinator 3 real" is how any seat in the bench becomes the one
+;coordinating.
+bench_coordRow := 1
 ;the script being run, where it is up to, when it may resume, and the tally
 bench_script := [], bench_pc := 0, bench_resumeAt := 0
 bench_pass := 0, bench_fail := 0
@@ -351,14 +373,14 @@ bench_close(*) {
 
 ;Once a second: the state line, and the seat list if anything moved.
 bench_tick() {
-	global BenchGui, bench_port, bench_coordPid, bench_coord, bench_listener, bench_term
+	global BenchGui, bench_port, bench_coord, bench_listener, bench_term
 
 	if !(IsSet(BenchGui) && IsObject(BenchGui))
 		return
 	try BenchGui["BenchState"].Text := "Port " bench_port " - "
 		. bench_coordWord() " - " bench_fakeCount() " fake, "
 		. bench_realCount() " real, " bench_connectedCount() " connected"
-	try BenchGui["BenchCoord"].Text := (bench_coordPid && ProcessExist(bench_coordPid))
+	try BenchGui["BenchCoord"].Text := bench_coordsRunning()
 		? "Stop the coordinator"
 		: "Start a coordinator"
 	bench_drawSeats()
@@ -406,16 +428,24 @@ bench_realCount() {
 ;Who is coordinating, in words, and honest about the gap between what was asked
 ;for and what is actually running.
 bench_coordWord() {
-	global bench_coord, bench_coordPid, bench_listener, bench_term
+	global bench_coord, bench_listener, bench_term, bench_coordRow
+	local n
 
 	if (bench_coord = "bench")
 		return bench_listener
-			? "this bench is coordinating, term " bench_term
+			? "this bench is coordinating for row " bench_coordRow
+				. ", term " bench_term
 			: "this bench should be coordinating but is not listening"
-	if (bench_coord = "real")
-		return (bench_coordPid && ProcessExist(bench_coordPid))
-			? "a real Fleet.ahk is coordinating, pid " bench_coordPid
-			: "a real Fleet.ahk was asked for and is not running"
+	if (bench_coord = "real") {
+		;the count, not one pid: two at once is a state you can ask for and the
+		;one worth seeing on the line that says what is going on
+		n := bench_coordsRunning()
+		if !n
+			return "a real Fleet.ahk was asked for and is not running"
+		return (n > 1)
+			? n " real coordinators are running at once - a split brain"
+			: "a real Fleet.ahk is coordinating for row " bench_coordRow
+	}
 	return "nobody is coordinating"
 }
 
@@ -669,7 +699,7 @@ bench_answer(row, line) {
 ;that way, a seat would be written off as quiet the moment pinging stopped,
 ;and nothing about that would be the fault being tested.
 bench_beat() {
-	global bench_seats, bench_term, bench_listener
+	global bench_seats, bench_term, bench_listener, bench_coordRow
 	local r, seat
 
 	;A fake macro's beat says it is alive. The bench's own, when it is the
@@ -689,7 +719,8 @@ bench_beat() {
 		;the bench is a macro whose coordinator this is.
 		if (bench_listener && seat.back)
 			sock_SendLine(seat.back, fleet_Frame("HEARTBEAT"
-				, Map("term", bench_term, "row", 1, "at", nowUnix())))
+				, Map("term", bench_term, "row", bench_coordRow
+				, "mandate", bench_coordRow, "at", nowUnix())))
 	}
 	return 1
 }
@@ -792,44 +823,79 @@ bench_ready(row) {
 ;pretend coordinator: the point is to test against the process that will
 ;actually be running.
 bench_coordToggle(*) {
-	global bench_coordPid
-
-	if (bench_coordPid && ProcessExist(bench_coordPid)) {
+	if bench_coordsRunning() {
 		bench_endCoord()
 		return
 	}
 	bench_startCoord()
 }
 
-bench_startCoord() {
-	global bench_coordPid, bench_port, BENCH_SECRET, BENCH_ROSTER, BENCH_FLEET_ID
+;How many coordinators this bench started are still alive. Asked by the state
+;line and by the button, so "is one running" is decided once.
+bench_coordsRunning() {
+	global bench_coordPids
+	local pid, n := 0
 
+	for _, pid in bench_coordPids
+		if (pid && ProcessExist(pid))
+			n++
+	return n
+}
+
+;Start a real coordinator, on behalf of a row.
+;
+;row is both the row it reports as running it and the row it takes orders
+;from, so the bench's seat of that number can open its door and hand the job
+;on - which is how any seat in the bench gets to be the one coordinating.
+;
+;keep leaves whatever was already running. Two coordinators at once is the
+;split brain: on one machine the second is refused the port, which is itself
+;worth watching, and the term is what is supposed to settle it between two
+;machines. Nothing has ever tested either.
+bench_startCoord(row := 0, keep := 0) {
+	global bench_coordPids, bench_coordRow, bench_port, bench_term
+	global BENCH_SECRET, BENCH_ROSTER, BENCH_FLEET_ID
+	local pid := 0
+
+	if row
+		bench_coordRow := row
+	if !keep
+		bench_endCoord()
 	try
 		Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' bench_port
-			. ' "' BENCH_SECRET '" 1 1 "' BENCH_ROSTER '" "' BENCH_FLEET_ID '" 1'
+			. ' "' BENCH_SECRET '" ' bench_term ' ' bench_coordRow
+			. ' "' BENCH_ROSTER '" "' BENCH_FLEET_ID '" ' bench_coordRow
 			;and what to call itself in a join window, so a real macro about to
 			;bind is told this is the bench and not its own fleet
 			. ' "the Natro Macro test bench"'
-			, , "Hide", &bench_coordPid
+			, , "Hide", &pid
 	catch as e {
-		bench_coordPid := 0
 		bench_say("could not start a coordinator: " e.Message)
 		return 0
 	}
-	bench_say("coordinator started, pid " bench_coordPid
+	bench_coordPids.Push(pid)
+	bench_say("coordinator started, pid " pid ", term " bench_term
+		. ", on behalf of row " bench_coordRow
+		. (keep ? " - BESIDE the last one, which is a split brain" : "")
 		. " - its log is beside the bench roster")
 	return 1
 }
 
+;Every one of them, because keep means there can be more than one and a
+;coordinator left holding the port is the next run's failure.
 bench_endCoord() {
-	global bench_coordPid
+	global bench_coordPids
+	local pid, n := 0
 
-	if (bench_coordPid && ProcessExist(bench_coordPid)) {
-		try ProcessClose(bench_coordPid)
-		bench_say("coordinator " bench_coordPid " stopped")
+	for _, pid in bench_coordPids {
+		if (pid && ProcessExist(pid)) {
+			try ProcessClose(pid)
+			bench_say("coordinator " pid " stopped")
+			n++
+		}
 	}
-	bench_coordPid := 0
-	return 1
+	bench_coordPids := []
+	return n
 }
 
 ;--- being the coordinator --------------------------------------------------
@@ -951,18 +1017,20 @@ bench_sendBeacon() {
 ;Fleet.ahk is asked through the protocol by the seat that holds its mandate,
 ;which is the same path a macro's own Accept button takes.
 bench_accept(rest) {
-	global bench_bindUntil, bench_coord, bench_seats, bench_listener
+	global bench_bindUntil, bench_coord, bench_seats, bench_listener, bench_coordRow
 	local secs := fleet_Num(rest)
 
 	if (rest = "")
 		secs := 120
 	if (bench_coord = "real") {
-		if (!bench_seats.Has(1) || !bench_seats[1].socket) {
-			bench_say("? the real coordinator takes orders from row 1 - run:"
-				. " seat 1 main mandate, then connect 1")
+		if (!bench_seats.Has(bench_coordRow)
+			|| !bench_seats[bench_coordRow].socket) {
+			bench_say("? the real coordinator takes orders from row "
+				. bench_coordRow " - run: seat " bench_coordRow
+				. " main mandate, then connect " bench_coordRow)
 			return 0
 		}
-		bench_send(1, fleet_Frame("OPEN", Map("secs", secs)))
+		bench_send(bench_coordRow, fleet_Frame("OPEN", Map("secs", secs)))
 		bench_say("asked the real coordinator to accept macros for " secs "s")
 		return 1
 	}
@@ -1162,7 +1230,8 @@ bench_onHello(s, frame) {
 	}
 	;a macro expects to be told who is in charge before anything else
 	sock_SendLine(s, fleet_Frame("HEARTBEAT"
-		, Map("term", bench_term, "row", 1, "at", nowUnix())))
+		, Map("term", bench_term, "row", bench_coordRow
+		, "mandate", bench_coordRow, "at", nowUnix())))
 	bench_drawSeats()
 	return 1
 }
@@ -1317,16 +1386,28 @@ bench_reference() {
 # One fleet. The bench always has its fake macros; real macros join the same
 # port and sit in it beside them. Only the coordinator is a choice.
 #
-#   coordinatedby bench             this bench coordinates (same as: listen)
-#   coordinatedby real              a real Fleet.ahk, started here
-#   coordinatedby none              nobody (same as: stop)
+#   coordinator 3 real             a real Fleet.ahk, on behalf of row 3.
+#                                  Production code: it cannot be made to lie.
+#   coordinator 3 puppet           the bench itself, as row 3. It CAN lie -
+#                                  a version 999, a silence, a bad frame.
+#   coordinator 3 real keep        and leave the last one running: two
+#                                  coordinators at once, a split brain.
+#   coordinator stop               nobody
+#   host 2                         ask the coordinator to hand over to row 2,
+#                                  as the row that holds the mandate
+#
+#   coordinatedby bench            the short forms, which use row 1
+#   coordinatedby real
+#   coordinatedby none
 #
 # the fake macros - yours to drive
 #   seat 2 fuzzy some name          declare one, before a coordinator reads it
 #   connect all / connect 2
 #   disconnect all / disconnect 2
 #   field 2 pepper                  report a field, which is what a main does
-#   beat 2 9 1                      a heartbeat claiming config v9 by row 1
+#   beat 2 9 1                     a heartbeat claiming config v9 by row 1
+#   beat                           the coordinator's own beat, now rather
+#                                  than on its ten second timer
 #   leave 2
 #   send 2 FIELD name=pepper        a frame exactly as it travels
 #
@@ -1445,10 +1526,9 @@ bench_do(line) {
 			if bench_drivable(fleet_Num(rest))
 				bench_send(fleet_Num(rest), fleet_Frame("LEAVE"))
 		case "coordinator":
-			if (StrLower(rest) = "stop")
-				bench_endCoord()
-			else
-				bench_startCoord()
+			bench_doCoordinator(parts, rest)
+		case "host":
+			bench_doHost(rest)
 		case "expect":
 			bench_doExpect(parts, rest, 1)
 		case "reject":
@@ -1476,6 +1556,85 @@ bench_do(line) {
 		default:
 			bench_say("? unknown command: " line)
 	}
+}
+
+;coordinator <row> real|puppet [keep]   -   or: coordinator stop
+;
+;The two kinds are different tools and the word says which you are holding.
+;
+;real starts an actual Fleet.ahk on behalf of that row. It is the production
+;code, it cannot be made to lie, and it is what you want when the thing under
+;test is the coordinator - its port lock, its election, its ordering of
+;configuration versions.
+;
+;puppet makes the bench itself answer, under that row's name. It can serve a
+;version 999, go silent, send a malformed frame - everything a real
+;coordinator refuses to do, which is exactly what a macro's own half has to
+;survive. Three faults were found with it.
+;
+;keep leaves the previous one running. Two coordinators at once is the split
+;brain, and no single machine can reproduce it any other way.
+bench_doCoordinator(parts, rest) {
+	global bench_coordRow, bench_coord, BenchGui
+	local row, kind, keep
+
+	if (StrLower(rest) = "stop") {
+		bench_setCoord("none")
+		bench_endCoord()
+		return 1
+	}
+	row := (parts.Length >= 2) ? fleet_Num(parts[2]) : 0
+	kind := (parts.Length >= 3) ? StrLower(parts[3]) : ""
+	keep := 0
+	Loop parts.Length
+		if (StrLower(parts[A_Index]) = "keep")
+			keep := 1
+	if (!row || ((kind != "real") && (kind != "puppet"))) {
+		bench_say("? coordinator <row> real|puppet [keep], or: coordinator stop")
+		return 0
+	}
+	if (kind = "puppet") {
+		if keep
+			bench_say("keep means nothing for a puppet - the bench is one process"
+				. " and can only hold the port once")
+		bench_coordRow := row
+		bench_setCoord("bench")
+		bench_say("the bench is coordinating as row " row " - it can lie,"
+			. " which is what it is for")
+		return 1
+	}
+	;a real coordinator and the bench cannot both hold the port, so the bench
+	;stands down first - and keep is about the previous Fleet.ahk, not about
+	;listening alongside one
+	bench_stopListening()
+	bench_coord := "real"
+	try BenchGui["BenchCoordBy"].Value := 2
+	return bench_startCoord(row, keep)
+}
+
+;host <row> - "that row takes the coordinator from here".
+;
+;Sent as the seat that holds the mandate, because that is the only macro a
+;coordinator obeys - and sending it as anybody else is worth doing too, which
+;is what the row argument to seat is for. This is the real handover path, not
+;a bench imitation of one: the bench only asks.
+bench_doHost(rest) {
+	global bench_coordRow, bench_seats
+	local want := fleet_Num(rest)
+
+	if !want {
+		bench_say("? host <row>")
+		return 0
+	}
+	if (!bench_seats.Has(bench_coordRow)
+		|| !bench_seats[bench_coordRow].socket) {
+		bench_say("? only row " bench_coordRow " may hand the coordinator on,"
+			. " and it is not connected as a fake seat - run: seat "
+			. bench_coordRow " main mandate, then connect " bench_coordRow)
+		return 0
+	}
+	bench_say("asking the coordinator to hand over to row " want)
+	return bench_send(bench_coordRow, fleet_Frame("HOST", Map("row", want)))
 }
 
 ;term <n> - what the heartbeat claims. A term below the one a macro already
@@ -1585,10 +1744,20 @@ bench_doRest(parts, rest, what) {
 	bench_drawSeats()
 }
 
-;beat <row> [version] [by]
+;beat <row> [version] [by]   -   or just: beat
+;
+;With a row it is that fake macro saying it is alive and which configuration
+;it holds. With no row it is the coordinator's own beat, sent now rather than
+;on its ten second timer - that frame carries the term and the mandate, and
+;waiting ten seconds to see one is as tiresome in a script as it is by hand.
 bench_doBeat(parts) {
-	local row := fleet_Num(parts[2])
+	local row := (parts.Length >= 2) ? fleet_Num(parts[2]) : 0
 
+	if !row {
+		bench_beat()
+		bench_say("sent the coordinator's beat")
+		return
+	}
 	if !bench_drivable(row)
 		return
 	bench_send(row, fleet_Frame("HEARTBEAT"

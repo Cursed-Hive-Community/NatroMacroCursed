@@ -91,8 +91,13 @@ EXPLICIT=0
 [ "${#TARGETS[@]}" -gt 0 ] && EXPLICIT=1
 if [ "$USE_GIT" -eq 1 ]; then
   EXPLICIT=1
+  # not only *.ahk: the bench's scenario is a text file, and leaving it out
+  # meant an edited scenario silently running the previous one. The comment
+  # goes here and not after the backslash below - a comment between a line
+  # continuation and its redirect ends the command, and the loop then reads
+  # from an empty stdin and reports that nothing changed.
   while IFS= read -r f; do [ -n "$f" ] && TARGETS+=("$f"); done \
-    < <(git diff --name-only HEAD -- '*.ahk')
+    < <(git diff --name-only HEAD -- '*.ahk' 'tools/bench-selfcheck.txt')
 fi
 
 if [ "${#TARGETS[@]}" -eq 0 ]; then
@@ -147,6 +152,8 @@ fi
 # the tests write their roster and logs into settings\, gitignored and so absent
 # from a fresh checkout; the coordinator cannot load its roster without it
 $SSH "cd ${WIN_REPO} && if not exist settings mkdir settings" >/dev/null 2>&1 || true
+# and tools\, which a scp of the bench scenario needs to already exist
+$SSH "cd ${WIN_REPO} && if not exist tools mkdir tools" >/dev/null 2>&1 || true
 
 echo "== 3. /Validate the affected entry points =="
 fail=0
