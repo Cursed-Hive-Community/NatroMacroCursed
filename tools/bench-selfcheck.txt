@@ -1,0 +1,66 @@
+# The bench checking its own wiring.
+#
+# Run by tools/win-test.sh, not from the bench window - this is not a scenario
+# anybody wants to read in the console. It exists because every line of it
+# failed before the seat model was split into the two sockets a seat has: one
+# the bench speaks AS that macro on, one it speaks TO that macro on as the
+# coordinator. A fake seat connecting to the bench's own coordinator used to be
+# rewritten as a real macro by its own HELLO, and could no longer be driven at
+# all - so one fleet with both kinds of macro in it, which is the whole point
+# of the tool, did not work.
+coordinatedby bench
+seat 1 main the mandate
+seat 2 fuzzy a follower
+wait 400
+connect all
+wait 700
+# driving a fake seat while the bench coordinates it. This was refused outright.
+field 2 pepper
+wait 300
+# and sending that same seat an order as the coordinator, which reached nobody.
+goto 2 Sunflower
+wait 400
+expect 2 GOTO field=Sunflower
+# the coordinator's own beat, carrying the term a macro's failover turns on
+expect 2 HEARTBEAT term=1
+beat 2 9 1
+wait 300
+# a newcomer with no row and no secret, which is what a real macro sends when
+# somebody presses Join. It must come back with the bench's secret and the
+# bench's fleet identity - the identity being what keeps this fleet's
+# configuration in a folder of its own on that macro's disk.
+accept 60
+wait 300
+seat 7 guid a newcomer
+connect 7
+wait 500
+send 7 BIND name=newcomer role=guid user=benchnewcomer machine=OTHERPC
+wait 900
+expect 7 BOUND secret=bench
+expect 7 BOUND fid=benchfleet
+
+# --- choosing the coordinator ------------------------------------------------
+#
+# The bench itself, under another row's name. Its beat carries that row, which
+# is what a macro reads to decide who is in charge and whether to stand for the
+# job itself.
+coordinator 2 puppet
+wait 300
+beat
+wait 300
+expect 1 HEARTBEAT row=2
+
+# And the real thing: an actual Fleet.ahk on behalf of row 1, asked by row 1 to
+# hand the coordinator to row 2. This is the production handover path - the
+# bench only asks, and the coordinator decides whether the asker is entitled
+# to. Nothing had ever driven it from the asking end.
+coordinator 1 real
+wait 2000
+disconnect all
+wait 400
+connect all
+wait 1200
+host 2
+wait 1200
+expect 2 TAKEOVER row=2
+expect 2 TAKEOVER mandate=1
