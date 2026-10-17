@@ -444,3 +444,27 @@ fleet_MayCommand(mandate, row, roster) {
 	;the mandated account is gone from the fleet, so the say passes to it
 	return !roster.Has(mandate) && roster.Has(row)
 }
+
+;Is the macro knocking at this door one of ours?
+;
+;A macro always tries 127.0.0.1 first, whatever fleet happens to be listening
+;there - it is the likeliest answer and the cheapest to rule out. Once a machine
+;can run two fleets at once, which is what the folder per fleet made legitimate,
+;that means a macro regularly knocks on a stranger's door on its own machine.
+;
+;The coordinator used to answer with "bad secret", marked final, and a final
+;refusal makes the macro let go of the fleet and stop looking: knocking on the
+;wrong door cost it its own fleet until somebody set it up again. That is the
+;fault this exists to end, and the two answers are not the same answer:
+;
+;  wrong fleet      nothing is wrong with either side. Keep looking. final=0
+;  wrong secret     this macro is not welcome in this fleet. final=1
+;
+;An identity missing on either side means it cannot be told, so the secret
+;decides as it always did - which is what an older macro looks like, and it
+;behaves exactly as it used to.
+fleet_SameFleet(theirs, ours) {
+	if ((theirs = "") || (ours = ""))
+		return 1
+	return (theirs = ours)
+}

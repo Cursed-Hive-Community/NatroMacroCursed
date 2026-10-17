@@ -66,14 +66,51 @@ ext_fleetCoordWho() {
 
 ext_fleetCandidates() {
 	global FleetAddress, ext_fleetFoundAt
-	local list := ["127.0.0.1"]
+	local list := [], a
 
-	if ((ext_fleetFoundAt != "") && (ext_fleetFoundAt != "127.0.0.1"))
-		list.Push(ext_fleetFoundAt)
-	if ((FleetAddress != "") && (FleetAddress != "127.0.0.1")
-		&& (FleetAddress != ext_fleetFoundAt))
-		list.Push(FleetAddress)
+	for _, a in ["127.0.0.1", ext_fleetFoundAt, FleetAddress] {
+		if ((a = "") || ext_fleetElsewhere(a) || ext_fleetHasAddr(list, a))
+			continue
+		list.Push(a)
+	}
+	;never nowhere. Every candidate having just answered "another fleet" is a
+	;real state - a bench holding the port on this machine - and a macro that
+	;stopped listing any address would never knock again even after it stopped.
+	if !list.Length
+		list.Push("127.0.0.1")
 	return list
+}
+
+;Is this address already in the list?
+;
+;Prefixed like everything else of ours: this file is included into 23 000 lines
+;of somebody else's AutoHotkey, identifiers there are case insensitive, and a
+;generic name is a collision waiting to happen.
+ext_fleetHasAddr(arr, needle) {
+	local v
+
+	for _, v in arr
+		if (v = needle)
+			return 1
+	return 0
+}
+
+;Did this address just tell us it is another fleet?
+;
+;Passed over for a minute rather than for ever: what is listening on a port
+;changes - a bench is closed, a real coordinator takes over - and a macro that
+;struck an address off permanently would never find its fleet there again.
+;A minute is long enough that the backoff is not spent knocking on a door that
+;has already answered, and short enough that nobody waits for it.
+ext_fleetElsewhere(addr) {
+	global ext_fleetOtherFleet
+
+	if !ext_fleetOtherFleet.Has(addr)
+		return 0
+	if ((nowUnix() - ext_fleetOtherFleet[addr]) < 60)
+		return 1
+	ext_fleetOtherFleet.Delete(addr)
+	return 0
 }
 
 ;Try one candidate. Called with no argument - as a timer does - it starts again
@@ -401,8 +438,12 @@ ext_fleetHello() {
 	;no record of it, so the next gather trip has to say so again instead of
 	;finding our own note that nothing has changed and staying quiet.
 	ext_fleetMyField := ""
+	;the fleet this macro belongs to, so a coordinator of another one can say so
+	;instead of answering with a wrong secret - which is final, and cost a macro
+	;its own fleet for knocking on the wrong door on its own machine
 	sock_SendLine(ext_fleetSock, fleet_Frame("HELLO", Map("row", FleetRow
-		, "secret", FleetSecret, "machine", A_ComputerName)))
+		, "secret", FleetSecret, "fid", ext_fleetId()
+		, "machine", A_ComputerName)))
 }
 
 ;A frame from the coordinator.
@@ -411,7 +452,7 @@ ext_fleetOnLine(line) {
 	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock, ext_fleetRefused
 	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant
 	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant
-	global ext_fleetMandate
+	global ext_fleetMandate, ext_fleetOtherFleet, ext_fleetTrying
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -523,6 +564,16 @@ ext_fleetOnLine(line) {
 				. fleet_Field(frame, "why", "refused"))
 			while (ext_fleetEvents.Length > 80)
 				ext_fleetEvents.Pop()
+			;another fleet answering on an address we tried. Not this macro's
+			;fault and not the fleet's, so the address is passed over for a
+			;minute and the next candidate gets a turn - without this the
+			;backoff is spent knocking on a door that has already answered.
+			if InStr(fleet_Field(frame, "why"), "another fleet") {
+				ext_fleetOtherFleet[ext_fleetTrying] := nowUnix()
+				ext_fleetProblem("another fleet answered on " ext_fleetTrying
+					. " - " fleet_Field(frame, "why")
+					. ". Looking elsewhere for ours.")
+			}
 			;absent means final, so an older coordinator behaves as it used to
 			if (Integer(fleet_Field(frame, "final", 1))) {
 				ext_fleetRefused := fleet_Field(frame, "why", "refused")

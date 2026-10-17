@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Thirty-five things are checked, each because it is a way the design could be wrong
+;Thirty-eight things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -48,6 +48,9 @@
 ;	33. the binding door refuses out loud      a silent no looks like a yes
 ;	34. the beacon says where and which fleet  discovery had no check at all
 ;	35. and whether the door is open           that flag is the join button
+;	36. another fleet's macro is told so       and does not give up for ever
+;	37. an unknown identity falls through      an older macro behaves as before
+;	38. and the wire says so, not finally      a wrong door is not a closed one
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -123,6 +126,13 @@
 ;Checks 8 and 9 need two coordinator beats to land - a round trip measured on
 ;one beat is broadcast on the next - so the test runs for a few seconds longer
 ;than the others would need.
+;
+;Thirty-six and thirty-seven are the fault that the folder per fleet created.
+;A macro tries 127.0.0.1 first, whatever fleet is listening there, and two
+;fleets on one machine are now a supported arrangement - so a macro regularly
+;knocks on a stranger's door on its own machine. The answer was "bad secret",
+;marked final, and a final refusal makes a macro let go of its fleet and stop
+;looking. Knocking on the wrong door cost it its own fleet.
 ;
 ;Thirty-four and thirty-five are the discovery beacon, which until now nothing
 ;checked. It is how a macro finds a coordinator at all - without it an address
@@ -219,6 +229,7 @@ cfgTookUp := 0              ;the version at which the handed-up roster came back
 byeFinal := Map()           ;what each refusal said about being final
 seenBy := Map()             ;client label -> Map of row -> roster frame it received
 refused := ""               ;what the bad-secret connection was told
+otherWhy := ""              ;and what a macro of another fleet was told
 
 Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' PORT ' ' SECRET ' 1 1 "' ROSTER '"'
 	, , , &coordPid
@@ -237,6 +248,9 @@ clientC := 0
 clientA := sock_Connect("127.0.0.1", PORT, OnA)
 clientB := sock_Connect("127.0.0.1", PORT, OnB)
 clientBad := sock_Connect("127.0.0.1", PORT, OnBad)
+;a macro that belongs to a different fleet, which is what every macro looks
+;like to its own loopback on a machine running two of them
+clientOther := sock_Connect("127.0.0.1", PORT, OnOther)
 
 ;the late resident, long after the main said where it was farming
 SetTimer Late, -5000
@@ -415,6 +429,28 @@ OnRebind(s, event, data) {
 ;A second coordinator on the same port, which is what every handover starts.
 ;It must be refused: listening alongside the first would split the fleet
 ;between two processes that no macro can see at the same time.
+;A macro of another fleet entirely, knocking on this one's door. It carries a
+;secret that is wrong here, because a macro of another fleet always does - the
+;point is that this is not what a wrong secret means, and that answering it as
+;though it were costs that macro its own fleet.
+OnOther(s, event, data) {
+	global byeFinal, otherWhy
+	local frame
+
+	if (event = "connect") {
+		if (data = "")
+			sock_SendLine(s, fleet_Frame("HELLO", Map("row", 1
+				, "name", "a stranger", "secret", "not ours"
+				, "fid", "fsomewhereelse", "machine", "another machine")))
+		return
+	}
+	if ((event = "line") && (frame := fleet_Parse(data))
+		&& (frame.verb = "BYE")) {
+		otherWhy := fleet_Field(frame, "why")
+		byeFinal["another fleet"] := fleet_Field(frame, "final", "missing")
+	}
+}
+
 Rival(*) {
 	global PORT, SECRET, ROSTER, rivalPid
 
@@ -691,7 +727,7 @@ Report(*) {
 	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe, boundFid
 	global srv, srvGen, srvMainLink, srvMainOwner
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
-	global cfgTookUp, byeFinal
+	global cfgTookUp, byeFinal, otherWhy, clientOther
 	global ROSTER, gotoField
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
@@ -885,6 +921,25 @@ Report(*) {
 		&& (fleet_Num(beaconSeen.Has("size") ? beaconSeen["size"] : -1) = 2))
 		&& allOk
 
+	;--- knocking on the wrong door -----------------------------------------
+	;
+	;Written before the mechanism. The pure half first: an identity on both
+	;sides decides, and one missing on either side cannot, so the secret goes on
+	;deciding as it always did.
+	allOk := Check(lines, "a macro from another fleet is recognised as such"
+		, !fleet_SameFleet("fother", "fours")
+		&& fleet_SameFleet("fours", "fours")) && allOk
+	allOk := Check(lines, "an identity nobody sent leaves the secret deciding"
+		, fleet_SameFleet("", "fours")
+		&& fleet_SameFleet("fother", "")
+		&& fleet_SameFleet("", "")) && allOk
+	;and on the wire, where it matters: not final, so the macro keeps looking
+	;for its own fleet instead of letting go of it
+	allOk := Check(lines, "and the refusal is not final, so it keeps looking"
+		, InStr(otherWhy, "fleet")
+		&& byeFinal.Has("another fleet")
+		&& (byeFinal["another fleet"] = 0)) && allOk
+
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
 			, "  name=" fleet_Field(row2, "name")
@@ -911,6 +966,10 @@ Report(*) {
 		. cfg.Count " of " cfgWant " after row 2 left")
 	lines.Push("seen configured before it ever connected: "
 		. (cfgUnseen != "" ? cfgUnseen : "nothing"))
+	lines.Push("another fleet was told: "
+		. ((otherWhy != "") ? otherWhy : "nothing at all")
+		. ", final=" (byeFinal.Has("another fleet")
+			? byeFinal["another fleet"] : "no BYE"))
 	lines.Push("refusals: bad secret final="
 		. (byeFinal.Has("bad secret") ? byeFinal["bad secret"] : "no BYE")
 		. ", unknown row final="

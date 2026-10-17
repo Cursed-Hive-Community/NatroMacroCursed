@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These thirty-three checks run the real coordinator process, the real socket
+These thirty-eight checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -100,6 +100,10 @@ layer and the real protocol. They are the strongest evidence in the repository.
 - [x] the binding door refuses out loud rather than ignoring the request
 - [x] the beacon says where to knock, which fleet it is, whether the door is
       open, and what the fleet calls itself
+- [x] a macro from another fleet is recognised as such, and an identity nobody
+      sent leaves the secret deciding as it always did
+- [x] and the refusal is not final, so that macro keeps looking for its own
+      fleet instead of letting go of it
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -471,6 +475,25 @@ From earlier commits, and partly used in anger already.
 
 ---
 
+## Fixed because somebody ran it
+
+The folder per fleet made two fleets on one machine a supported arrangement,
+and a macro always tries `127.0.0.1` first - whatever fleet is listening
+there. So pointing a real macro at the bench produced:
+
+> The fleet refused this macro: bad secret - set it up again to rejoin
+
+A wrong secret is marked final, a final refusal makes a macro let go of the
+fleet and stop looking, and that macro had done nothing but knock on the wrong
+door on its own machine. HELLO carries the fleet's identity now, and belonging
+to another fleet is answered as what it is: not final, with the address passed
+over for a minute so the next candidate gets a turn. The bench does the same
+rather than silently admitting a stranger, which would have had that macro
+replicate the bench's configuration into its real fleet's folder.
+
+Nothing in the repository had caught it, and nothing could have: no self-test
+runs two fleets at once. Checks 36 to 38 do now.
+
 ## Known holes, written down rather than forgotten
 
 Not bugs to find - bugs already known about, with no fix yet.
@@ -499,6 +522,10 @@ Not bugs to find - bugs already known about, with no fix yet.
   real roster write, and still not a copy of natro_macro.ahk deciding to
   join. That is the one thing left before the answer to "how do I connect a
   real account" is proven rather than reasoned.
+- **The bench's window is dumped by a harness in the scratchpad**, not by
+  anything in the repository. It opens the real bench, reads every control's
+  rectangle out of it, compares only the visible ones tab by tab, and closes
+  it again. Both tabs are clean as of this commit. Nothing re-checks it.
 - **No window asks for a handover.** The bench does, with `host <row>`, and
   that path is checked end to end. Choosing the coordinator from a macro's own
   settings is still part of P4.

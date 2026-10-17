@@ -242,6 +242,7 @@ fleet_OnLine(s, line) {
 ;of who row 2 is depending on which machine was edited last.
 fleet_OnHello(s, frame) {
 	global peers, bySocket, secret, term, startedBy, mandate, roster, leadField
+	global fleetId
 	local row, name, previous
 
 	;final says whether the macro being turned away can do anything about it.
@@ -250,6 +251,22 @@ fleet_OnHello(s, frame) {
 	;configuration refuses everybody, and a macro that gave up permanently on
 	;that would turn a failure which heals itself within a beat into a fleet
 	;nobody can get back into.
+	;
+	;And belonging to another fleet is neither. A macro tries 127.0.0.1 first,
+	;whatever fleet is listening there, so on a machine running two of them it
+	;knocks on a stranger's door several times a minute. Answered as a wrong
+	;secret - which it also is - the refusal was final, and a final refusal makes
+	;a macro let go of its own fleet and stop looking. Checked first, because the
+	;secret being wrong is a consequence of the fleet being wrong and not a
+	;second fault.
+	if !fleet_SameFleet(fleet_Field(frame, "fid"), fleetId) {
+		fleet_Log("turned away a macro of fleet "
+			. fleet_Field(frame, "fid") " - this is " fleetId)
+		sock_SendLine(s, fleet_Frame("BYE", Map("why", "another fleet - this one is "
+			. fleetId, "final", 0)))
+		sock_Close(s)
+		return
+	}
 	if (fleet_Field(frame, "secret") != secret) {
 		fleet_Log("rejected a connection: wrong secret")
 		sock_SendLine(s, fleet_Frame("BYE", Map("why", "bad secret", "final", 1)))

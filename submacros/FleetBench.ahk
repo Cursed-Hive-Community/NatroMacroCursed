@@ -80,17 +80,26 @@ bench_onError(err, mode) {
 	return 1
 }
 
-;Where the bench listens, and the one setting that lets a real macro join
-;without being reconfigured.
+;Where the bench listens, in order of preference.
 ;
-;47700 by default, well clear of the real fleet's 47600: the two can run side
-;by side and nothing here can reach a real coordinator. Set it to 47600 with
-;the port command and a real macro needs no changes at all - it listens for
-;beacons on 47601 and knocks on 47600, which is where this now is. The price
-;is that the bench and a real fleet can no longer share the machine, and the
-;exclusive bind is what says so rather than the two of them splitting
-;whatever connects.
-bench_port := 47700
+;The fleet's own port first, because that is where an unmodified macro looks:
+;it knocks on 47600 and listens for beacons on 47601, so a bench anywhere else
+;cannot be found without changing a setting on the macro and remembering to
+;change it back. Nothing to configure is the whole point of binding.
+;
+;Its own port second. A machine already running a real fleet cannot give up
+;47600 - the coordinator holds it exclusively - and a bench that refused to
+;start there would be useless exactly where it is most wanted. So it falls
+;back, says which port it got, and the fake macros carry on working; only a
+;real macro cannot find it, and the log says why.
+;
+;Deciding by trying, not by guessing: the same exclusive bind the real
+;coordinator uses, so "free" means free for a coordinator rather than merely
+;nothing-connected.
+BENCH_PORTS := [47600, 47700]
+;which one it actually got, and whether somebody named it by hand
+bench_port := 47600
+bench_portForced := 0
 BENCH_SECRET := "bench"
 ;The identity of the bench's fleet. A macro bound to it keeps this fleet's
 ;configuration under settings\fleet\benchfleet\, so nothing the bench does
@@ -216,88 +225,101 @@ bench_window() {
 	BenchGui.Add("DropDownList", "x482 y8 w128 vBenchCoordBy Choose1"
 		, ["nobody", "a real Fleet.ahk", "this bench"]).OnEvent("Change", bench_coordChanged)
 
+	;How a real macro gets in, on a row of its own.
+	;
+	;The same gesture as the fleet's own Accept new macros, because it is the
+	;same door - and until it was a button, letting a real macro into the bench
+	;meant knowing to type "accept" into a console. The line beside it says what
+	;the door is doing, because an open door is the one state of this tool that
+	;can reach a macro you care about.
+	BenchGui.Add("Button", "x16 y32 w150 h24 vBenchAccept", "Accept new macros")
+		.OnEvent("Click", bench_acceptClick)
+	BenchGui.SetFont("c808080")
+	BenchGui.Add("Text", "x174 y38 w436 vBenchDoor", "")
+	BenchGui.SetFont("cDefault")
+
 	BenchGui.SetFont("s8 cDefault Bold", "Tahoma")
-	BenchGui.Add("GroupBox", "x8 y40 w602 h206", "Pretend macros")
+	BenchGui.Add("GroupBox", "x8 y68 w602 h206", "Pretend macros")
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
 	;Kind first after the row, because it is what decides whether a command can
 	;act on that seat at all: a fake one you drive, a real one you only send to.
-	BenchGui.Add("ListView", "x16 y58 w420 h178 -Multi vBenchSeats"
+	BenchGui.Add("ListView", "x16 y86 w420 h178 -Multi vBenchSeats"
 		, ["Row", "Kind", "Name", "Role", "State", "Said", "Told"])
-	BenchGui.Add("Button", "x444 y58 w160 h24", "Add a macro")
+	BenchGui.Add("Button", "x444 y86 w160 h24", "Add a macro")
 		.OnEvent("Click", bench_addSeat)
-	BenchGui.Add("Button", "x444 y86 w160 h24", "Remove this one")
+	BenchGui.Add("Button", "x444 y114 w160 h24", "Remove this one")
 		.OnEvent("Click", bench_removeSeat)
-	BenchGui.Add("Button", "x444 y122 w160 h24", "Connect this one")
+	BenchGui.Add("Button", "x444 y150 w160 h24", "Connect this one")
 		.OnEvent("Click", bench_connectOne)
-	BenchGui.Add("Button", "x444 y150 w160 h24", "Disconnect this one")
+	BenchGui.Add("Button", "x444 y178 w160 h24", "Disconnect this one")
 		.OnEvent("Click", bench_disconnectOne)
-	BenchGui.Add("Button", "x444 y186 w160 h24", "Connect them all")
+	BenchGui.Add("Button", "x444 y214 w160 h24", "Connect them all")
 		.OnEvent("Click", bench_connectAll)
-	BenchGui.Add("Button", "x444 y214 w160 h24", "Disconnect them all")
+	BenchGui.Add("Button", "x444 y242 w160 h24", "Disconnect them all")
 		.OnEvent("Click", bench_disconnectAll)
 
 	;Two ways to drive it. By hand is for finding out what happens; a script is
 	;for finding out again, and for being handed a list of tests to run.
-	tabs := BenchGui.Add("Tab3", "x8 y252 w602 h164 vBenchTabs", ["By hand", "Script"])
+	tabs := BenchGui.Add("Tab3", "x8 y280 w602 h164 vBenchTabs", ["By hand", "Script"])
 
 	tabs.UseTab(1)
-	BenchGui.Add("Text", "x20 y286 w70", "Farming:")
-	BenchGui.Add("DropDownList", "x94 y282 w150 vBenchField Choose1", BENCH_FIELDS)
-	BenchGui.Add("Button", "x252 y281 w120 h22", "Say the field")
+	BenchGui.Add("Text", "x20 y314 w70", "Farming:")
+	BenchGui.Add("DropDownList", "x94 y310 w150 vBenchField Choose1", BENCH_FIELDS)
+	BenchGui.Add("Button", "x252 y309 w120 h22", "Say the field")
 		.OnEvent("Click", bench_sayField)
 	BenchGui.SetFont("c808080")
 	;measured rather than assumed: at this width the line wraps to two, so it
-	;reaches y306 and the row below starts at y310. The first attempt at this
+	;reaches y334 and the row below starts at y338. The first attempt at this
 	;panel overlapped an edit box by two pixels.
-	BenchGui.Add("Text", "x380 y280 w216"
+	BenchGui.Add("Text", "x380 y308 w216"
 		, "A main saying this is what sends every fuzzy and tad after it.")
 	BenchGui.SetFont("cDefault")
 
-	BenchGui.Add("Text", "x20 y314 w70", "In server:")
-	BenchGui.Add("Edit", "x94 y310 w150 h18 vBenchServer", "main")
-	BenchGui.Add("Button", "x252 y309 w120 h22", "Say the server")
+	BenchGui.Add("Text", "x20 y342 w70", "In server:")
+	BenchGui.Add("Edit", "x94 y338 w150 h18 vBenchServer", "main")
+	BenchGui.Add("Button", "x252 y337 w120 h22", "Say the server")
 		.OnEvent("Click", bench_sayServer)
-	BenchGui.Add("Text", "x380 y314 w48", "Config:")
-	BenchGui.Add("Edit", "x430 y310 w44 h18 Number vBenchCv", "0")
-	BenchGui.Add("Text", "x480 y314 w18", "by")
-	BenchGui.Add("Edit", "x500 y310 w34 h18 Number vBenchCby", "0")
-	BenchGui.Add("Button", "x540 y309 w56 h22", "Beat")
+	BenchGui.Add("Text", "x380 y342 w48", "Config:")
+	BenchGui.Add("Edit", "x430 y338 w44 h18 Number vBenchCv", "0")
+	BenchGui.Add("Text", "x480 y342 w18", "by")
+	BenchGui.Add("Edit", "x500 y338 w34 h18 Number vBenchCby", "0")
+	BenchGui.Add("Button", "x540 y337 w56 h22", "Beat")
 		.OnEvent("Click", bench_sayBeat)
 
-	BenchGui.Add("Text", "x20 y342 w70", "Raw frame:")
-	BenchGui.Add("Edit", "x94 y338 w384 h18 vBenchRaw", "")
-	BenchGui.Add("Button", "x484 y337 w112 h22", "Send it")
+	BenchGui.Add("Text", "x20 y370 w70", "Raw frame:")
+	BenchGui.Add("Edit", "x94 y366 w384 h18 vBenchRaw", "")
+	BenchGui.Add("Button", "x484 y365 w112 h22", "Send it")
 		.OnEvent("Click", bench_sendRaw)
-	BenchGui.Add("Button", "x484 y366 w112 h22", "Leave the fleet")
+	BenchGui.Add("Button", "x484 y394 w112 h22", "Leave the fleet")
 		.OnEvent("Click", bench_sayLeave)
-	BenchGui.Add("Button", "x252 y366 w220 h22 vBenchCoord", "Start a coordinator")
+	BenchGui.Add("Button", "x252 y394 w220 h22 vBenchCoord", "Start a coordinator")
 		.OnEvent("Click", bench_coordToggle)
 	BenchGui.SetFont("c808080")
-	BenchGui.Add("Text", "x20 y368 w224"
+	BenchGui.Add("Text", "x20 y396 w224"
 		, "Anything the protocol can carry, so`nnothing here needs updating.")
 	BenchGui.SetFont("cDefault")
 
 	tabs.UseTab(2)
 	BenchGui.SetFont("s8", "Consolas")
-	BenchGui.Add("Edit", "x20 y278 w432 h128 +Multi -Wrap +VScroll vBenchScript"
+	BenchGui.Add("Edit", "x20 y306 w432 h128 +Multi -Wrap +VScroll vBenchScript"
 		, bench_reference())
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
-	BenchGui.Add("Button", "x462 y278 w134 h24", "Run")
+	BenchGui.Add("Button", "x462 y306 w134 h24", "Run")
 		.OnEvent("Click", bench_runScript)
-	BenchGui.Add("Button", "x462 y306 w134 h24", "Stop")
+	BenchGui.Add("Button", "x462 y334 w134 h24", "Stop")
 		.OnEvent("Click", bench_stopScript)
-	BenchGui.Add("Button", "x462 y340 w134 h24", "Commands")
+	BenchGui.Add("Button", "x462 y368 w134 h24", "Commands")
 		.OnEvent("Click", bench_commands)
-	BenchGui.Add("Button", "x462 y368 w134 h24", "Empty the box")
+	BenchGui.Add("Button", "x462 y396 w134 h24", "Empty the box")
 		.OnEvent("Click", bench_clearScript)
 	tabs.UseTab()
 
 	BenchGui.SetFont("s8", "Consolas")
-	BenchGui.Add("Edit", "x8 y424 w602 h154 ReadOnly -Wrap +VScroll vBenchLog", "")
+	BenchGui.Add("Edit", "x8 y452 w602 h154 ReadOnly -Wrap +VScroll vBenchLog", "")
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
-	BenchGui.Add("Button", "x8 y586 w100 h26", "Clear the log")
+	BenchGui.Add("Button", "x8 y614 w100 h26", "Clear the log")
 		.OnEvent("Click", bench_clearLog)
-	BenchGui.Add("Button", "x510 y586 w100 h26", "Close").OnEvent("Click", bench_close)
+	BenchGui.Add("Button", "x510 y614 w100 h26", "Close").OnEvent("Click", bench_close)
 
 	bench_loadRoster()
 	bench_drawSeats()
@@ -308,7 +330,7 @@ bench_say("to let a real macro in: accept - and set its Fleet port to "
 	SetTimer bench_tick, 1000
 	SetTimer bench_beat, 10000
 	SetTimer bench_step, 100
-	BenchGui.Show("w618 h622")
+	BenchGui.Show("w618 h650")
 }
 
 ;A file of commands as the first argument is loaded into the box and run.
@@ -383,6 +405,7 @@ bench_tick() {
 	try BenchGui["BenchCoord"].Text := bench_coordsRunning()
 		? "Stop the coordinator"
 		: "Start a coordinator"
+	bench_doorLine()
 	bench_drawSeats()
 }
 
@@ -830,6 +853,31 @@ bench_coordToggle(*) {
 	bench_startCoord()
 }
 
+;The port a coordinator this bench starts should take.
+;
+;Found by binding and letting go, because a real Fleet.ahk that cannot have
+;the port gives up quietly after five seconds of retrying and the bench would
+;be left saying a coordinator was asked for and is not running, with no reason
+;beside it. A port named by hand is honoured whatever is on it - somebody who
+;typed a number wants that number, and the coordinator's own log will say so.
+bench_pickPort() {
+	global BENCH_PORTS, bench_port, bench_portForced
+	local p, s
+
+	if bench_portForced
+		return bench_port
+	for _, p in BENCH_PORTS {
+		if (s := sock_Listen(p, (*) => 0, 1)) {
+			sock_Close(s)
+			bench_port := p
+			return p
+		}
+	}
+	bench_say("every port is taken - starting a coordinator on " bench_port
+		. " anyway, and it will say so itself")
+	return bench_port
+}
+
 ;How many coordinators this bench started are still alive. Asked by the state
 ;line and by the button, so "is one running" is decided once.
 bench_coordsRunning() {
@@ -862,7 +910,7 @@ bench_startCoord(row := 0, keep := 0) {
 	if !keep
 		bench_endCoord()
 	try
-		Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' bench_port
+		Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' bench_pickPort()
 			. ' "' BENCH_SECRET '" ' bench_term ' ' bench_coordRow
 			. ' "' BENCH_ROSTER '" "' BENCH_FLEET_ID '" ' bench_coordRow
 			;and what to call itself in a join window, so a real macro about to
@@ -958,19 +1006,35 @@ bench_setCoord(which) {
 ;the port, this says so rather than quietly listening alongside it and
 ;splitting whatever connects.
 bench_listen() {
-	global bench_listener, bench_port, bench_coord
+	global bench_listener, bench_port, bench_coord, bench_portForced, BENCH_PORTS
+	local try_, p
 
 	bench_coord := "bench"
 	try BenchGui["BenchCoordBy"].Value := 3
 	if bench_listener
 		return 0
-	bench_listener := sock_Listen(bench_port, bench_onServer, 1)
-	if !bench_listener {
-		bench_say("could not listen on " bench_port " - something else has it"
+	;a port named by hand is the only one tried: somebody who typed a number
+	;wants that number, and silently landing on another would be worse than
+	;failing
+	try_ := bench_portForced ? [bench_port] : BENCH_PORTS
+	for _, p in try_ {
+		if (bench_listener := sock_Listen(p, bench_onServer, 1)) {
+			bench_port := p
+			break
+		}
+		bench_say("could not listen on " p
+			. ((p = 47600) ? " - the real fleet's port, so something else has it"
+				: " - something else has it")
 			. (sock_lastError != "" ? " (" sock_lastError ")" : ""))
-		return 0
 	}
-	bench_say("listening on " bench_port " as the coordinator")
+	if !bench_listener
+		return 0
+	bench_say("listening on " bench_port " as the coordinator"
+		. ((bench_port = 47600)
+			? " - the fleet's own port, so a real macro finds this bench with"
+				" nothing changed on it"
+			: " - a real macro will not find this unless its Fleet port is set to "
+				. bench_port))
 	;Said every time, because it is the one way this tool can do harm. A real
 	;macro pointed here writes the bench's configuration into its own files -
 	;the mark on it stops that configuration ever beating a real one, but the
@@ -1031,6 +1095,10 @@ bench_accept(rest) {
 			return 0
 		}
 		bench_send(bench_coordRow, fleet_Frame("OPEN", Map("secs", secs)))
+		;mirrored locally so the button can count down. It is what was asked for
+		;rather than what the coordinator did - it clamps to between ten seconds
+		;and five minutes - and its own log is the authority either way.
+		bench_bindUntil := (secs > 0) ? (nowUnix() + Min(Max(secs, 10), 300)) : 0
 		bench_say("asked the real coordinator to accept macros for " secs "s")
 		return 1
 	}
@@ -1111,8 +1179,43 @@ bench_freeRow(rows, user, machine, name) {
 ;Everything stops first. A listener and a beacon on the old port would keep
 ;answering macros that are no longer being told about, which is the one state
 ;harder to debug than nothing working at all.
+;The button. Two minutes, and pressing it again shuts the door early - the
+;same two gestures the fleet's own Accept new macros has, because it is the
+;same door and somebody who has used one should not have to learn the other.
+bench_acceptClick(*) {
+	global bench_bindUntil
+
+	bench_accept((nowUnix() < bench_bindUntil) ? "0" : "120")
+	bench_doorLine()
+}
+
+;What the door is doing, in the window. An open door is the one state of this
+;tool that can reach a macro you care about, so it says so while it is open
+;and counts down rather than leaving you to wonder.
+bench_doorLine() {
+	global BenchGui, bench_bindUntil, bench_coord, bench_port
+	local left := bench_bindUntil - nowUnix()
+
+	if !(IsSet(BenchGui) && IsObject(BenchGui))
+		return
+	try BenchGui["BenchAccept"].Text := (left > 0)
+		? "Stop accepting (" Floor(left / 60) ":" Format("{:02}", Mod(left, 60)) ")"
+		: "Accept new macros"
+	;the second line opens with a dot. Two string literals side by side are one
+	;string, but only inside brackets or after an operator - here the ternary had
+	;already closed its own, so the bare line read as a new statement and the "?"
+	;was left without its ":". nm-check.py cannot see this; /Validate can.
+	try BenchGui["BenchDoor"].Text := (left > 0)
+		? "Open. A real macro will now see this bench in its own Set up this"
+			. " macro window, named as the test bench."
+		: ((bench_coord = "none")
+			? "Shut, and nothing is coordinating - choose who does, first."
+			: "Shut. Open it to let a real macro join this bench on port "
+				. bench_port ".")
+}
+
 bench_doPort(rest) {
-	global bench_port, bench_coord
+	global bench_port, bench_coord, bench_portForced
 	local want := fleet_Num(rest), was := bench_coord
 
 	if ((want < 1024) || (want > 65535)) {
@@ -1121,7 +1224,7 @@ bench_doPort(rest) {
 	}
 	bench_setCoord("none")
 	bench_endCoord()
-	bench_port := want
+	bench_port := want, bench_portForced := 1
 	bench_say("port is now " bench_port
 		. ((want = 47600) ? " - the real fleet's, so a macro needs no changes"
 			" and a real coordinator cannot run on this machine at the same time"
@@ -1201,11 +1304,27 @@ bench_onServer(s, event, data) {
 }
 
 bench_onHello(s, frame) {
-	global bench_seats, bench_bySocket, bench_term, BENCH_SECRET
+	global bench_seats, bench_bySocket, bench_term, BENCH_SECRET, BENCH_FLEET_ID
 	local row := fleet_Num(fleet_Field(frame, "row"))
 
 	if !row {
 		bench_say("a macro said HELLO without a row")
+		return 0
+	}
+	;A macro of another fleet, which is what one looks like when it knocks on
+	;this machine's loopback and the bench happens to be holding the port. The
+	;bench admits anybody on the secret - refusing is a thing to test on purpose
+	;rather than a thing to do by default - but admitting this one would have it
+	;replicate the bench's configuration into its REAL fleet's folder, which is
+	;the one thing this tool must never do. Turned away, and not finally: it has
+	;done nothing wrong and its own fleet is somewhere else.
+	if !fleet_SameFleet(fleet_Field(frame, "fid"), BENCH_FLEET_ID) {
+		bench_say("row " row " belongs to fleet " fleet_Field(frame, "fid")
+			. ", not to this bench - turned away so it keeps looking for its own."
+			. " Press Accept new macros to let it join the bench instead.")
+		sock_SendLine(s, fleet_Frame("BYE", Map("why", "another fleet - this one is "
+			. BENCH_FLEET_ID, "final", 0)))
+		sock_Close(s)
 		return 0
 	}
 	if (fleet_Field(frame, "secret") != BENCH_SECRET)

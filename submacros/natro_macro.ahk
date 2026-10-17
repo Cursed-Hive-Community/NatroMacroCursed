@@ -2745,6 +2745,9 @@ ext_fleetSock := 0, ext_fleetTerm := 0, ext_fleetCoordRow := 0
 ;order named - see ext_fleetOnTakeOver. Both learnt from the fleet, never set
 ;here: a macro that decided its own mandate would be deciding it had the say.
 ext_fleetMandate := 0, ext_fleetTakeOverTo := 0
+;address -> when it last said it belongs to another fleet. Bounded by the
+;number of addresses a macro ever tries, which is three.
+ext_fleetOtherFleet := Map()
 ext_fleetCoordSeen := 0, ext_fleetBackoff := 0, ext_fleetTrying := ""
 ext_fleetPeers := Map()
 ;where the last beacon came from, and the socket that listens for them.
