@@ -64,3 +64,39 @@ host 2
 wait 1200
 expect 2 TAKEOVER row=2
 expect 2 TAKEOVER mandate=1
+
+# --- breaking it on purpose --------------------------------------------------
+#
+# A hundred per cent is a certainty, which is what makes this assertable at all:
+# "drop 100" means the frame cannot arrive, and reject proves it did not. Then
+# faults off and the same frame must arrive, or the check would pass for a seat
+# that had simply stopped listening.
+#
+# Note field=Pine%20Tree and not field=Pine Tree. A space in a value is two
+# tokens on this command line, so the unescaped version asks for field=Pine -
+# and the reject then passed because the expectation could not be expressed
+# rather than because the frame was missing. expect refuses it outright now.
+coordinator 1 puppet
+wait 400
+disconnect all
+wait 300
+connect all
+wait 1000
+clear all
+drop 100
+goto 2 Pine Tree
+wait 500
+reject 2 GOTO field=Pine%20Tree
+faults off
+goto 2 Pine Tree
+wait 500
+expect 2 GOTO field=Pine%20Tree
+# A frame cut in half usually still parses: GOTO field=Mountain%20Top becomes
+# GOTO field=M, a valid order to a field that does not exist. So the thing to
+# prove is that the truncated value is never mistaken for the one that was sent.
+clear all
+cut 100
+goto 2 Mountain Top
+wait 500
+reject 2 GOTO field=Mountain%20Top
+faults off

@@ -108,7 +108,7 @@ layer and the real protocol. They are the strongest evidence in the repository.
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
 
-And seven checks on the bench's own wiring, in `tools/bench-selfcheck.txt`,
+And ten checks on the bench's own wiring, in `tools/bench-selfcheck.txt`,
 which the bench loads and runs because it takes a file of commands as an
 argument. Every one of them failed before the seat model was split into the
 two sockets a seat has:
@@ -122,6 +122,9 @@ two sockets a seat has:
 - [x] a real `Fleet.ahk` started on behalf of a row, asked by that row to hand
       the coordinator to another - the production handover path, driven from
       the asking end for the first time
+- [x] `drop 100` and the frame cannot arrive; `faults off` and the same frame
+      does, so the check cannot pass for a seat that had stopped listening
+- [x] a frame cut in half is never mistaken for the one that was sent
 
 And thirty-four checks on the extensions' arithmetic — every window in time
 that any of them turns on, each with a row one second outside it, one exactly
@@ -526,6 +529,18 @@ Not bugs to find - bugs already known about, with no fix yet.
   anything in the repository. It opens the real bench, reads every control's
   rectangle out of it, compares only the visible ones tab by tab, and closes
   it again. Both tabs are clean as of this commit. Nothing re-checks it.
+- **The recorder was driven once, by clicking.** A `/quiet` run clicks on
+  nothing, so the one thing that cannot be checked the way everything else is
+  is the thing that turns clicks into commands. A scratchpad harness opened
+  the real window, clicked Connect them all, Accept new macros and Save what
+  just happened, and read the file back: the three commands are in it with the
+  real gaps as waits, and the save did not record itself. Once, not on every
+  change.
+- **A frame cut in half usually still parses.** `GOTO field=Mountain%20Top`
+  becomes `GOTO field=M`, a valid order to a field that does not exist, and
+  nothing downstream checks that a field name is a field name. The check
+  proves the truncated value is not mistaken for the real one; it does not
+  prove anything refuses it, because nothing does.
 - **No window asks for a handover.** The bench does, with `host <row>`, and
   that path is checked end to end. Choosing the coordinator from a macro's own
   settings is still part of P4.

@@ -183,6 +183,29 @@ bench_beacon := 0
 ;open door is how a real macro ends up in the bench fleet, and that should be
 ;a thing somebody asked for.
 bench_bindUntil := 0
+;--- what is broken on purpose ----------------------------------------------
+;
+;Everything the fleet gets right rests on things going wrong on the wire: a
+;stale copy must never win, a term must settle a split, a refusal is final or
+;it is not. None of that is exercised when the network works, and the bench is
+;the only place that can make it stop working on purpose.
+;
+;All off, because a tool that quietly loses frames is not a tool. The state
+;line says so loudly while any of them is on - an hour spent chasing a fault
+;you asked for yourself is the obvious way for this to cost more than it
+;gives.
+bench_faultDrop := 0
+bench_faultCut := 0
+bench_faultReorder := 0
+bench_faultDelay := 0
+;socket -> one frame held back to go out after the next one. One per socket,
+;and never for longer than two seconds, so nothing can be swallowed.
+bench_held := Map()
+;Every command this session, and when the last one was, so the gaps between
+;them can be written down as waits. Capped: five hundred lines is further back
+;than any repro needs and the oldest go first.
+bench_record := []
+bench_recordAt := 0
 
 ;Bound to an ephemeral port, like the coordinator's, so it never competes
 ;with the listening port. Opened once: a socket is cheap and a bench that
@@ -319,6 +342,10 @@ bench_window() {
 	BenchGui.SetFont("s8 cDefault Norm", "Tahoma")
 	BenchGui.Add("Button", "x8 y614 w100 h26", "Clear the log")
 		.OnEvent("Click", bench_clearLog)
+	;the free middle of the bottom row, beside the other two things that are
+	;about the session rather than about one macro
+	BenchGui.Add("Button", "x118 y614 w260 h26", "Save what just happened")
+		.OnEvent("Click", bench_saveRecording)
 	BenchGui.Add("Button", "x510 y614 w100 h26", "Close").OnEvent("Click", bench_close)
 
 	bench_loadRoster()
@@ -396,12 +423,18 @@ bench_close(*) {
 ;Once a second: the state line, and the seat list if anything moved.
 bench_tick() {
 	global BenchGui, bench_port, bench_coord, bench_listener, bench_term
+	local faults
 
 	if !(IsSet(BenchGui) && IsObject(BenchGui))
 		return
-	try BenchGui["BenchState"].Text := "Port " bench_port " - "
-		. bench_coordWord() " - " bench_fakeCount() " fake, "
-		. bench_realCount() " real, " bench_connectedCount() " connected"
+	faults := bench_faultWord()
+	try BenchGui["BenchState"].Text := (faults != "")
+		;first and in capitals, because an hour spent chasing a fault you asked
+		;for yourself is how this feature costs more than it gives
+		? "FAULTS ON: " faults " - port " bench_port " - " bench_coordWord()
+		: "Port " bench_port " - "
+			. bench_coordWord() " - " bench_fakeCount() " fake, "
+			. bench_realCount() " real, " bench_connectedCount() " connected"
 	try BenchGui["BenchCoord"].Text := bench_coordsRunning()
 		? "Stop the coordinator"
 		: "Start a coordinator"
@@ -590,20 +623,35 @@ bench_ask(prompt, preset) {
 	return (answer.Result = "OK") ? Trim(answer.Value) : ""
 }
 
+;These four say the command they mean rather than doing the thing, so a click
+;lands in the recording exactly as if it had been typed.
 bench_connectOne(*) {
-	bench_connectRow(bench_selectedRow())
+	local row := bench_selectedRow()
+
+	if row
+		bench_do("connect " row)
 }
 bench_disconnectOne(*) {
-	bench_disconnectRow(bench_selectedRow())
+	local row := bench_selectedRow()
+
+	if row
+		bench_do("disconnect " row)
 }
 bench_connectAll(*) {
+	bench_do("connect all")
+}
+bench_disconnectAll(*) {
+	bench_do("disconnect all")
+}
+;and the work itself, which the commands reach
+bench_connectEvery() {
 	global bench_seats
 	local r
 
 	for r, _ in bench_seats
 		bench_connectRow(r)
 }
-bench_disconnectAll(*) {
+bench_disconnectEvery() {
 	global bench_seats
 	local r
 
@@ -735,13 +783,13 @@ bench_beat() {
 	for r, seat in bench_seats {
 		;as the macro: a fake seat saying it is alive
 		if seat.socket
-			sock_SendLine(seat.socket, fleet_Frame("HEARTBEAT"))
+			bench_out(seat.socket, r, fleet_Frame("HEARTBEAT"))
 		;as the coordinator: who is in charge and on which term, which is the
 		;frame a macro's whole failover decision turns on. It goes to every seat
 		;the bench is coordinating, fake ones included - a fake seat connected to
 		;the bench is a macro whose coordinator this is.
 		if (bench_listener && seat.back)
-			sock_SendLine(seat.back, fleet_Frame("HEARTBEAT"
+			bench_out(seat.back, r, fleet_Frame("HEARTBEAT"
 				, Map("term", bench_term, "row", bench_coordRow
 				, "mandate", bench_coordRow, "at", nowUnix())))
 	}
@@ -754,8 +802,7 @@ bench_send(row, line) {
 
 	if (!row || !bench_seats.Has(row) || !bench_seats[row].socket)
 		return 0
-	bench_logFrame(row, "->", line)
-	return sock_SendLine(bench_seats[row].socket, line)
+	return bench_out(bench_seats[row].socket, row, line)
 }
 
 ;Speak TO that macro, as its coordinator: out of the accepted socket.
@@ -772,8 +819,7 @@ bench_sendBack(row, line) {
 		bench_say("? row " row " has no connection the coordinator can answer on")
 		return 0
 	}
-	bench_logFrame(row, "=>", line)
-	return sock_SendLine(bench_seats[row].back, line)
+	return bench_out(bench_seats[row].back, row, line)
 }
 
 ;Connected at all, either way round.
@@ -781,30 +827,184 @@ bench_wired(seat) {
 	return seat.socket || seat.back
 }
 
+;--- the one way out --------------------------------------------------------
+;
+;Every frame the bench sends leaves through here. It had eight separate calls to
+;sock_SendLine, which was fine until something had to apply to all of them -
+;and breaking frames on purpose has to apply to all of them or it proves
+;nothing about the ones it misses.
+
+;A frame going out, with whatever faults are switched on.
+;
+;Order matters: a dropped frame is never garbled, a garbled one is never held.
+;Each fault is logged with what it did to which frame, because an unexplained
+;missing frame while you are debugging something else is worse than the bug you
+;came for.
+bench_out(s, row, line) {
+	global bench_faultDrop, bench_faultCut, bench_faultReorder, bench_faultDelay
+	global bench_held
+	local cut
+
+	if !s
+		return 0
+	if bench_dice(bench_faultDrop) {
+		bench_logFrame(row, "x>", "DROPPED " line)
+		;the caller is told it went: that is the whole point of losing a frame
+		return 1
+	}
+	if bench_dice(bench_faultCut) {
+		;Cut in half and still ended properly: sock_SendLine adds the newline
+		;itself and there is no way to ask it not to.
+		;
+		;Which means the half that arrives is often a VALID frame carrying a
+		;truncated value - GOTO field=Mountain%20Top becomes GOTO field=M, a
+		;perfectly good order to a field that does not exist. That is the hazard
+		;worth seeing, and it is not the one I expected to see: the parser is
+		;right to accept it, and nothing downstream checks that a field name is
+		;a field name.
+		cut := SubStr(line, 1, Max(1, StrLen(line) // 2))
+		bench_logFrame(row, "~>", "CUT IN HALF " cut)
+		return bench_outNow(s, row, cut, 0)
+	}
+	if (bench_dice(bench_faultReorder) && !bench_held.Has(s)) {
+		bench_held[s] := { row: row, line: line }
+		bench_logFrame(row, "o>", "HELD BACK, to follow the next one: " line)
+		;never held for ever: if nothing else is sent to this socket the frame
+		;still goes, two seconds late
+		SetTimer bench_flushHeld, -2000
+		return 1
+	}
+	if bench_faultDelay {
+		bench_logFrame(row, "->", "HELD " bench_faultDelay "ms " line)
+		;straight to the send, not back through here: a frame that rolled the
+		;dice once must not roll them again and come back dropped
+		SetTimer () => bench_outNow(s, row, line, 1), -Min(bench_faultDelay, 10000)
+		return 1
+	}
+	return bench_outNow(s, row, line, 1)
+}
+
+;The send itself, with no dice. flush says whether a frame held back for the
+;reorder should follow this one out, which is what makes the two arrive the
+;wrong way round.
+bench_outNow(s, row, line, flush) {
+	global bench_held
+	local out, held
+
+	if !s
+		return 0
+	bench_logFrame(row, "->", line)
+	out := sock_SendLine(s, line)
+	if (flush && bench_held.Has(s)) {
+		held := bench_held[s]
+		bench_held.Delete(s)
+		bench_logFrame(held.row, "->", "OUT OF ORDER " held.line)
+		sock_SendLine(s, held.line)
+	}
+	return out
+}
+
+;Whatever is still being held, sent. A frame kept back waiting for a second one
+;that never came would otherwise be a frame the bench swallowed.
+bench_flushHeld() {
+	global bench_held
+	local s, held
+
+	for s, held in bench_held.Clone() {
+		bench_held.Delete(s)
+		bench_logFrame(held.row, "->", "OUT OF ORDER, nothing followed it: " held.line)
+		try sock_SendLine(s, held.line)
+	}
+}
+
+;A percentage, rolled. Nought never fires and a hundred always does, which is
+;what makes a test of this writable at all: "drop 100" is a certainty.
+bench_dice(pct) {
+	if (pct <= 0)
+		return 0
+	if (pct >= 100)
+		return 1
+	return (Random(1, 100) <= pct)
+}
+
+;What is switched on, in words, or "" when nothing is.
+bench_faultWord() {
+	global bench_faultDrop, bench_faultCut, bench_faultReorder, bench_faultDelay
+	local out := ""
+
+	if bench_faultDrop
+		out .= (out = "" ? "" : ", ") "dropping " bench_faultDrop "%"
+	if bench_faultCut
+		out .= (out = "" ? "" : ", ") "cutting " bench_faultCut "%"
+	if bench_faultReorder
+		out .= (out = "" ? "" : ", ") "reordering " bench_faultReorder "%"
+	if bench_faultDelay
+		out .= (out = "" ? "" : ", ") "holding every frame " bench_faultDelay "ms"
+	return out
+}
+
+;drop|cut|reorder <per cent>, delay <ms>, faults off, faults
+;
+;One setting for both directions. A frame the bench sends as a macro and one it
+;sends as the coordinator are equally worth losing, and naming the direction
+;would double the commands before anybody had asked for it.
+bench_doFault(verb, rest) {
+	global bench_faultDrop, bench_faultCut, bench_faultReorder, bench_faultDelay
+	local n := fleet_Num(rest), word
+
+	if (verb = "faults") {
+		if (StrLower(rest) = "off") {
+			bench_faultDrop := 0, bench_faultCut := 0
+			bench_faultReorder := 0, bench_faultDelay := 0
+			bench_flushHeld()
+			bench_say("faults off - the wire is honest again")
+			return 1
+		}
+		word := bench_faultWord()
+		bench_say((word = "") ? "no faults - the wire is honest" : "faults: " word)
+		return 1
+	}
+	if (verb = "delay") {
+		bench_faultDelay := Max(0, Min(n, 10000))
+		bench_say("holding every frame " bench_faultDelay "ms"
+			. ((n > 10000) ? " - ten seconds is the most, a queue has to drain" : ""))
+		return 1
+	}
+	n := Max(0, Min(n, 100))
+	if (verb = "drop")
+		bench_faultDrop := n
+	else if (verb = "cut")
+		bench_faultCut := n
+	else
+		bench_faultReorder := n
+	bench_say(verb " " n "% of frames, both directions")
+	return 1
+}
+
 ;--- saying things -----------------------------------------------------------
 
+;The buttons, each saying the command it means. Routed rather than acting,
+;so a click can be recorded and replayed - and so the console and the window
+;cannot drift into doing different things.
 bench_sayField(*) {
-	global BenchGui, bench_seats
-	local row := bench_selectedRow(), field
+	global BenchGui
+	local row := bench_selectedRow()
 
 	if !bench_ready(row)
 		return
-	field := BenchGui["BenchField"].Text
-	bench_seats[row].said := "farming " field
-	bench_send(row, fleet_Frame("FIELD", Map("name", field)))
-	bench_drawSeats()
+	bench_do("field " row " " BenchGui["BenchField"].Text)
 }
 
 bench_sayServer(*) {
-	global BenchGui, bench_seats
+	global BenchGui
 	local row := bench_selectedRow(), server
 
 	if !bench_ready(row)
 		return
 	server := Trim(BenchGui["BenchServer"].Value)
-	bench_seats[row].said := "in " server
-	bench_send(row, fleet_Frame("STATE", Map("server", server)))
-	bench_drawSeats()
+	if (server = "")
+		return
+	bench_do("server " row " " server)
 }
 
 ;A heartbeat carrying whichever configuration version you say this macro holds,
@@ -815,8 +1015,8 @@ bench_sayBeat(*) {
 
 	if !bench_ready(row)
 		return
-	bench_send(row, fleet_Frame("HEARTBEAT"
-		, Map("cv", BenchGui["BenchCv"].Value, "cby", BenchGui["BenchCby"].Value)))
+	bench_do("beat " row " " BenchGui["BenchCv"].Value
+		. " " BenchGui["BenchCby"].Value)
 }
 
 bench_sayLeave(*) {
@@ -824,7 +1024,7 @@ bench_sayLeave(*) {
 
 	if !bench_ready(row)
 		return
-	bench_send(row, fleet_Frame("LEAVE"))
+	bench_do("leave " row)
 }
 
 bench_sendRaw(*) {
@@ -833,7 +1033,7 @@ bench_sendRaw(*) {
 
 	if (!bench_ready(row) || (raw = ""))
 		return
-	bench_send(row, raw)
+	bench_do("send " row " " raw)
 }
 
 bench_ready(row) {
@@ -846,11 +1046,13 @@ bench_ready(row) {
 ;pretend coordinator: the point is to test against the process that will
 ;actually be running.
 bench_coordToggle(*) {
+	global bench_coordRow
+
 	if bench_coordsRunning() {
-		bench_endCoord()
+		bench_do("coordinator stop")
 		return
 	}
-	bench_startCoord()
+	bench_do("coordinator " bench_coordRow " real")
 }
 
 ;The port a coordinator this bench starts should take.
@@ -973,7 +1175,16 @@ bench_coordWord2(rest) {
 bench_coordChanged(*) {
 	global BenchGui
 
-	bench_setCoord(["none", "real", "bench"][BenchGui["BenchCoordBy"].Value])
+	;Through the command, so changing the dropdown is recorded like everything
+	;else.
+	;
+	;It cannot loop, and not because of anything AutoHotkey promises about
+	;whether setting a Value fires Change - measured, it does when something
+	;outside sets it. It cannot loop because bench_setCoord returns at once when
+	;the answer has not changed, which is a guarantee in this file rather than
+	;in the language.
+	bench_do("coordinatedby "
+		. ["none", "real", "bench"][BenchGui["BenchCoordBy"].Value])
 }
 
 ;Only one thing can hold the port, so choosing takes the other down. The fake
@@ -1131,8 +1342,10 @@ bench_onBind(s, frame) {
 
 	if (nowUnix() > bench_bindUntil) {
 		bench_say("refused a bind - the door is shut, run: accept")
-		sock_SendLine(s, fleet_Frame("BYE"
-			, Map("why", "the test bench is not accepting macros")))
+		;not through the faults: this one is followed by nothing at all and the
+		;macro is about to be dropped, so delaying it tests only the bench
+		bench_outNow(s, 0, fleet_Frame("BYE"
+			, Map("why", "the test bench is not accepting macros")), 0)
 		return 0
 	}
 	rows := roster_Load(BENCH_ROSTER)
@@ -1148,7 +1361,9 @@ bench_onBind(s, frame) {
 	bench_seats[row].said := "just bound"
 	bench_bySocket[s] := row
 	bench_say("bound " rows[row].name " as row " row " of fleet " BENCH_FLEET_ID)
-	sock_SendLine(s, fleet_Frame("BOUND", Map("row", row
+	;through the faults like everything else: a binding handover that goes
+	;missing is a real thing to watch a macro cope with
+	bench_out(s, row, fleet_Frame("BOUND", Map("row", row
 		, "secret", BENCH_SECRET, "fid", BENCH_FLEET_ID)))
 	bench_drawSeats()
 	return 1
@@ -1185,7 +1400,7 @@ bench_freeRow(rows, user, machine, name) {
 bench_acceptClick(*) {
 	global bench_bindUntil
 
-	bench_accept((nowUnix() < bench_bindUntil) ? "0" : "120")
+	bench_do((nowUnix() < bench_bindUntil) ? "accept 0" : "accept 120")
 	bench_doorLine()
 }
 
@@ -1322,8 +1537,11 @@ bench_onHello(s, frame) {
 		bench_say("row " row " belongs to fleet " fleet_Field(frame, "fid")
 			. ", not to this bench - turned away so it keeps looking for its own."
 			. " Press Accept new macros to let it join the bench instead.")
-		sock_SendLine(s, fleet_Frame("BYE", Map("why", "another fleet - this one is "
-			. BENCH_FLEET_ID, "final", 0)))
+		;not through the faults: the socket closes on the next line, so a frame
+		;held back here would never leave at all
+		bench_outNow(s, row, fleet_Frame("BYE"
+			, Map("why", "another fleet - this one is " BENCH_FLEET_ID
+			, "final", 0)), 0)
 		sock_Close(s)
 		return 0
 	}
@@ -1348,7 +1566,7 @@ bench_onHello(s, frame) {
 			. fleet_Field(frame, "machine", "somewhere"))
 	}
 	;a macro expects to be told who is in charge before anything else
-	sock_SendLine(s, fleet_Frame("HEARTBEAT"
+	bench_out(s, row, fleet_Frame("HEARTBEAT"
 		, Map("term", bench_term, "row", bench_coordRow
 		, "mandate", bench_coordRow, "at", nowUnix())))
 	bench_drawSeats()
@@ -1543,11 +1761,29 @@ bench_reference() {
 #   port 47600                   take the real fleet's port, so a macro
 #                                needs no changes at all to join
 #
+# breaking it on purpose - all off until you say so, and the state line shouts
+# while any of them is on
+#   drop 20                      throw away one frame in five
+#   cut 10                       send one frame in ten cut in half. Often
+#                                still a valid frame with a truncated value.
+#   reorder 20                   hold one back to arrive after the next
+#   delay 500                    hold every frame half a second
+#   faults                       say what is on
+#   faults off                   stop all of it
+#
+# and when you have reproduced something
+#   Save what just happened       the button at the bottom. Writes every
+#                                 command of this session to a file, with the
+#                                 real gaps as waits, and puts it in this box.
+#                                 Uncomment the expect lines it suggests.
+#
 # either kind
 #   wait 2000                       milliseconds
 #   say anything at all             one line in the log
 #   clear all / clear 2             forget what a seat has heard
-#   expect 2 GOTO field=pepper      pass or fail, and the log says which
+#   expect 2 GOTO field=pepper     pass or fail, and the log says which.
+#                                  A space in a value is written %20, the
+#                                  way it travels: field=Pine%20Tree
 #   reject 2 GOTO                   passes when it was NOT heard
 )"
 }
@@ -1613,6 +1849,10 @@ bench_do(line) {
 	global bench_resumeAt
 	local parts := StrSplit(line, " "), verb := StrLower(parts[1]), rest
 
+	;here and nowhere else, because this is the one place every command passes
+	;through - the console types them and the buttons build them
+	bench_remember(line)
+
 	rest := (StrLen(line) > StrLen(parts[1]))
 		? Trim(SubStr(line, StrLen(parts[1]) + 1))
 		: ""
@@ -1625,12 +1865,12 @@ bench_do(line) {
 			bench_doSeat(parts)
 		case "connect":
 			if (StrLower(rest) = "all")
-				bench_connectAll()
+				bench_connectEvery()
 			else
 				bench_connectRow(fleet_Num(rest))
 		case "disconnect":
 			if (StrLower(rest) = "all")
-				bench_disconnectAll()
+				bench_disconnectEvery()
 			else
 				bench_disconnectRow(fleet_Num(rest))
 		case "clear":
@@ -1639,6 +1879,8 @@ bench_do(line) {
 			bench_doRest(parts, rest, "send")
 		case "field":
 			bench_doRest(parts, rest, "field")
+		case "server":
+			bench_doRest(parts, rest, "server")
 		case "beat":
 			bench_doBeat(parts)
 		case "leave":
@@ -1660,6 +1902,8 @@ bench_do(line) {
 			bench_accept(rest)
 		case "port":
 			bench_doPort(rest)
+		case "drop", "cut", "reorder", "delay", "faults":
+			bench_doFault(verb, rest)
 		case "stop":
 			bench_setCoord("none")
 		case "term":
@@ -1838,9 +2082,9 @@ bench_doClear(what) {
 	bench_drawSeats()
 }
 
-;send <row> <frame verbatim>, and field <row> <name>, which both take
-;everything after the row number as one value - a field name has spaces in it
-;and so does half the protocol.
+;send <row> <frame verbatim>, field <row> <name> and server <row> <name>,
+;which all take everything after the row number as one value - a field name
+;has spaces in it and so does half the protocol.
 bench_doRest(parts, rest, what) {
 	global bench_seats
 	local row := fleet_Num(parts[2]), tail
@@ -1855,6 +2099,13 @@ bench_doRest(parts, rest, what) {
 	}
 	if (what = "send") {
 		bench_send(row, tail)
+		return
+	}
+	if (what = "server") {
+		if bench_seats.Has(row)
+			bench_seats[row].said := "in " tail
+		bench_send(row, fleet_Frame("STATE", Map("server", tail)))
+		bench_drawSeats()
 		return
 	}
 	if bench_seats.Has(row)
@@ -1907,6 +2158,22 @@ bench_doExpect(parts, rest, wanted) {
 		bench_fail++
 		return
 	}
+	;A value with a space in it, written as a space, is two tokens here - so
+	;"expect 2 GOTO field=Pine Tree" asked for field=Pine and passed or failed on
+	;that instead. A reject then passed because the expectation could not be
+	;expressed rather than because the frame was missing, which is the second
+	;time a reject has passed for the wrong reason. Said out loud now: on the
+	;wire a space is %20, and that is how to write it here too.
+	i := 4
+	while (i <= parts.Length) {
+		if ((i > 4) && !InStr(parts[i], "=")) {
+			bench_say("FAIL  `"" parts[i] "`" is not field=value - a value with a"
+				. " space in it is written %20, the way it travels")
+			bench_fail++
+			return
+		}
+		i++
+	}
 	want := StrUpper(parts[3])
 	;the row number is already in the message, so the description starts after it
 	desc := want
@@ -1938,6 +2205,88 @@ bench_doExpect(parts, rest, wanted) {
 	}
 	bench_fail++
 	bench_say("FAIL  row " row (wanted ? " never heard " : " was sent ") desc)
+}
+
+;--- what you just did, as commands -----------------------------------------
+;
+;A bug reproduced once by hand is worth almost nothing: the next person to touch
+;the code breaks it again and nobody notices. A bug reproduced by a file the
+;harness runs on every change cannot come back. So everything that happens here
+;is kept as the command that would make it happen again.
+;
+;Which is why every button below routes through bench_do rather than acting
+;directly. One path for the console and the buttons, so neither can do something
+;the other cannot say - and a click is recordable for the same reason it is
+;replayable.
+
+;One command, remembered with the gap before it.
+;
+;Not while a script is running: a replay is not somebody doing something, and
+;recording it would append the scenario to itself every time it ran.
+bench_remember(line) {
+	global bench_record, bench_recordAt, bench_pc
+	local gap
+
+	if bench_pc
+		return 0
+	gap := bench_recordAt ? (A_TickCount - bench_recordAt) : 0
+	bench_recordAt := A_TickCount
+	;under a tenth of a second is not a pause anybody meant; over five seconds is
+	;you reading the log, and a replay should not wait that out
+	if (gap >= 100)
+		bench_record.Push("wait " Min(gap, 5000))
+	bench_record.Push(line)
+	while (bench_record.Length > 500)
+		bench_record.RemoveAt(1)
+	return 1
+}
+
+;Write it out, and put it in the box so it can be edited and run at once.
+;
+;The expect lines are every verb each seat heard, commented out. Generating
+;them uncommented would be inventing assertions nobody asked for - a recording
+;proves nothing until somebody says what it is supposed to show - but having
+;them to uncomment is the difference between a minute and twenty.
+bench_saveRecording(*) {
+	global bench_record, BenchGui, bench_seats
+	local path, text, line, r, seat, verbs, f, name
+
+	if !bench_record.Length {
+		bench_say("nothing to save yet - press some buttons, or type some commands"
+			. " and run them")
+		return 0
+	}
+	path := A_WorkingDir "\settings\bench_" FormatTime(A_Now, "yyyyMMdd_HHmmss")
+		. ".txt"
+	text := "# What the bench just did, as commands it can be given again.`r`n"
+		. "#`r`n# Recorded " FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+		. ". The waits are the real gaps, capped at`r`n"
+		. "# five seconds so a replay does not sit through you reading the log.`r`n"
+		. "#`r`n"
+		. "# It proves nothing until it asserts something. Every verb each seat"
+		. " heard is`r`n"
+		. "# at the bottom as a commented expect - uncomment what you meant and"
+		. " delete`r`n# the rest. A value with a space in it is written %20.`r`n`r`n"
+	for _, line in bench_record
+		text .= line "`r`n"
+	text .= "`r`n# every verb each seat heard, to choose from`r`n"
+	for r, seat in bench_seats {
+		verbs := Map()
+		for _, f in seat.heard
+			verbs[f.verb] := 1
+		for name, _ in verbs
+			text .= "# expect " r " " name "`r`n"
+	}
+	try FileDelete path
+	try FileAppend text, path, "UTF-8"
+	if !FileExist(path) {
+		bench_say("could not write " path)
+		return 0
+	}
+	bench_say("saved " bench_record.Length " commands to " path
+		. " - it is in the Script box now, and tools/win-test.sh can run it")
+	try BenchGui["BenchScript"].Value := text
+	return 1
 }
 
 ;--- the log ----------------------------------------------------------------
