@@ -1,8 +1,9 @@
 # In-place updates for Natro Macro
 
-> Never used git and just want this installed? Read
-> [INSTALL.md](INSTALL.md) instead - the same thing, click by click, with
-> none of the reasoning. This page is the reference.
+> Never used git and just want this installed on a macro you already run?
+> Read [INSTALL.md](INSTALL.md) instead - six commands, in French, written
+> for somebody starting from a stock folder with none of this fork's tooling
+> in it. This page is the reference.
 
 ## The problem
 
@@ -50,6 +51,16 @@ Then **open a new window** so that `git` is on the `PATH`.
 
 This is the common case: `C:\Natro\Bot1` already runs, with its settings
 configured. Nothing is re-downloaded and `settings/` is left alone.
+
+Double-click **`nm-install.bat`** in a folder that already has this fork, or
+give it another folder to adopt:
+
+```powershell
+nm-install.bat -Target "C:\Natro\Bot2"
+```
+
+It only exists once the fork is in place, so a **first** install is the six
+commands in [INSTALL.md](INSTALL.md) rather than this. The script underneath:
 
 ```powershell
 powershell -ExecutionPolicy Bypass `

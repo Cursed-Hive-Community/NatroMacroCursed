@@ -1,179 +1,193 @@
-# Installing this fork on a Natro Macro you already have
+# Installer le fork sur une Natro Macro que tu as déjà
 
-For somebody who has never used git and does not want to start. Windows,
-start to finish, about five minutes.
+Pour quelqu'un qui n'a jamais touché à git. Windows, cinq minutes.
 
-**Your settings are not touched.** Accounts, hotkeys, fields, patterns, the
-Discord webhook, your planter setup - all of it stays exactly as it is, and
-every update after this one keeps it too. Nothing is re-downloaded either:
-the folder you already run becomes the folder that updates itself.
+**Tes réglages ne sont pas touchés.** Comptes, raccourcis, champs, patterns,
+webhook Discord : tout le dossier `settings` est laissé tel quel, par cette
+installation et par toutes les mises à jour qui suivront. Rien n'est
+retéléchargé non plus : le dossier que tu lances déjà devient celui qui se met
+à jour tout seul.
 
 ---
 
-## 1. Close the macro
+## 1. Ferme la macro
 
-Every window of it. Then open **Task Manager** (Ctrl+Shift+Esc), look down the
-list for **AutoHotkey**, and end whatever is left.
+Toutes ses fenêtres. Puis ouvre le **Gestionnaire des tâches**
+(Ctrl+Maj+Échap), cherche **AutoHotkey** dans la liste et termine ce qui reste.
 
-This matters: Windows locks a program's files while it runs, and the install
-cannot replace a file that is locked. If you skip this, step 3 stops and tells
-you so - it does not break anything, you just have to come back here.
+Windows verrouille les fichiers d'un programme pendant qu'il tourne, et
+l'installation doit en remplacer deux. Si tu sautes cette étape, l'étape 3
+s'arrête et te le dit — rien n'est cassé, il faut juste revenir ici.
 
-## 2. Install Git, once per computer
+## 2. Installe Git, une fois par ordinateur
 
-Git is what fetches updates. You will never have to use it yourself.
+Git est ce qui va chercher les mises à jour. Tu n'auras jamais à t'en servir
+toi-même.
 
-Right-click the **Start** button, choose **Terminal** or **PowerShell**, paste
-this and press Enter:
+Clic droit sur le bouton **Démarrer**, choisis **Terminal** ou
+**PowerShell**, colle ceci et appuie sur Entrée :
 
 ```powershell
 winget install --id Git.Git -e
 ```
 
-When it finishes, **close that window**. Nothing else uses it.
+Quand c'est fini, **ferme cette fenêtre et ouvre-en une nouvelle**. Sans ça,
+`git` ne sera pas reconnu.
 
-> No `winget` on your Windows? Download the installer from
-> <https://git-scm.com/download/win> and click Next until it ends. Every
-> default is fine.
+> Pas de `winget` sur ton Windows ? Télécharge l'installeur sur
+> <https://git-scm.com/download/win> et clique Suivant jusqu'au bout. Tous les
+> choix par défaut conviennent.
 
-## 3. Run the installer
+## 3. Branche ton dossier sur le dépôt
 
-In your Natro Macro folder - the one with `START.bat` in it - find
-**`nm-install.bat`** and **double-click it**.
+Dans la nouvelle fenêtre Terminal, colle ce bloc — **en remplaçant le chemin
+de la première ligne par celui de ton dossier de macro**, celui qui contient
+`START.bat` :
 
-> `nm-install.bat` is not in your folder yet, because it comes with this fork.
-> Download the fork as a .zip from the green **Code** button on
-> <https://github.com/Cursed-Hive-Community/NatroMacroCursed>, open the .zip,
-> and copy `nm-install.bat` and the whole `tools` folder into your macro
-> folder. That is all you need from the .zip - the installer fetches the rest.
+```powershell
+cd "C:\Natro\Bot1"
+git init -b main
+git remote add origin https://github.com/Cursed-Hive-Community/NatroMacroCursed.git
+git fetch origin
+git reset --hard origin/main
+git branch -u origin/main
+```
 
-It tells you what it is about to do and waits for you to agree. Then it works
-for a minute or two and says it is done.
+Ligne par ligne, pour que tu saches ce que tu lances :
 
-## 4. Start the macro
+| Commande | Ce qu'elle fait |
+|---|---|
+| `cd "..."` | va dans ton dossier de macro |
+| `git init -b main` | prépare le dossier à être suivi par git |
+| `git remote add origin ...` | dit où est le fork |
+| `git fetch origin` | télécharge le fork, sans encore rien changer |
+| `git reset --hard origin/main` | remplace les fichiers de la macro par ceux du fork |
+| `git branch -u origin/main` | retient la branche à suivre, pour les mises à jour |
 
-Double-click **`START.bat`**, the way you always have.
+C'est `git reset --hard` qui fait le travail, et c'est aussi lui qui **ne peut
+pas** toucher à `settings` : git n'a jamais eu ce dossier dans ses fichiers, et
+`reset` ne touche que les fichiers qu'il connaît. Tes notes, tes logs et tout
+ce que tu as mis là de ton côté restent aussi.
 
-Everything is where you left it. Along the bottom bar of the macro window
-there is now a **Git Sync** button, next to Stop - that is how you update from
-now on.
+## 4. Lance la macro
+
+Double-clique sur **`START.bat`**, comme d'habitude.
+
+Tout est là où tu l'avais laissé. En bas de la fenêtre de la macro il y a
+maintenant un bouton **Git Sync**, à côté de Stop : c'est par là que tu mettras
+à jour.
 
 ---
 
-## Updating, from then on
+## Mettre à jour, ensuite
 
-Two ways, both of them a click:
+Deux façons, un clic chacune :
 
-- the **Git Sync** button in the macro, then **Update**;
-- or **`nm-update.bat`** in the folder.
+- le bouton **Git Sync** dans la macro, puis **Update** ;
+- ou **`nm-update.bat`** dans le dossier.
 
-Either one stops the macro, brings the new version in, keeps your settings and
-starts the macro again.
+Les deux arrêtent la macro, installent la nouvelle version, gardent tes
+réglages et relancent la macro.
 
 ---
 
-## When Windows gets in the way
+## Si ça coince
 
-This is the part that catches people, so it is worth reading before it happens
-rather than after.
+### `fatal: detected dubious ownership in repository at ...`
 
-### "This folder is recorded as owned by BUILTIN\\Administrators"
+Git refuse de travailler dans un dossier qui, selon Windows, appartient à
+quelqu'un d'autre — parce qu'un dépôt qui ne t'appartient pas pourrait
+exécuter son propre code. Ça arrive si le dossier a été créé sous une autre
+session Windows, copié depuis un autre PC, ou créé par un programme lancé en
+administrateur.
 
-Harmless, nothing for you to do, and you will probably see it. Windows records
-anything an Administrator created as belonging to the Administrators group
-rather than to a person, so this is the ordinary state of a folder made from an
-admin window or dropped there by an installer.
+Sur ton propre PC ce n'est pas ce qui se passe. Colle la ligne que git te
+propose lui-même, elle est dans son message d'erreur, et elle ressemble à :
 
-### "This folder belongs to <somebody>, not to you"
+```powershell
+git config --global --add safe.directory "C:/Natro/Bot1"
+```
 
-Also harmless, and also handled. This is the one you get when the folder really
-was made under a different Windows login, or copied from another PC.
+Puis reprends l'étape 3 là où elle s'était arrêtée.
 
-Both messages are about the same thing. Git refuses to work in a folder it
-thinks belongs to someone else, because a folder you do not own could run its
-own code behind your back. On your own PC that is not what is happening, so the
-installer tells git that this one folder is fine - only that one - and carries
-on.
+> Si tu as cinq dossiers de macro et que tu ne veux pas le faire cinq fois :
+> `git config --global --add safe.directory "*"` accepte tout. Ça désactive la
+> vérification partout, ce qui est acceptable sur ton PC et à éviter sur une
+> machine partagée.
 
-### "Windows will not let this account write in ..."
+### `Permission denied` ou `Accès refusé`
 
-This one does need you. The folder belongs to another Windows user **and** that
-user did not give yours permission, so nothing can be installed or updated in
-it at all - not by this fork, and not by Natro Macro's own updater either.
+Là, Windows ne te laisse pas écrire dans le dossier du tout : il appartient à
+un autre utilisateur **et** celui-ci n'a pas donné les droits au tien. Même
+l'updater officiel de Natro Macro ne pourrait pas y travailler.
 
-Three ways out, easiest first:
+Le plus simple : **copie le dossier chez toi**. Crée `C:\Natro`, copie tout le
+dossier de la macro dedans, et refais l'étape 3 sur la copie. Tes réglages
+suivent.
 
-1. **Log in as the user who owns the folder** and run `nm-install.bat` there.
+Sinon, pour t'en rendre propriétaire : clic droit sur **Démarrer**,
+**Terminal (admin)**, puis en mettant ton chemin à la place de l'exemple :
 
-2. **Copy the folder somewhere of your own.** Make `C:\Natro`, copy the whole
-   macro folder into it, and run `nm-install.bat` in the copy. Your settings
-   come along with it.
+```powershell
+takeown /F "C:\Natro\Bot1" /R /D Y
+icacls "C:\Natro\Bot1" /grant "$env:USERNAME":(OI)(CI)F /T
+```
 
-3. **Take ownership of it.** Right-click **Start**, choose
-   **Terminal (Admin)**, and paste these two lines, with your own path in
-   place of the example:
+### `error: unable to unlink ...` ou un nom de `.exe` dans l'erreur
 
-   ```powershell
-   takeown /F "C:\Natro\Bot1" /R /D Y
-   icacls "C:\Natro\Bot1" /grant "$env:USERNAME":(OI)(CI)F /T
-   ```
+La macro tourne encore. Retour à l'étape 1 : ferme ses fenêtres, vérifie dans
+le Gestionnaire des tâches qu'aucun **AutoHotkey** ne reste, et relance la
+dernière commande.
 
-   The first makes you the owner, the second gives you full access to
-   everything inside. Then run `nm-install.bat`.
+### `git n'est pas reconnu`
 
-### "Update failed: some files are still locked"
-
-Step 1 again: a macro window from **that** folder is still open, or an
-`AutoHotkey` process from it is still in Task Manager. Close it and run the
-update again.
-
-### "git is not installed"
-
-Step 2 did not finish, or the window it ran in was never closed. Close every
-Terminal window, open a new one, and check with:
+L'étape 2 n'est pas finie, ou tu es resté dans la même fenêtre. Ferme tous les
+Terminaux, ouvre-en un nouveau et vérifie :
 
 ```powershell
 git --version
 ```
 
-### Something went wrong and you want the old version back
+### Tu veux revenir en arrière
 
-Nothing is lost - the previous version is still in the folder's history. Open
-Terminal in the folder and run:
+Rien n'est perdu, l'ancienne version est dans l'historique du dossier. Dans le
+Terminal, dans ton dossier de macro :
 
 ```powershell
 git log --oneline
-git reset --hard <the line you want>
+git reset --hard <le numéro de la ligne que tu veux>
 ```
 
-Your `settings` folder is never affected by that.
+`settings` n'est jamais concerné par ça non plus.
 
 ---
 
-## Questions people ask
+## Questions qu'on pose
 
-**Does this replace Natro Macro?** No. It *is* Natro Macro, with extra
-features on top. Everything you know how to do still works the same way.
+**Ça remplace Natro Macro ?** Non. *C'est* Natro Macro, avec des
+fonctionnalités en plus. Tout ce que tu sais faire marche pareil.
 
-**Will I lose my settings?** No. `settings\` is left alone by every install and
-every update, for ever. That is the one promise this tooling is built around.
+**Je vais perdre mes réglages ?** Non. `settings` est laissé tranquille par
+chaque installation et chaque mise à jour, définitivement.
 
-**Can I run several accounts?** Yes, one folder each, exactly as before. There
-is a tool for making a second one in a few seconds - see
-[UPDATE-GIT.md](UPDATE-GIT.md#adding-another-instance).
+**Plusieurs comptes ?** Oui, un dossier par compte, comme avant. Refais
+l'étape 3 dans chaque dossier.
 
-**Can I go back to the official version?** Yes. In **Git Sync**, change the
-repository to `https://github.com/NatroTeam/NatroMacro.git`, press Save, then
-Update.
+**Revenir à la version officielle ?** Dans **Git Sync**, mets le dépôt à
+`https://github.com/NatroTeam/NatroMacro.git`, Save, puis Update.
 
-**Do I need a GitHub account?** No.
+**Il me faut un compte GitHub ?** Non.
+
+**On m'a dit de suivre une autre branche que `main` ?** Remplace `main` par son
+nom dans les deux dernières commandes de l'étape 3.
 
 ---
 
-## If you are stuck
+## Si tu es bloqué
 
-Say which step you were on and paste what the window said. The exact wording
-matters - the messages above are written to be told apart from each other.
+Dis à quelle étape tu en étais et colle ce que la fenêtre a affiché. Le texte
+exact compte : les messages ci-dessus sont écrits pour être distingués les uns
+des autres.
 
-The details behind all of this, for anyone who wants them, are in
-[UPDATE-GIT.md](UPDATE-GIT.md).
+Les détails de tout ce mécanisme, pour qui les veut, sont dans
+[UPDATE-GIT.md](UPDATE-GIT.md) (en anglais).
