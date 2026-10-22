@@ -1,5 +1,9 @@
 # In-place updates for Natro Macro
 
+> Never used git and just want this installed? Read
+> [INSTALL.md](INSTALL.md) instead - the same thing, click by click, with
+> none of the reasoning. This page is the reference.
+
 ## The problem
 
 The stock updater (`submacros/update.bat`) downloads a `.zip` of the latest
