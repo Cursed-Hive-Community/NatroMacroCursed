@@ -22866,7 +22866,10 @@ ba_harvestPlanter(planterNum){
 			}
 		}
 		else {
-			loop 3 {
+			;Same wait as the No button above, for the same reason: three screenshots
+			;100ms apart can all land before the dialog does, and nothing was clicked.
+			confirmed := 0
+			loop 6 {
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
 				if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1) {
 					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
@@ -22877,10 +22880,25 @@ ba_harvestPlanter(planterNum){
 					Gdip_DisposeImage(pBMScreen)
 					If PlanterHarvestNow%planterNum%
 						IniWrite 0, "settings\nm_config.ini", "Planters", "PlanterHarvestNow" planterNum
+					confirmed := 1
 					break
 				}
 				Gdip_DisposeImage(pBMScreen)
-				Sleep 50 ; delay in case of lag
+				Sleep 250
+			}
+			;No dialog is what a full grown planter gives, and also what a missed one
+			;looks like, and falling through counts a harvest either way. Still standing
+			;at it, the E prompt tells them apart: a collected planter leaves none.
+			;Returning 0 has the caller come back and try again.
+			if (!confirmed) {
+				GetRobloxClientPos(hwnd)
+				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY+36 "|200|120")
+				standing := (Gdip_ImageSearch(pBMScreen, bitmaps["e_button"], , , , , , 2, , 6) = 1)
+				Gdip_DisposeImage(pBMScreen)
+				if (standing) {
+					nm_setStatus("Retrying", planterName " (" fieldName "): still there, the harvest was not confirmed")
+					return 0
+				}
 			}
 		}
 

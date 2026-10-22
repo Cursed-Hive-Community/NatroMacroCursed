@@ -319,6 +319,18 @@ one `AutoHotkey64.exe` more than you started, close the macro, and look again.
 - [ ] the boost is read through the **lease**, so a glitter renewal counts
 - [ ] the status line says `Converting / Balloon - Used Enzyme`
 
+### Harvesting a planter that is not full
+
+The Yes button matched every pixel of a user's screenshot of the dialog, by a
+script replaying the search; what was never seen is the timing.
+
+- [ ] a planter harvested before it is full is collected: the dialog comes up
+      and Yes is clicked `loads`
+- [ ] a full grown planter, which gives no dialog, is counted once, about 1.5 s
+      later than before `loads`
+- [ ] a dialog that never comes up leaves the slot alone and the status says
+      `Retrying` - rests on the E prompt still showing at the planter `loads`
+
 ---
 
 ## The bench, and what it reaches
