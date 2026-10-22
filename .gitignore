@@ -45,3 +45,8 @@ lib-cov
 /coverage
 /test/test-apps/*/dist
 MMScreenshots/*
+tools/vm.env
+
+# local-only working notes and skills, kept out of the shared repo
+/AGENTS.md
+/.claude/
