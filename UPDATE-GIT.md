@@ -1,9 +1,9 @@
 # In-place updates for Natro Macro
 
 > Never used git and just want this installed on a macro you already run?
-> Read [INSTALL.md](INSTALL.md) instead - six commands, in French, written
-> for somebody starting from a stock folder with none of this fork's tooling
-> in it. This page is the reference.
+> Read [INSTALL.md](INSTALL.md) instead - six commands, written for somebody
+> starting from a stock folder with none of this fork's tooling in it. This
+> page is the reference.
 
 ## The problem
 
