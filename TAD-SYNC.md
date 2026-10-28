@@ -134,6 +134,12 @@ address**. The alt keeps that address and uses it to reconnect from then on.
 
 **The alt joined but keeps farming its own field.**
 
+Open the Fleet panel on the alt. The line at the top says what that account
+is doing: following the main into a field, waiting for the main to say
+where it farms, or farming its own field because of its role. On any
+macro, a yellow card is a follower that is not in the main's field, and
+each card shows the field next to the role.
+
 - Its role is not `tad` or `fuzzy`: check section 3 on the main.
 - The main's role is not `main`. Only an account set as main is followed.
 - The main is on a trip whose box is unticked in step 3.

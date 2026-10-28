@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These forty-seven checks run the real coordinator process, the real socket
+These forty-eight checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -117,6 +117,8 @@ layer and the real protocol. They are the strongest evidence in the repository.
       refusal names that account
 - [x] an edit made on any macro is saved at a version beating both its own
       copy and the fleet's, and a roster with two mains is recognised
+- [x] a follower whose field is not the main's is told apart from one that is,
+      by the rule the cards are coloured with
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -524,15 +526,21 @@ it has been watched happen.
 
 ### The panel, live
 
-- [ ] seat colours mean what they claim: offline grey, stale pink, guiding amber,
-      online blue - **the only check in this file that a dump cannot do**
+- [ ] seat colours mean what they claim: offline grey, stale pink, a follower
+      away from the main yellow, guiding amber, online blue - **the only check
+      in this file that a dump cannot do**
 - [ ] a card repaints correctly when a macro quits and comes back
 - [ ] response time and "last heard from" tick along on their own
 - [ ] the log says why seats changed hands
 - [ ] clicking a card opens the right account
 - [ ] the two strip lines on the main window track the fleet
-- [ ] the summary names the configuration version, and says so loudly when this
-      macro holds a different one
+- [ ] the summary names who runs the fleet, and the configuration version only
+      when this macro holds a different one
+- [ ] the line under it says what this account does, and each card shows the
+      field beside the role - **built in the VM** with a main in Pine Tree and a
+      fuzzy in Bamboo, the card text dumped
+- [ ] more than six offline accounts end in a `+N more` card - **built in the
+      VM**, nine offline gave `+4 more`
 - [ ] the account panel's Configuration row shows a macro out of step
 
 ---
@@ -643,8 +651,6 @@ Not bugs to find - bugs already known about, with no fix yet.
   and editable only where the coordinator runs. `SETROW` and `SETSERVER` already
   carry a whole configuration at a bumped version, so what is left is a gate on
   who may bump and the interface around it.
-- **More than six offline macros** and the extra cards are not drawn. The count
-  still tells the truth.
 - **Colour has never been seen.** Every palette decision in the Fleet window is
   unverified.
 - **Absolute timestamps cross machines.** `until` on a guiding star comes from

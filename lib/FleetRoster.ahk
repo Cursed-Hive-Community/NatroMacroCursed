@@ -138,6 +138,27 @@ roster_HasTwoMains(rows) {
 	return 0
 }
 
+;What one account's card should say at a glance, from its ROSTER fields and the
+;field the main last announced: offline, silent (connected but not heard from),
+;away (a follower farming somewhere other than the main's field), or online.
+;
+;"away" is the point. Whether following works was invisible from the screen -
+;a friend's fleet "did not follow" and nothing showed which account, or where
+;it was instead. A follower that has not reported a field yet is not away: it
+;has said nothing, which is not the same as being somewhere else.
+roster_SeatState(fields, leadField) {
+	local get := (k) => fields.Has(k) ? fields[k] : "", field
+
+	if (get("state") = "offline")
+		return "offline"
+	if (get("state") != "online")
+		return "silent"
+	field := get("field")
+	if (roster_Follows(get("role")) && (leadField != "") && (field != "") && (field != leadField))
+		return "away"
+	return "online"
+}
+
 roster_FollowMoves(role, target, current) {
 	return roster_Follows(role) && (target != "") && (target != current)
 }

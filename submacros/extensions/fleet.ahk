@@ -1352,7 +1352,7 @@ ext_fleetView() {
 ext_fleetSummary() {
 	global ext_fleetSock, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
 	global FleetCheck, ext_fleetFoundAt, ext_fleetRefused
-	local silent
+	local silent, config
 
 	if !FleetCheck
 		return "Fleet is off"
@@ -1371,9 +1371,15 @@ ext_fleetSummary() {
 	;which machine to go and look at; the account and the machine mean
 	;everything, and the address it was reached on says less than either now
 	;that the machine can be named.
-	return "Fleet run by " ext_FleetOr(ext_fleetCoordWho(), "a macro it cannot name yet")
-		. " - term " ext_fleetTerm " - " ext_fleetConfigLine()
-		. ((silent > 15) ? " - quiet for " silent "s" : "")
+	;
+	;The term and the configuration version are left out while they say
+	;nothing worth acting on: they are how the fleet keeps itself straight,
+	;not something a person reads. The version comes back the moment this
+	;macro disagrees with the fleet, which is the one time it matters.
+	config := ext_fleetConfigLine()
+	return "Run by " ext_FleetOr(ext_fleetCoordWho(), "a macro it cannot name yet")
+		. (InStr(config, "holds") ? " - " config : "")
+		. ((silent > 15) ? " - not heard from for " silent "s" : "")
 }
 
 ;The Fleet window - what the fleet is doing, and nothing else.
@@ -1415,47 +1421,52 @@ ext_FleetGUI(*) {
 	FleetGui.OnEvent("Close", ext_FleetGUIClose)
 	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
 
-	FleetGui.Add("Text", "x16 y10 w588 vFleetSummary", ext_fleetSummary())
-
+	FleetGui.Add("Text", "x16 y8 w588 vFleetSummary", ext_fleetSummary())
+	;What this account is doing, in a sentence - the question everybody opens
+	;this window to answer, which the seats only answer about the others.
 	FleetGui.SetFont("s8 cDefault Bold")
-	FleetGui.Add("Text", "x16 y34 w300 vFleetMainLabel", "MAIN SERVER")
-	FleetGui.Add("Text", "x404 y34 w200 Right vFleetMainCount", "")
-	FleetGui.Add("Text", "x16 y162 w300 vFleetReserveLabel", "RESERVE")
-	FleetGui.Add("Text", "x404 y162 w200 Right vFleetReserveCount", "")
-	FleetGui.Add("Text", "x16 y236 w300 vFleetOfflineLabel", "OFFLINE")
-	FleetGui.Add("Text", "x404 y236 w200 Right vFleetOfflineCount", "")
+	FleetGui.Add("Text", "x16 y24 w588 vFleetMine", ext_fleetMyJob())
+
+	FleetGui.Add("Text", "x16 y46 w300 vFleetMainLabel", "MAIN SERVER")
+	FleetGui.Add("Text", "x404 y46 w200 Right vFleetMainCount", "")
+	FleetGui.Add("Text", "x16 y174 w300 vFleetReserveLabel", "RESERVE")
+	FleetGui.Add("Text", "x404 y174 w200 Right vFleetReserveCount", "")
+	FleetGui.Add("Text", "x16 y248 w300 vFleetOfflineLabel", "OFFLINE")
+	FleetGui.Add("Text", "x404 y248 w200 Right vFleetOfflineCount", "")
 	FleetGui.SetFont("Norm")
 
 	;seat cards, six to a row
 	Loop FLEET_SEATS_MAIN {
 		i := A_Index - 1
-		ext_FleetMakeCard("FleetSeatM" A_Index, 16 + Mod(i, 6) * 98, 52 + (i // 6) * 54)
+		ext_FleetMakeCard("FleetSeatM" A_Index, 16 + Mod(i, 6) * 98, 64 + (i // 6) * 54)
 	}
 	Loop FLEET_SEATS_RESERVE {
 		i := A_Index - 1
-		ext_FleetMakeCard("FleetSeatR" A_Index, 16 + Mod(i, 6) * 98, 180)
+		ext_FleetMakeCard("FleetSeatR" A_Index, 16 + Mod(i, 6) * 98, 192)
 	}
 	Loop FLEET_SEATS_OFFLINE {
 		i := A_Index - 1
-		ext_FleetMakeCard("FleetSeatO" A_Index, 16 + Mod(i, 6) * 98, 254)
+		ext_FleetMakeCard("FleetSeatO" A_Index, 16 + Mod(i, 6) * 98, 266)
 	}
+	;the colours say something, so the window says what
 	FleetGui.SetFont("s8 c808080 Norm", "Tahoma")
-	FleetGui.Add("Text", "x16 y310 w588", "Click an account for its details.")
+	FleetGui.Add("Text", "x16 y322 w588"
+		, "Click a card for details.   Yellow: a follower not in the main's field.   Pink: not heard from.   Grey: offline.")
 	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
 
 	;newest first, so the line that just appeared is the one on screen and
 	;nothing has to be scrolled
-	FleetGui.Add("Text", "x16 y328 w588 h1 +0x10")
+	FleetGui.Add("Text", "x16 y340 w588 h1 +0x10")
 	FleetGui.SetFont("s8", "Consolas")
-	FleetGui.Add("Edit", "x16 y336 w588 h112 ReadOnly -Wrap +VScroll vFleetLog", "")
+	FleetGui.Add("Edit", "x16 y348 w588 h112 ReadOnly -Wrap +VScroll vFleetLog", "")
 	FleetGui.SetFont("s8 cDefault Norm", "Tahoma")
 
-	FleetGui.Add("Button", "x16 y456 w100 h26", "Settings").OnEvent("Click", ext_FleetSetupGUI)
-	FleetGui.Add("Button", "x504 y456 w100 h26", "Close").OnEvent("Click", ext_FleetGUIClose)
+	FleetGui.Add("Button", "x16 y468 w100 h26", "Settings").OnEvent("Click", ext_FleetSetupGUI)
+	FleetGui.Add("Button", "x504 y468 w100 h26", "Close").OnEvent("Click", ext_FleetGUIClose)
 
 	ext_FleetRefresh()
 	SetTimer ext_FleetRefresh, 1000
-	FleetGui.Show("w620 h494")
+	FleetGui.Show("w620 h506")
 }
 
 ext_FleetGUIClose(*) {
@@ -1478,6 +1489,7 @@ ext_FleetRefresh() {
 	if !(IsSet(FleetGui) && IsObject(FleetGui))
 		return
 	try FleetGui["FleetSummary"].Text := ext_fleetSummary()
+	try FleetGui["FleetMine"].Text := ext_fleetMyJob()
 
 	;State decides first and the server only afterwards: a macro that is not
 	;running belongs under OFFLINE whatever server it was last seen in, since
@@ -1514,9 +1526,16 @@ ext_FleetPaintRow(prefix, pool, list, showFree) {
 
 	Loop pool {
 		i := A_Index
-		if (i <= list.Length) {
+		;more accounts than cards: the last card says how many are not drawn,
+		;rather than the section quietly stopping at six
+		if ((i = pool) && (list.Length > pool)) {
+			ext_FleetSetCard(prefix i, "+" (list.Length - pool + 1) " more", ""
+				, "see Settings", "E6E6E6", true)
+			ext_fleetSeatRow[prefix i] := 0
+		}
+		else if (i <= list.Length) {
 			p := list[i]
-			ext_FleetSetCard(prefix i, ext_FleetSeatName(p), ext_FleetCell(p, "role")
+			ext_FleetSetCard(prefix i, ext_FleetSeatName(p), ext_FleetSeatRole(p)
 				, ext_FleetSeatFoot(p), ext_FleetSeatColour(p), true)
 			ext_fleetSeatRow[prefix i] := ext_FleetNum(p, "row")
 		}
@@ -1617,13 +1636,49 @@ ext_FleetSeatFoot(p) {
 ;Colour says state at a glance, which is the whole reason for drawing seats
 ;rather than listing rows.
 ext_FleetSeatColour(p) {
-	if (ext_FleetCell(p, "state") = "offline")
-		return "DCDCDC"
-	if (ext_FleetCell(p, "state") != "online")
-		return "F5E0D8"
+	global ext_fleetPeers
+
+	switch roster_SeatState(p, roster_LeadField(ext_fleetPeers)) {
+		case "offline": return "DCDCDC"
+		case "silent": return "F5E0D8"
+		case "away": return "FFF1B8"
+	}
 	if (ext_FleetCell(p, "guiding") != "")
 		return "FAE8C6"
 	return "DCE8F5"
+}
+;The middle line of a card: the role, and the field for the accounts whose field
+;is the point - the main, and the two that follow it. "fuzzy - Bamboo" under a
+;main in Pine Tree is what makes a follower that is not following visible.
+ext_FleetSeatRole(p) {
+	local role := ext_FleetCell(p, "role"), field := ext_FleetCell(p, "field")
+
+	if ((field != "") && ((role = "main") || roster_Follows(role)))
+		return role " - " field
+	return role
+}
+
+;What this account is doing, as one sentence for the top of the panel.
+ext_fleetMyJob() {
+	global FleetCheck, FleetRow, ext_fleetMyRole, ext_fleetFollowField, ext_fleetMyField
+	global FieldDefault, ext_fleetRefused
+
+	if (!FleetCheck || (FleetRow <= 0) || (ext_fleetRefused != ""))
+		return "This account is not in a fleet."
+	if (ext_fleetMyRole = "")
+		return "This account: role not known yet."
+	if (ext_fleetMyRole = "main")
+		return "This account is the main"
+			. ((ext_fleetMyField != "") ? ", and the followers are sent to " ext_fleetMyField "." : ".")
+	if roster_Follows(ext_fleetMyRole) {
+		if (ext_fleetFollowField = "")
+			return "This account (" ext_fleetMyRole ") follows the main - waiting for it to say where it farms."
+		if !FieldDefault.Has(ext_fleetFollowField)
+			return "This account (" ext_fleetMyRole ") cannot follow the main into " ext_fleetFollowField
+				. ": this macro has no pattern for that field."
+		return "This account (" ext_fleetMyRole ") follows the main into " ext_fleetFollowField "."
+	}
+	return "This account (" ext_fleetMyRole ") farms its own field."
 }
 
 ;Six by default, and whatever the panel says if that ever changes.

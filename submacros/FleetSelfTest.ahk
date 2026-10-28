@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Forty-seven things are checked, each because it is a way the design could be wrong
+;Forty-eight things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -60,6 +60,7 @@
 ;	45. and the rule names the main it found   so the refusal can say who
 ;	46. an edit made anywhere beats both copies its own and the fleet's
 ;	47. a roster with two mains is recognised  so a hand-up cannot sneak one in
+;	48. a follower away from the main shows    the panel says what is wrong
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -1011,6 +1012,15 @@ Report(*) {
 		&& fleet_ConfigBeats(ev1, { version: 7, by: 1 })
 		&& fleet_ConfigBeats(ev2, { version: 9, by: 2 })
 		&& fleet_ConfigBeats(ev2, { version: 7, by: 1 })) && allOk
+	;What a card's colour says. A follower standing somewhere other than the
+	;main's field is the one thing worth seeing at a glance across the panel.
+	allOk := Check(lines, "a follower away from the main's field is told apart"
+		, (roster_SeatState(Map("state", "online", "role", "fuzzy", "field", "Bamboo"), "Pine Tree") = "away")
+		&& (roster_SeatState(Map("state", "online", "role", "tad", "field", "pine tree"), "Pine Tree") = "online")
+		&& (roster_SeatState(Map("state", "online", "role", "guid", "field", "Bamboo"), "Pine Tree") = "online")
+		&& (roster_SeatState(Map("state", "online", "role", "fuzzy", "field", "Bamboo"), "") = "online")
+		&& (roster_SeatState(Map("state", "stale", "role", "fuzzy", "field", "Bamboo"), "Pine Tree") = "silent")
+		&& (roster_SeatState(Map("state", "offline", "role", "fuzzy"), "Pine Tree") = "offline")) && allOk
 	allOk := Check(lines, "a roster with two mains is recognised"
 		, roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "main" }))
 		&& !roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "tad" }))
