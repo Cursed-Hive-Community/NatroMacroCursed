@@ -2684,9 +2684,16 @@ ext_FleetRosterSelect(ctrl, item, selected) {
 ;list has never seen would be a row no macro answers to.
 ext_FleetRosterSave(*) {
 	global FleetSetupGui, FleetRoster, FleetRosterPath, FleetEditRow
+	local main
 
 	if (!FleetEditRow || !FleetRoster.Has(FleetEditRow)) {
 		MsgBox "Pick an account in the list first.", "Fleet", 0x40030
+		return
+	}
+	if ((FleetSetupGui["FleetEditRole"].Text = "main")
+		&& (main := roster_MainOtherThan(FleetRoster, FleetEditRow))) {
+		MsgBox FleetRoster[main].name " is already the main.`n`nChange "
+			. FleetRoster[main].name "'s role first - the fleet has one main.", "Fleet", 0x40030
 		return
 	}
 	FleetRoster[FleetEditRow].name := Trim(FleetSetupGui["FleetEditName"].Value)

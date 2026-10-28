@@ -904,7 +904,7 @@ fleet_OnOpen(s, frame) {
 ;and uses it for every reconnection afterwards.
 fleet_OnBind(s, frame) {
 	global roster, rosterPath, rosterStamp, bindUntil, secret, fleetId
-	local row, again
+	local row, again, main
 
 	if (nowUnix() > bindUntil) {
 		fleet_Log("refused a bind: the door is shut")
@@ -914,6 +914,13 @@ fleet_OnBind(s, frame) {
 	again := (row := fleet_RowFor(frame)) ? 1 : 0
 	if !again
 		row := fleet_NextRow()
+	if ((fleet_Field(frame, "role") = "main") && (main := roster_MainOtherThan(roster, row))) {
+		fleet_Log("refused a bind as main: row " main " already is")
+		sock_SendLine(s, fleet_Frame("BYE", Map("why", roster[main].name
+			. " is already the main of this fleet. Join with another role, or change "
+			. roster[main].name "'s role first.")))
+		return
+	}
 	roster[row] := { row: row
 		, name: fleet_Field(frame, "name", "row " row)
 		, role: fleet_Field(frame, "role", "guid")

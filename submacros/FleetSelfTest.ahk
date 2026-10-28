@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Forty-three things are checked, each because it is a way the design could be wrong
+;Forty-five things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -56,6 +56,8 @@
 ;	41. only a follower leaves for the main    and never for the field it is in
 ;	42. a fleet left behind loses its coordinator  a new fleet can have the port
 ;	43. and nobody else's                      another fleet's is left running
+;	44. a second main is refused at the door   the followers have one leader
+;	45. and the rule names the main it found   so the refusal can say who
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -221,6 +223,7 @@ coordPid := 0, rivalPid := 0, finished := 0
 boundRow := -1              ;which row a second setup of row 3 was handed back
 boundFid := ""              ;and which fleet it was told it had joined
 clientD := 0, clientE := 0
+secondMainWhy := ""         ;what a macro binding as a second main was told
 srvGen := ""                ;the generation of the server list last seen
 srv := Map()                ;the server list as the main macro holds it
 srvMainLink := "", srvMainOwner := -1
@@ -272,6 +275,7 @@ SetTimer Rival, -6500
 ;the host opens its door, and an account that already has a row asks for one
 SetTimer Open, -6000
 SetTimer Rebind, -6800
+SetTimer SecondMain, -7100
 ;a server deleted, late enough that the first list has certainly arrived
 SetTimer DropServer, -9000
 ;the main says which configuration it holds, which should come back to it
@@ -430,6 +434,26 @@ Open(*) {
 ;reinstall looks like from here. It should be handed row 3 back. Minting a
 ;fourth row would leave row 3 in the roster offline for ever, and an offline
 ;row is a row somebody goes looking for a reason behind.
+;An account binding as main while row 1 already is. Two mains would give the
+;followers two fields to follow and cut every trip short.
+SecondMain(*) {
+	global PORT
+	sock_Connect("127.0.0.1", PORT, OnSecondMain)
+}
+OnSecondMain(s, event, data) {
+	global secondMainWhy
+	local frame
+
+	if (event = "connect") {
+		if (data = "")
+			sock_SendLine(s, fleet_Frame("BIND", Map("name", "another main"
+				, "role", "main", "user", "secondmain", "machine", "a third machine")))
+		return
+	}
+	if ((event = "line") && (frame := fleet_Parse(data)))
+		secondMainWhy := frame.verb ": " fleet_Field(frame, "why")
+}
+
 Rebind(*) {
 	global clientD
 
@@ -760,7 +784,7 @@ OnBad(s, event, data) {
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
 	global HANDROSTER, handPid, handRefused, handTold, handDoor
-	global beaconSeen, HANDPORT, beaconSock, strayPid, keepPid, strayStopped
+	global beaconSeen, HANDPORT, beaconSock, strayPid, keepPid, strayStopped, secondMainWhy
 	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe, boundFid
 	global srv, srvGen, srvMainLink, srvMainOwner
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
@@ -969,6 +993,13 @@ Report(*) {
 		&& (handTold.Has(2) && (handTold[2] = "2/1"))
 		&& InStr(handLog, "handed the coordinator on")
 		&& !ProcessExist(handPid)) && allOk
+	allOk := Check(lines, "a second main is refused at the door"
+		, InStr(secondMainWhy, "BYE") && InStr(secondMainWhy, "already the main")) && allOk
+	allOk := Check(lines, "the rule finds the main, and not the account itself"
+		, (roster_MainOtherThan(Map(1, { role: "main" }, 2, { role: "fuzzy" }), 3) = 1)
+		&& (roster_MainOtherThan(Map(1, { role: "main" }, 2, { role: "fuzzy" }), 1) = 0)
+		&& (roster_MainOtherThan(Map(2, { role: "fuzzy" }), 3) = 0)) && allOk
+	lines.Push("a second main was told: " ((secondMainWhy != "") ? secondMainWhy : "nothing"))
 	;the stray, found by its fleet id among this folder's processes
 	allOk := Check(lines, "the coordinator of a fleet left behind is stopped"
 		, (strayStopped = 1) && strayPid && !ProcessExist(strayPid)) && allOk

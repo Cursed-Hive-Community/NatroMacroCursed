@@ -112,6 +112,21 @@ roster_LeadField(rows) {
 ;different. Compared without regard to case, like every field name in Natro:
 ;a field written with another capital is the same field, and reading it as a
 ;move would cut every trip short.
+;The row of the account that is already the main, other than row itself, or 0.
+;
+;One main, because the followers follow one field: two mains would each report
+;theirs, the GOTO and the roster would disagree on every beat, and every trip
+;would be cut short. Asked wherever a role is set - binding, and the editor -
+;so the second main is refused with a name rather than accepted and fought.
+roster_MainOtherThan(rows, row) {
+	local r, e
+
+	for r, e in rows
+		if ((r != row) && (e.role = "main"))
+			return r
+	return 0
+}
+
 roster_FollowMoves(role, target, current) {
 	return roster_Follows(role) && (target != "") && (target != current)
 }

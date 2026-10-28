@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These forty-three checks run the real coordinator process, the real socket
+These forty-five checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -113,6 +113,8 @@ layer and the real protocol. They are the strongest evidence in the repository.
       differing only in capitals is not a move - the rule, not the gather loop
 - [x] the coordinator of a fleet being left is found among this folder's
       processes by its fleet id and stopped, and another fleet's is left running
+- [x] binding as main while another account is the main is refused, and the
+      refusal names that account
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -467,6 +469,8 @@ PCs, two macros, and a network you can unplug.
 - [ ] it farms that field exactly as one of its own - boost detection and
       gather-start hotkeys included
 - [ ] a `guid` or an `atk` never follows
+- [ ] the roster editor refuses a second main with the current main's name
+      `loads`
 - [ ] the four Advanced switches decide which of the main's trips are followed,
       and only the **main's** switches matter
 - [ ] a suppressed trip leaves the residents where they are rather than recalling
