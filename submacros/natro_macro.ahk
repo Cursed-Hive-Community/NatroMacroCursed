@@ -13812,8 +13812,10 @@ nm_StickerStack(resetBeforeTravel := 1){
 
 	if (StickerStackCheck && (nowUnix()-LastStickerStack)>StickerStackTimer) {
 		loop 5 {
+			;no convert on the way: the stack is the errand, and converting
+			;comes after it, under the stack
 			if resetBeforeTravel
-				nm_Reset()
+				nm_Reset(2, 2000, 0, 1)
 			nm_setStatus("Traveling", "Sticker Stack" ((A_Index > 1) ? " (Attempt " A_Index ")" : ""))
 
 			nm_gotoCollect("stickerstack")
@@ -14140,7 +14142,9 @@ nm_toBooster(location){
 	static blueBoosterFields:=["Pine Tree", "Bamboo", "Blue Flower", "Stump"], redBoosterFields:=["Rose", "Strawberry", "Mushroom", "Pepper"], mountainBoosterfields:=["Cactus", "Pumpkin", "Pineapple", "Spider", "Clover", "Dandelion", "Sunflower"], coconutBoosterfields:=["Coconut"]
 	
 	Loop 2 {
-		nm_Reset(0)
+		;with the blue booster interrupt on, the trip is timed to land as the
+		;cooldown ends and a convert on the way would make it minutes late
+		nm_Reset(0, 2000, !((location = "blue") && BlueBoosterInterruptCheck))
 		nm_setStatus("Traveling", ((location="Mountain") ? "Mountain Top Booster" : StrTitle(location) " Field Booster") . ((A_Index=2) ? " (Attempt 2)" : ""))
 		(location="coconut") ? (nm_gotoCollect("coconutdis")) : (nm_gotoBooster(location))
 		if (nm_imgSearch("e_button.png",30,"high")[1] = 0) {
@@ -17293,9 +17297,12 @@ nm_GoGather(){
 					ext_stickerStackInterrupt(1, 1)
 					return
 				}
+				;straight from the field as well: the forty seconds it leaves early
+				;are the reset and the walk to the booster, nothing else
 				if (!resident && ext_blueBoosterReady()) {
-					interruptReason := "Blue Booster Ready"
-					break
+					ext_gatherAbandon()
+					nm_toBooster("blue")
+					return
 				}
 				if DisconnectCheck() {
 					interruptReason := "Disconnect"

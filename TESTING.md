@@ -270,6 +270,8 @@ the cooldown.
 
 - [ ] the macro breaks off a gathering trip **40 seconds before** the 45 minute
       cooldown is up (2660s), rather than waiting for the trip to end
+- [ ] it goes **straight from the field**, with no walk home and no convert on
+      the way - the forty seconds are the reset and the walk `loads`
 - [ ] it arrives as the booster becomes available instead of standing there
 - [ ] pressing it starts a fresh lease owed its own renewal
 - [ ] a trip that found no booster to press - it arrived early - goes again
@@ -286,6 +288,8 @@ the cooldown.
       balloon convert is **resumed** afterwards `loads`
 - [ ] a reset that is about to convert places a due stack first `loads`
 - [ ] five attempts at reaching the stack rather than two `loads`
+- [ ] **no convert on the way** to the stack: the reset before the trip no
+      longer converts `loads`
 - [ ] it then returns to the hive to convert **under** the stack - the second
       half is the point of the first
 - [ ] a placement that failed retries after 15 seconds, and never twice inside a
