@@ -104,9 +104,11 @@ Natro again and does all of the above.
 
 # Changing an account later
 
-On the main's macro, Settings, section **3 - the accounts**: click the
-account, change its **Role**, press **Update**. An alt taken off `tad` or
-`fuzzy` stops following straight away, without a restart.
+On any macro in the fleet, Settings, section **3 - the accounts**: click the
+account, change its **Role**, press **Update**. The change reaches every
+macro. A fleet has one main: to move the role, change the old main first.
+An alt taken off `tad` or `fuzzy` stops following straight away, without a
+restart.
 
 To take a macro out of the fleet: its own Settings, **Leave the fleet**.
 

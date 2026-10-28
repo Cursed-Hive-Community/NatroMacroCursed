@@ -2253,6 +2253,44 @@ ext_fleetServerHost() {
 	return (FleetRow <= 0) || ext_fleetCoordinating()
 }
 
+;May the roster or the servers be changed from this macro's windows?
+;
+;From any macro in the fleet, on the user's choice: they are all one person's
+;accounts and all hold the secret. Off the coordinator, though, an edit is made
+;to this machine's replica and handed up - so the replica has to hold the whole
+;of the fleet's configuration first. One that had not finished arriving would
+;be handed up with its gaps at a higher version, and the coordinator would take
+;it and drop every account it was missing.
+ext_fleetEditable(what) {
+	global ext_fleetSock
+
+	if ext_fleetServerHost()
+		return 1
+	return ext_fleetSock && ext_fleetReplicaReady(what)
+}
+;The replica is whole, and is the fleet's own or a newer edit of it.
+ext_fleetReplicaReady(what) {
+	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant, ext_fleetRosterDisk
+	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant, ext_fleetServerDisk
+
+	if (what = "roster")
+		return ext_fleetReplicaWhole(ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant)
+			&& !fleet_ConfigBeats(ext_fleetRosterVer, ext_fleetRosterDisk)
+	return ext_fleetReplicaWhole(ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant)
+		&& !fleet_ConfigBeats(ext_fleetServerVer, ext_fleetServerDisk)
+}
+;Why the fields are grey, when they are. A field that is grey for no stated
+;reason reads as broken.
+ext_fleetEditNote(what) {
+	global ext_fleetSock
+
+	if ext_fleetEditable(what)
+		return ext_fleetServerHost() ? "" : "Changes go to the whole fleet."
+	return !ext_fleetSock
+		? "Connect to the fleet to change this."
+		: "Waiting for the fleet's copy before this can be changed."
+}
+
 ;May this macro give the coordinator orders?
 ;
 ;A different question from whether it is running one. The two were one number
@@ -2289,7 +2327,9 @@ ext_fleetCoordinating() {
 ext_fleetServerList() {
 	global FleetServers, FleetServersPath
 
-	if ext_fleetServerHost() {
+	;the file whenever it can be edited, since that is what an edit writes -
+	;the broadcast only while it cannot, as the one picture there is
+	if (ext_fleetEditable("servers") && (ext_fleetServerHost() || FileExist(FleetServersPath))) {
 		FleetServers := servers_Load(FleetServersPath)
 		return FleetServers
 	}
@@ -2378,16 +2418,20 @@ ext_FleetServersClose(*) {
 ;Redrawn only when it has actually changed, because a redraw loses whichever
 ;line was selected.
 ext_FleetServerWatch() {
-	global FleetServersGui, FleetServersPath, FleetServerStamp, ext_fleetServerGen
+	global FleetServersGui, FleetServersPath, FleetServerStamp, ext_fleetServerVer
 	local stamp
 
 	if !(IsSet(FleetServersGui) && IsObject(FleetServersGui))
 		return
-	stamp := ext_fleetServerHost()
-		? (FileExist(FleetServersPath)
+	;The file, the version the fleet runs, and whether it can be edited - any
+	;of the three changes what the window shows. This read a generation that
+	;nothing ever assigned, which would have thrown the first time the window
+	;was open on a macro that does not coordinate.
+	stamp := (FileExist(FleetServersPath)
 			? FileGetTime(FleetServersPath, "M") "/" FileGetSize(FleetServersPath)
 			: "none")
-		: ext_fleetServerGen
+		. "/" ext_fleetServerVer.version "/" ext_fleetServerVer.by
+		. "/" ext_fleetEditable("servers")
 	if (stamp = FleetServerStamp)
 		return
 	FleetServerStamp := stamp
@@ -2396,7 +2440,7 @@ ext_FleetServerWatch() {
 
 ext_FleetServerDraw() {
 	global FleetServersGui, FleetServers, FleetServerSlot
-	local list, keys := [], slot, e, editable := ext_fleetServerHost()
+	local list, keys := [], slot, e, editable := ext_fleetEditable("servers")
 
 	if !(IsSet(FleetServersGui) && IsObject(FleetServersGui))
 		return
@@ -2418,8 +2462,8 @@ ext_FleetServerDraw() {
 		FleetServersGui["FleetServerList"].ModifyCol(A_Index, "AutoHdr")
 
 	try FleetServersGui["FleetServerNote"].Text := editable
-		? "Set here once. The coordinator hands the list to every macro in the fleet."
-		: "Shown as the fleet broadcast it. Change it on " ext_FleetOr(ext_fleetCoordWho(), "whichever macro coordinates") "."
+		? "Set here once, on any macro. Every macro in the fleet gets the list."
+		: ext_fleetEditNote("servers")
 	for _, slot in ["FleetServerName", "FleetServerLink", "FleetServerOwner"
 		, "FleetServerUpdate", "FleetServerAdd", "FleetServerDel"]
 		try FleetServersGui[slot].Enabled := editable
@@ -2603,26 +2647,36 @@ ext_FleetShort(text, n) {
 ;here keeps the edit attributed to the macro that made it, which is what
 ;settles a tie between two edits made on both sides of a split.
 ext_fleetSaveRoster() {
-	global FleetRoster, FleetRosterPath, FleetRow, ext_fleetRosterDisk
+	global FleetRoster, FleetRosterPath, FleetRow, ext_fleetRosterDisk, ext_fleetRosterVer
 	local ver := fleet_ConfigVersion(FleetRosterPath)
 
-	ext_fleetRosterDisk := { version: ver.version + 1, by: FleetRow }
+	ext_fleetRosterDisk := fleet_EditVersion(ver
+		, ext_fleetServerHost() ? ver : ext_fleetRosterVer, FleetRow)
 	if roster_Save(FleetRosterPath, FleetRoster
-		, ext_fleetRosterDisk.version, ext_fleetRosterDisk.by)
+		, ext_fleetRosterDisk.version, ext_fleetRosterDisk.by) {
+		;off the coordinator the file is a replica: the change reaches the
+		;fleet by being handed up, and comes back to everybody from there
+		if !ext_fleetServerHost()
+			ext_fleetHandUp("roster")
 		return 1
+	}
 	ext_fleetProblem("could not write " FleetRosterPath " - the change was lost")
 	MsgBox "The change could not be written to`n`n" FleetRosterPath
 		. "`n`nIt has not been saved. Check the folder is writable.", "Fleet", 0x40010
 	return 0
 }
 ext_fleetSaveServers() {
-	global FleetServers, FleetServersPath, FleetRow, ext_fleetServerDisk
+	global FleetServers, FleetServersPath, FleetRow, ext_fleetServerDisk, ext_fleetServerVer
 	local ver := fleet_ConfigVersion(FleetServersPath)
 
-	ext_fleetServerDisk := { version: ver.version + 1, by: FleetRow }
+	ext_fleetServerDisk := fleet_EditVersion(ver
+		, ext_fleetServerHost() ? ver : ext_fleetServerVer, FleetRow)
 	if servers_Save(FleetServersPath, FleetServers
-		, ext_fleetServerDisk.version, ext_fleetServerDisk.by)
+		, ext_fleetServerDisk.version, ext_fleetServerDisk.by) {
+		if !ext_fleetServerHost()
+			ext_fleetHandUp("servers")
 		return 1
+	}
 	ext_fleetProblem("could not write " FleetServersPath " - the change was lost")
 	MsgBox "The change could not be written to`n`n" FleetServersPath
 		. "`n`nIt has not been saved. Check the folder is writable.", "Fleet", 0x40010
@@ -2651,19 +2705,12 @@ ext_FleetRosterDraw() {
 	Loop 3
 		FleetSetupGui["FleetRosterList"].ModifyCol(A_Index, "AutoHdr")
 
-	;The table is live on every macro now - it is read from the replica, which
-	;the coordinator keeps up to date. Editing is not: an edit here writes the
-	;local file, and the next generation of the replica writes straight over it.
-	;Better to refuse than to accept a change and quietly lose it. Routing the
-	;edit to the coordinator is what makes this editable everywhere, and that
-	;is not written yet.
-	for _, name in ["FleetEditName", "FleetEditRole", "FleetEditUser"]
-		try FleetSetupGui[name].Enabled := ext_fleetServerHost()
-	for _, name in ["FleetRosterUpdate", "FleetRosterRemove"]
-		try FleetSetupGui[name].Enabled := ext_fleetServerHost()
-	try FleetSetupGui["FleetRosterNote"].Text := ext_fleetServerHost()
-		? ""
-		: "Changed on " ext_FleetOr(ext_fleetCoordWho(), "whichever macro coordinates")
+	;Editable on every macro in the fleet - see ext_fleetEditable for the one
+	;condition off the coordinator, and the note for why it is grey when not.
+	for _, name in ["FleetEditName", "FleetEditRole", "FleetEditUser"
+		, "FleetRosterUpdate", "FleetRosterRemove"]
+		try FleetSetupGui[name].Enabled := ext_fleetEditable("roster")
+	try FleetSetupGui["FleetRosterNote"].Text := ext_fleetEditNote("roster")
 }
 
 ext_FleetRosterSelect(ctrl, item, selected) {

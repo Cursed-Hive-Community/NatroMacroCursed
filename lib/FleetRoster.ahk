@@ -127,6 +127,17 @@ roster_MainOtherThan(rows, row) {
 	return 0
 }
 
+;Does this roster have more than one main? Asked of a whole configuration
+;handed up, which never passed through an editor that could refuse it.
+roster_HasTwoMains(rows) {
+	local r, e
+
+	for r, e in rows
+		if ((e.role = "main") && roster_MainOtherThan(rows, r))
+			return 1
+	return 0
+}
+
 roster_FollowMoves(role, target, current) {
 	return roster_Follows(role) && (target != "") && (target != current)
 }
@@ -307,6 +318,15 @@ fleet_ConfigVersion(path) {
 ;two rules that disagree are one rule too many. What matters is that it is
 ;decided the same way on every machine without anybody sending a message about
 ;it, and that the copy that loses is kept rather than thrown away.
+;The version an edit is saved at: one past whichever copy is ahead, this
+;disk's or the fleet's, written by the row that made it. A macro that is not
+;the coordinator edits its replica, and the replica can be behind the fleet
+;for a beat - one past the replica alone could then lose to what the fleet
+;already runs, and the edit would be refused as stale.
+fleet_EditVersion(disk, fleet, by) {
+	return { version: Max(disk.version, fleet.version) + 1, by: by, bench: 0 }
+}
+
 fleet_ConfigBeats(a, b) {
 	if (fleet_IsBench(a) != fleet_IsBench(b))
 		return !fleet_IsBench(a)

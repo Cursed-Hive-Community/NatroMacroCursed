@@ -730,6 +730,11 @@ fleet_OnSetRow(s, frame) {
 		fleet_KeepConflict(rosterPath, upRow.rows, ver, rosterVer, "roster")
 		return 0
 	}
+	;one main, whoever edited it - see roster_MainOtherThan
+	if roster_HasTwoMains(upRow.rows) {
+		fleet_Event("refused the roster row " ver.by " handed up: it has two mains")
+		return 0
+	}
 	roster := upRow.rows, rosterVer := ver
 	roster_Save(rosterPath, roster, ver.version, ver.by, fleet_IsBench(ver))
 	rosterStamp := fleet_RosterStamp()

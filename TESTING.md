@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These forty-five checks run the real coordinator process, the real socket
+These forty-seven checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -115,6 +115,8 @@ layer and the real protocol. They are the strongest evidence in the repository.
       processes by its fleet id and stopped, and another fleet's is left running
 - [x] binding as main while another account is the main is refused, and the
       refusal names that account
+- [x] an edit made on any macro is saved at a version beating both its own
+      copy and the fleet's, and a roster with two mains is recognised
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -506,8 +508,11 @@ it has been watched happen.
 - [ ] a server added on the coordinator reaches every macro
 - [ ] a server deleted disappears everywhere within a beat
 - [ ] the owner dropdown lists accounts that have never connected
-- [ ] the table and the servers window are read-only off the coordinator, and say
-      where to go
+- [ ] the table and the servers window can be edited on **any** macro in the
+      fleet once its copy is whole, and the change reaches every macro `loads`
+- [ ] off the coordinator they are grey while disconnected or still receiving,
+      and say which - **built in the VM**, the note dumped
+- [ ] a handed-up roster with two mains is refused by the coordinator `loads`
 - [ ] **the stale-copy case**: unplug two machines, change the configuration on
       the rest, plug the two back in first so one takes over, and check that the
       good configuration wins and nobody's file was overwritten

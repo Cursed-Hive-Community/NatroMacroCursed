@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Forty-five things are checked, each because it is a way the design could be wrong
+;Forty-seven things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -58,6 +58,8 @@
 ;	43. and nobody else's                      another fleet's is left running
 ;	44. a second main is refused at the door   the followers have one leader
 ;	45. and the rule names the main it found   so the refusal can say who
+;	46. an edit made anywhere beats both copies its own and the fleet's
+;	47. a roster with two mains is recognised  so a hand-up cannot sneak one in
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -999,6 +1001,20 @@ Report(*) {
 		, (roster_MainOtherThan(Map(1, { role: "main" }, 2, { role: "fuzzy" }), 3) = 1)
 		&& (roster_MainOtherThan(Map(1, { role: "main" }, 2, { role: "fuzzy" }), 1) = 0)
 		&& (roster_MainOtherThan(Map(2, { role: "fuzzy" }), 3) = 0)) && allOk
+	;An edit made on any macro is handed up, and the coordinator takes it only
+	;if its version beats what it serves - so the edit has to beat both the copy
+	;on this disk and the one the fleet runs, whichever is ahead.
+	ev1 := fleet_EditVersion({ version: 5, by: 1 }, { version: 7, by: 1 }, 3)
+	ev2 := fleet_EditVersion({ version: 9, by: 2 }, { version: 7, by: 1 }, 3)
+	allOk := Check(lines, "an edit made anywhere beats both copies"
+		, (ev1.version = 8) && (ev1.by = 3)
+		&& fleet_ConfigBeats(ev1, { version: 7, by: 1 })
+		&& fleet_ConfigBeats(ev2, { version: 9, by: 2 })
+		&& fleet_ConfigBeats(ev2, { version: 7, by: 1 })) && allOk
+	allOk := Check(lines, "a roster with two mains is recognised"
+		, roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "main" }))
+		&& !roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "tad" }))
+		&& !roster_HasTwoMains(Map(4, { role: "tad" }))) && allOk
 	lines.Push("a second main was told: " ((secondMainWhy != "") ? secondMainWhy : "nothing"))
 	;the stray, found by its fleet id among this folder's processes
 	allOk := Check(lines, "the coordinator of a fleet left behind is stopped"
