@@ -106,3 +106,21 @@ fleet_NewSecret() {
 		out .= SubStr(alphabet, Random(1, StrLen(alphabet)), 1)
 	return out
 }
+
+;What a macro does with a beacon of its own fleet, given the term it carries,
+;the highest term this macro has obeyed, and whether it is connected.
+;
+;"ignore" a lower term: that coordinator has been replaced and has not noticed,
+;and a macro that latched onto it would obey stale orders while the fleet ran
+;elsewhere - P3, the split brain. "switch" to a higher one while connected: the
+;fleet has moved on and this macro is talking to the past. "note" otherwise,
+;which records where the fleet is. A beacon with no term comes from an older
+;coordinator and is not held against it, and a macro that has obeyed nobody
+;yet has nothing to compare.
+fleet_BeaconVerdict(beaconTerm, myTerm, connected) {
+	if (!beaconTerm || !myTerm)
+		return "note"
+	if (beaconTerm < myTerm)
+		return "ignore"
+	return ((beaconTerm > myTerm) && connected) ? "switch" : "note"
+}

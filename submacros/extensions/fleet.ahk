@@ -65,10 +65,13 @@ ext_fleetCoordWho() {
 }
 
 ext_fleetCandidates() {
-	global FleetAddress, ext_fleetFoundAt
+	global FleetAddress, ext_fleetFoundAt, ext_fleetPrefer
 	local list := [], a
 
-	for _, a in ["127.0.0.1", ext_fleetFoundAt, FleetAddress] {
+	;a coordinator heard on a higher term than the one this macro was talking
+	;to goes first - otherwise loopback would hand it straight back to the
+	;replaced one on this machine
+	for _, a in [ext_fleetPrefer, "127.0.0.1", ext_fleetFoundAt, FleetAddress] {
 		if ((a = "") || ext_fleetElsewhere(a) || ext_fleetHasAddr(list, a))
 			continue
 		list.Push(a)
@@ -179,6 +182,24 @@ ext_fleetFinishTakeOver() {
 ;Listen for the coordinator's beacon. One socket, opened once and kept for the
 ;life of the macro: it is how a coordinator that has moved gets found again
 ;without anybody editing anything.
+;Leave the coordinator this macro is connected to for one on a higher term.
+;Once per ten seconds at most: a beacon goes out every two, and a switch that
+;has not finished connecting is not a reason to start another.
+ext_fleetSwitch() {
+	global ext_fleetSock, ext_fleetPrefer
+	static lastAt := 0
+
+	if ((nowUnix() - lastAt) < 10)
+		return 0
+	lastAt := nowUnix()
+	ext_fleetNote("a coordinator on a higher term answers at " ext_fleetPrefer
+		. " - moving to it")
+	if ext_fleetSock
+		sock_Close(ext_fleetSock), ext_fleetSock := 0
+	ext_fleetConnect()
+	return 1
+}
+
 ext_fleetDiscover() {
 	global FleetPort, ext_fleetBeaconSock
 
@@ -193,7 +214,8 @@ ext_fleetDiscover() {
 ;carries that fingerprint rather than the secret itself.
 ext_fleetOnBeacon(s, event, data, from) {
 	global FleetSecret, ext_fleetFoundAt, ext_fleetSock, ext_fleetOpen
-	local frame := fleet_Parse(data)
+	global ext_fleetTerm, ext_fleetPrefer
+	local frame := fleet_Parse(data), verdict
 
 	if (!frame || (frame.verb != "FLEET"))
 		return
@@ -203,7 +225,18 @@ ext_fleetOnBeacon(s, event, data, from) {
 		ext_fleetOpen[from] := frame.fields
 	if (fleet_Field(frame, "id") != fleet_Fingerprint(FleetSecret))
 		return
+	;the highest term wins here as it does on the heartbeat - see
+	;fleet_BeaconVerdict
+	verdict := fleet_BeaconVerdict(fleet_Num(fleet_Field(frame, "term"))
+		, ext_fleetTerm, ext_fleetSock ? 1 : 0)
+	if (verdict = "ignore")
+		return
 	ext_fleetFoundAt := from
+	if (verdict = "switch") {
+		ext_fleetPrefer := from
+		SetTimer ext_fleetSwitch, -50
+		return
+	}
 	;a beacon while we are adrift is the best news we are going to get, so act on
 	;it rather than sitting out whatever backoff happens to be running
 	if !ext_fleetSock

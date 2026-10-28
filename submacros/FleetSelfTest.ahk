@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Forty-eight things are checked, each because it is a way the design could be wrong
+;Forty-nine things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -61,6 +61,7 @@
 ;	46. an edit made anywhere beats both copies its own and the fleet's
 ;	47. a roster with two mains is recognised  so a hand-up cannot sneak one in
 ;	48. a follower away from the main shows    the panel says what is wrong
+;	49. a higher term's beacon wins            a stale coordinator loses its macros
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -1021,6 +1022,17 @@ Report(*) {
 		&& (roster_SeatState(Map("state", "online", "role", "fuzzy", "field", "Bamboo"), "") = "online")
 		&& (roster_SeatState(Map("state", "stale", "role", "fuzzy", "field", "Bamboo"), "Pine Tree") = "silent")
 		&& (roster_SeatState(Map("state", "offline", "role", "fuzzy"), "Pine Tree") = "offline")) && allOk
+	;P3. A macro used to latch onto the first beacon of its fleet whatever its
+	;term, so a coordinator that had been replaced could keep the macros that
+	;happened to hear it first. The highest term wins, on the beacon as on the
+	;heartbeat; no term at all is an older coordinator and is not held against it.
+	allOk := Check(lines, "a beacon with a higher term wins, a lower one is ignored"
+		, (fleet_BeaconVerdict(1, 3, 1) = "ignore")
+		&& (fleet_BeaconVerdict(3, 3, 1) = "note")
+		&& (fleet_BeaconVerdict(4, 3, 1) = "switch")
+		&& (fleet_BeaconVerdict(4, 3, 0) = "note")
+		&& (fleet_BeaconVerdict(2, 0, 0) = "note")
+		&& (fleet_BeaconVerdict(0, 3, 1) = "note")) && allOk
 	allOk := Check(lines, "a roster with two mains is recognised"
 		, roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "main" }))
 		&& !roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "tad" }))

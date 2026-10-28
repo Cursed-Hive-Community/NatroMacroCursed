@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These forty-eight checks run the real coordinator process, the real socket
+These forty-nine checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -119,6 +119,8 @@ layer and the real protocol. They are the strongest evidence in the repository.
       copy and the fleet's, and a roster with two mains is recognised
 - [x] a follower whose field is not the main's is told apart from one that is,
       by the rule the cards are coloured with
+- [x] a beacon on a lower term is ignored and one on a higher term moves a
+      connected macro to it, by the rule the macro applies
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -501,7 +503,9 @@ it has been watched happen.
 - [ ] a macro that loses the fleet entirely **carries on farming alone** - the
       governing rule of the whole subsystem
 - [ ] two coordinators cannot both serve: the port is the lock on one machine,
-      and the term is supposed to settle it across machines (**P3, not written**)
+      and across machines a macro follows the highest term it hears, on the
+      beacon as on the heartbeat; the one left behind loses its macros and
+      exits when idle `loads`
 
 ### Configuration, shared
 
@@ -641,16 +645,6 @@ Not bugs to find - bugs already known about, with no fix yet.
   macros are accepted when this macro cannot accept them - but nothing names
   the mandated row outright. Deliberate: the interface says who coordinates and
   nothing else, which is the vocabulary that was asked for.
-- **P3, split brain across machines.** `SO_EXCLUSIVEADDRUSE` stops two
-  coordinators on one machine. Two machines can still each run one, and
-  `ext_fleetOnBeacon` latches onto the first beacon whose fingerprint matches
-  without comparing terms. A macro can therefore attach to a stale coordinator
-  and obey it. The fix is small: highest term wins, on the beacon as well as the
-  heartbeat, and a coordinator that sees a higher term stands down.
-- **P4, editing from anywhere.** The roster and the servers are read everywhere
-  and editable only where the coordinator runs. `SETROW` and `SETSERVER` already
-  carry a whole configuration at a bumped version, so what is left is a gate on
-  who may bump and the interface around it.
 - **Colour has never been seen.** Every palette decision in the Fleet window is
   unverified.
 - **Absolute timestamps cross machines.** `until` on a guiding star comes from

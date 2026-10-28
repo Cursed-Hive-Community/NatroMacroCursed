@@ -2763,6 +2763,8 @@ ext_fleetMyField := "", ext_fleetFollowField := ""
 ;this account's role as the fleet last said it, and the log lines waiting to be
 ;written - see ext_fleetSetRole and ext_fleetNote
 ext_fleetMyRole := "", ext_fleetNotes := []
+;where a coordinator on a higher term was heard, tried first - see ext_fleetSwitch
+ext_fleetPrefer := ""
 ;why the fleet turned this macro away, when it did. A refusal is final, so it
 ;is kept rather than retried - see the BYE case in extensions\fleet.ahk
 ext_fleetRefused := ""
