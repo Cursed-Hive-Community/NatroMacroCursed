@@ -116,6 +116,40 @@ roster_FollowMoves(role, target, current) {
 	return roster_Follows(role) && (target != "") && (target != current)
 }
 
+;End every coordinator started from the macro folder dir for the fleet id, and
+;say how many there were.
+;
+;A macro that creates a new fleet, joins another or leaves still has the old
+;fleet's coordinator running, and on one machine that process holds the port:
+;the new fleet's coordinator cannot bind it, and the macro's own knocks on
+;127.0.0.1 are answered by the old fleet and turned away. That was seen for
+;three minutes on a real install. The process id in memory is not enough - a
+;macro restarted since it launched the coordinator no longer knows it - so the
+;processes are found by what they were started with: this folder's Fleet.ahk,
+;and the fleet id, which is a quoted argument of its own. Another fleet's
+;coordinator, the test bench's for one, is left alone.
+fleet_StopCoordinators(dir, id) {
+	local n := 0, proc, cmd
+
+	if (id = "")
+		return 0
+	try {
+		for proc in ComObjGet("winmgmts:").ExecQuery("SELECT ProcessId, CommandLine"
+			. " FROM Win32_Process WHERE Name LIKE 'AutoHotkey%'") {
+			try cmd := proc.CommandLine
+			catch
+				continue
+			if (InStr(cmd, dir "\submacros\Fleet.ahk") && InStr(cmd, '"' id '"')) {
+				try {
+					ProcessClose(proc.ProcessId)
+					n++
+				}
+			}
+		}
+	}
+	return n
+}
+
 ;Read the roster. Returns a Map of row number to its entry, empty if the file is
 ;not there yet - a fleet with nobody in it is a legitimate starting state, not an
 ;error to report.

@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Forty-one things are checked, each because it is a way the design could be wrong
+;Forty-three things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -54,6 +54,8 @@
 ;	39. an oversized log rotates on line one   a quiet macro's file stays small
 ;	40. the main's field is on the roster      a missed GOTO heals within a beat
 ;	41. only a follower leaves for the main    and never for the field it is in
+;	42. a fleet left behind loses its coordinator  a new fleet can have the port
+;	43. and nobody else's                      another fleet's is left running
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -200,6 +202,11 @@ roster_Save(HANDROSTER, Map(1, { row: 1, name: "main", role: "main", user: ""
 		, machine: "selftest" }), 1, 1)
 try FileDelete RegExReplace(HANDROSTER, "i)\.ini$", ".log")
 handPid := 0, hand1 := 0, hand2 := 0
+;Two coordinators started from this folder for two different fleets, and one
+;of them stopped by fleet id - the stray a macro leaves behind when it creates
+;a new fleet or joins another. Measured: the old one kept the port, the new
+;fleet had no coordinator, and its macros were turned away for minutes.
+strayPid := 0, keepPid := 0, strayStopped := -1
 handRefused := ""           ;what row 2 was told when it asked for a handover
 handDoor := ""              ;and when it tried to open the binding door
 ;The beacon, which had never been checked by anything. It is the whole of
@@ -294,6 +301,7 @@ SetTimer Leave, -11500
 ;of it: at twenty-two seconds it was reading ProcessExist half a second before
 ;the process went, and calling a handover that worked a failure.
 SetTimer Handover, -15000
+SetTimer Stray, -3000
 SetTimer Report, -25000
 return
 
@@ -316,6 +324,22 @@ OnBeacon(s, event, data, from) {
 ;used to be answered by "whoever launched it" - and after a failover that is a
 ;macro which stood in for five minutes. The mandate is passed explicitly here,
 ;as row 1, so row 2 is a macro in the fleet that does not hold the say.
+;Their own ports, rosters and ids, so neither can touch the fleet under test.
+Stray(*) {
+	global strayPid, keepPid, SECRET
+
+	Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" 47658 ' SECRET ' 1 1 "'
+		. A_ScriptDir '\..\settings\fleet_roster_stray.ini" "fstrayold" 1', , , &strayPid
+	Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" 47660 ' SECRET ' 1 1 "'
+		. A_ScriptDir '\..\settings\fleet_roster_keep.ini" "fstraykeep" 1', , , &keepPid
+	SetTimer StrayStop, -2500
+}
+StrayStop(*) {
+	global strayStopped
+
+	strayStopped := fleet_StopCoordinators(RegExReplace(A_ScriptDir, "\\[^\\]+$"), "fstrayold")
+}
+
 Handover(*) {
 	global HANDPORT, SECRET, HANDROSTER, handPid
 
@@ -736,7 +760,7 @@ OnBad(s, event, data) {
 Report(*) {
 	global seenBy, refused, coordPid, rivalPid, finished, clientA, clientB, clientBad
 	global HANDROSTER, handPid, handRefused, handTold, handDoor
-	global beaconSeen, HANDPORT, beaconSock
+	global beaconSeen, HANDPORT, beaconSock, strayPid, keepPid, strayStopped
 	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe, boundFid
 	global srv, srvGen, srvMainLink, srvMainOwner
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
@@ -945,6 +969,20 @@ Report(*) {
 		&& (handTold.Has(2) && (handTold[2] = "2/1"))
 		&& InStr(handLog, "handed the coordinator on")
 		&& !ProcessExist(handPid)) && allOk
+	;the stray, found by its fleet id among this folder's processes
+	allOk := Check(lines, "the coordinator of a fleet left behind is stopped"
+		, (strayStopped = 1) && strayPid && !ProcessExist(strayPid)) && allOk
+	allOk := Check(lines, "and another fleet's coordinator is left running"
+		, keepPid && ProcessExist(keepPid)) && allOk
+	lines.Push("stray coordinators stopped: " strayStopped)
+	if keepPid
+		try ProcessClose(keepPid)
+	if strayPid
+		try ProcessClose(strayPid)
+	for _, f in ["stray", "keep"] {
+		try FileDelete A_ScriptDir "\..\settings\fleet_roster_" f ".ini"
+		try FileDelete A_ScriptDir "\..\settings\fleet_roster_" f ".log"
+	}
 	;the same privilege, and the refusal that used to be silent
 	allOk := Check(lines, "the binding door says no instead of ignoring it"
 		, InStr(handDoor, "only row 1")) && allOk

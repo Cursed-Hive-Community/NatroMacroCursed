@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These forty-one checks run the real coordinator process, the real socket
+These forty-three checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -111,6 +111,8 @@ layer and the real protocol. They are the strongest evidence in the repository.
       back the way a follower reads it, with no GOTO involved
 - [x] only a fuzzy or a tad is pulled out of a field for the main, and a field
       differing only in capitals is not a move - the rule, not the gather loop
+- [x] the coordinator of a fleet being left is found among this folder's
+      processes by its fleet id and stopped, and another fleet's is left running
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.

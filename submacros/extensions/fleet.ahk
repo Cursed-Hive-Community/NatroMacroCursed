@@ -319,6 +319,8 @@ ext_fleetFinishBind() {
 	joined := fleet_IsId(ext_fleetBoundWith.id)
 		? ext_fleetBoundWith.id
 		: fleet_LegacyId(ext_fleetBoundWith.secret)
+	if (joined != ext_fleetId())
+		ext_fleetEndFleetCoord()
 	if (joined != "")
 		ext_FleetSave("FleetId", joined)
 	ext_fleetEnsureDir()
@@ -354,6 +356,9 @@ ext_fleetStartFleet(name, role, user) {
 	;of either could find the other's coordinator, be let in on a row number
 	;that exists in both rosters, and replicate that fleet's configuration into
 	;its own folder. Separate folders holding each other's contents.
+	;the fleet this macro is leaving keeps no coordinator running here - see
+	;ext_fleetEndFleetCoord
+	ext_fleetEndFleetCoord()
 	ext_FleetSave("FleetSecret", fleet_NewSecret())
 	ext_FleetSave("FleetId", fleet_NewId())
 	ext_fleetEnsureDir()
@@ -1170,6 +1175,23 @@ ext_fleetEndCoord() {
 		try ProcessClose(ext_fleetCoordPid)
 	ext_fleetCoordPid := 0
 	return 1
+}
+
+;Stop every coordinator of the fleet this macro is about to leave, including
+;one started before the last restart. Without it a new fleet created on the
+;same machine found the port taken by the old one - the takeover kept the old
+;process as "the coordinator", since it was still running - and its macros
+;were turned away until the old one gave up. The other macros of the fleet
+;being left lose their coordinator and elect another, which is what leaving
+;the machine that runs it means.
+ext_fleetEndFleetCoord() {
+	local n
+
+	ext_fleetEndCoord()
+	if (n := fleet_StopCoordinators(A_WorkingDir, ext_fleetId()))
+		ext_fleetNote("stopped " n " coordinator" ((n > 1) ? "s" : "")
+			. " of fleet " ext_fleetId() ", which this macro is leaving")
+	return n
 }
 
 ;Registered with OnExit beside the macro's own handler rather than inside it -
@@ -1993,6 +2015,7 @@ ext_FleetLeave() {
 	;instead of listing it offline for ever
 	ext_fleetSayLeaving()
 	ext_fleetStop()
+	ext_fleetEndFleetCoord()
 	ext_FleetSave("FleetCheck", 0)
 	ext_FleetSave("FleetRow", 0)
 	ext_FleetSave("FleetHostRow", 0)
