@@ -1924,7 +1924,7 @@ ext_FleetRosterWatch() {
 ;row of buttons that are mostly greyed out.
 ext_FleetWhoDraw() {
 	global FleetSetupGui, FleetRoster, FleetRow, ext_fleetBindOpenUntil
-	local me, left, who
+	local me, left, who, addr
 
 	if !(IsSet(FleetSetupGui) && IsObject(FleetSetupGui))
 		return
@@ -1955,6 +1955,8 @@ ext_FleetWhoDraw() {
 		FleetSetupGui["FleetWho"].Text := me "`nThis macro is running the fleet."
 			. (ext_fleetMayCommand() ? ""
 				: "  New macros are accepted on row " ext_fleetMandate ".")
+			;what another PC types when the network will not let it hear us
+			. (((addr := ext_fleetMyAddress()) != "") ? "  Address: " addr : "")
 		ext_FleetButton("FleetAct1", !ext_fleetMayCommand()
 			? ""
 			: (left > 0)
@@ -2051,33 +2053,72 @@ ext_FleetJoinGUI(*) {
 	FleetJoinGui := Gui("+AlwaysOnTop +Border", "Set up this macro")
 	FleetJoinGui.OnEvent("Close", ext_FleetJoinClose)
 	FleetJoinGui.SetFont("s8 cDefault Bold", "Tahoma")
-	FleetJoinGui.Add("GroupBox", "x8 y4 w404 h98", "What is this account?")
-	FleetJoinGui.Add("GroupBox", "x8 y108 w404 h104", "Which fleet?")
+	FleetJoinGui.Add("GroupBox", "x8 y4 w404 h130", "What is this account?")
+	FleetJoinGui.Add("GroupBox", "x8 y140 w404 h168", "Which fleet?")
 	FleetJoinGui.SetFont("Norm")
 
-	FleetJoinGui.Add("Text", "x18 y26 w40", "Name:")
-	FleetJoinGui.Add("Edit", "x64 y24 w190 h18 vJoinName", A_ComputerName)
-	FleetJoinGui.Add("Text", "x18 y50 w40", "Role:")
-	FleetJoinGui.Add("DropDownList", "x64 y48 w110 vJoinRole Choose4", roster_Roles())
-	FleetJoinGui.Add("Text", "x18 y74 w40", "User:")
-	FleetJoinGui.Add("Edit", "x64 y72 w190 h18 vJoinUser")
+	FleetJoinGui.Add("Text", "x18 y26 w40", "Role:")
+	;No role is picked for you. The list used to start on guid, and an alt
+	;joined as guid farms its own field and never follows - which is exactly
+	;what a friend's first fleet did. Each role says what it does, in words.
+	FleetJoinGui.Add("DropDownList", "x64 y24 w338 vJoinRole", ext_fleetRoleChoices())
+		.OnEvent("Change", (*) => ext_FleetJoinRefresh())
+	FleetJoinGui.Add("Text", "x18 y52 w40", "User:")
+	FleetJoinGui.Add("Edit", "x64 y50 w190 h18 vJoinUser")
+	FleetJoinGui.Add("Text", "x18 y76 w40", "Name:")
+	FleetJoinGui.Add("Edit", "x64 y74 w190 h18 vJoinName", A_ComputerName)
 	FleetJoinGui.SetFont("c808080")
-	FleetJoinGui.Add("Text", "x262 y26 w142", "The Roblox username is what the fleet window shows for this account. The name is only a label.")
+	FleetJoinGui.Add("Text", "x18 y98 w386", "User is this account's Roblox username - the fleet window shows it. Name is only a label.")
 	FleetJoinGui.SetFont("cDefault")
 
-	FleetJoinGui.Add("Text", "x18 y128 w386 vJoinFound", "Listening for a fleet on your network...")
-	FleetJoinGui.Add("Button", "x18 y150 w180 h26 vJoinButton Disabled", "Join this fleet").OnEvent("Click", ext_FleetJoinDo)
-	FleetJoinGui.Add("Button", "x208 y150 w196 h26", "Start a new fleet here").OnEvent("Click", ext_FleetHostDo)
+	FleetJoinGui.Add("Text", "x18 y160 w386 h28 vJoinFound", "Listening for a fleet on your network...")
+	;Typed only when the fleet cannot be heard: guest Wi-Fi and some routers
+	;drop the broadcast a fleet is found by, and with no way round it a first
+	;join was simply impossible on those networks.
+	FleetJoinGui.Add("Text", "x18 y194 w170", "Not found? Type its address:")
+	FleetJoinGui.Add("Edit", "x190 y192 w130 h18 vJoinAddr")
+		.OnEvent("Change", (*) => ext_FleetJoinRefresh())
+	FleetJoinGui.Add("Button", "x18 y220 w180 h26 vJoinButton Disabled", "Join this fleet").OnEvent("Click", ext_FleetJoinDo)
+	FleetJoinGui.Add("Button", "x208 y220 w196 h26 vJoinHost Disabled", "Start a new fleet here").OnEvent("Click", ext_FleetHostDo)
 	FleetJoinGui.SetFont("c808080")
-	FleetJoinGui.Add("Text", "x18 y182 w386"
-		, "To join, open the door on the macro that coordinates the fleet first - settings, Accept new macros.")
+	FleetJoinGui.Add("Text", "x18 y254 w386 h46 vJoinHint", "")
 	FleetJoinGui.SetFont("cDefault")
 
-	FleetJoinGui.Add("Button", "x312 y220 w100 h26", "Cancel").OnEvent("Click", ext_FleetJoinClose)
+	FleetJoinGui.Add("Button", "x312 y316 w100 h26", "Cancel").OnEvent("Click", ext_FleetJoinClose)
 
 	SetTimer ext_FleetJoinRefresh, 500
 	ext_FleetJoinRefresh()
-	FleetJoinGui.Show("w420 h256")
+	FleetJoinGui.Show("w420 h352")
+}
+
+;The roles as the list shows them: the name, then what an account of that role
+;does. Kept in the order of roster_Roles, so the position is the role.
+ext_fleetRoleChoices() {
+	static blurb := Map("main", "the account the others follow"
+		, "fuzzy", "follows the main and does nothing else"
+		, "tad", "follows the main and does nothing else"
+		, "guid", "farms its own field (guiding stars, later)"
+		, "atk", "Mondo (later) - farms its own field")
+	local out := [], role
+
+	for _, role in roster_Roles()
+		out.Push(role " - " (blurb.Has(role) ? blurb[role] : ""))
+	return out
+}
+;The role picked in one of those lists, or "" when none is.
+ext_fleetRolePicked(ctrl) {
+	return ctrl.Value ? roster_Roles()[ctrl.Value] : ""
+}
+
+;This machine's address on the local network, for somebody who has to type it
+;on another PC. A link-local or loopback address would be no use to them.
+ext_fleetMyAddress() {
+	local ip
+
+	for _, ip in SysGetIPAddresses()
+		if !((SubStr(ip, 1, 4) = "127.") || (SubStr(ip, 1, 8) = "169.254."))
+			return ip
+	return ""
 }
 
 ext_FleetJoinClose(*) {
@@ -2092,7 +2133,7 @@ ext_FleetJoinClose(*) {
 ;answers, which is the clearest way to say "now you can".
 ext_FleetJoinRefresh() {
 	global FleetJoinGui, ext_fleetBindResult
-	local open
+	local open, role, typed
 
 	if !(IsSet(FleetJoinGui) && IsObject(FleetJoinGui))
 		return
@@ -2108,38 +2149,55 @@ ext_FleetJoinRefresh() {
 		return
 	}
 	open := ext_fleetOpenFleets()
-	if open.Length {
-		;a fleet that says what it is gets to say it here. The test bench does,
-		;because a bench fleet on this machine otherwise looks exactly like the
-		;real one - and joining it takes this macro out of the real one.
-		FleetJoinGui["JoinFound"].Text := "Found " open[1].host
-			. " (" open[1].size " accounts), accepting new macros."
+	role := ext_fleetRolePicked(FleetJoinGui["JoinRole"])
+	typed := Trim(FleetJoinGui["JoinAddr"].Value)
+	;a fleet that says what it is gets to say it here. The test bench does,
+	;because a bench fleet on this machine otherwise looks exactly like the
+	;real one - and joining it takes this macro out of the real one.
+	FleetJoinGui["JoinFound"].Text := open.Length
+		? "Found " open[1].host " (" open[1].size " accounts), accepting new macros."
 			. ((open[1].label != "") ? "`nThis is " open[1].label "." : "")
-		FleetJoinGui["JoinButton"].Enabled := true
-	}
-	else {
-		FleetJoinGui["JoinFound"].Text := "Listening for a fleet on your network..."
-		FleetJoinGui["JoinButton"].Enabled := false
-	}
+		: "Listening for a fleet on your network..."
+	FleetJoinGui["JoinButton"].Enabled := (role != "") && (open.Length || (typed != ""))
+	FleetJoinGui["JoinHost"].Enabled := (role != "")
+	;one line saying what is missing, rather than buttons that are grey for no
+	;stated reason
+	FleetJoinGui["JoinHint"].Text := (role = "")
+		? "Pick a role first."
+		: "To join, press Accept new macros on the PC that runs the fleet first."
+			. " Its Fleet settings show its address."
 }
 
 ext_FleetJoinDo(*) {
-	global FleetJoinGui
-	local open := ext_fleetOpenFleets()
+	global FleetJoinGui, FleetPort
+	local open := ext_fleetOpenFleets(), role := ext_fleetRolePicked(FleetJoinGui["JoinRole"])
+	local typed := Trim(FleetJoinGui["JoinAddr"].Value), addr, port
 
-	if !open.Length
+	if (role = "")
 		return
-	ext_fleetBind(open[1].addr, open[1].port
-		, Trim(FleetJoinGui["JoinName"].Value)
-		, FleetJoinGui["JoinRole"].Text
+	if (typed != "") {
+		;Kept as the reconnect address too: a network that drops the beacon
+		;drops it every time, and the macro would bind and then never find
+		;the fleet again.
+		addr := typed, port := FleetPort
+		ext_FleetSave("FleetAddress", typed)
+	}
+	else if open.Length
+		addr := open[1].addr, port := open[1].port
+	else
+		return
+	ext_fleetBind(addr, port
+		, Trim(FleetJoinGui["JoinName"].Value), role
 		, Trim(FleetJoinGui["JoinUser"].Value))
 }
 
 ext_FleetHostDo(*) {
 	global FleetJoinGui
+	local role := ext_fleetRolePicked(FleetJoinGui["JoinRole"])
 
-	ext_fleetStartFleet(Trim(FleetJoinGui["JoinName"].Value)
-		, FleetJoinGui["JoinRole"].Text
+	if (role = "")
+		return
+	ext_fleetStartFleet(Trim(FleetJoinGui["JoinName"].Value), role
 		, Trim(FleetJoinGui["JoinUser"].Value))
 	ext_FleetJoinClose()
 	MsgBox "This macro now coordinates the fleet.`n`nTo add another, press Accept new macros here, then set that macro up.", "Fleet", 0x40040

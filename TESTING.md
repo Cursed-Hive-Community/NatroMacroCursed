@@ -443,7 +443,11 @@ PCs, two macros, and a network you can unplug.
 - [ ] clicking the button again shuts it early
 - [ ] a macro bound once rejoins by itself after a restart
 - [ ] a beacon from a different fleet on the same network is ignored
-- [ ] a hand-typed address works where broadcasts are blocked
+- [ ] a hand-typed address works where broadcasts are blocked - typed in the
+      join window, and kept as the reconnect address
+- [ ] the join window picks no role, and its buttons stay grey until one is
+      chosen - **built in the VM**, every control dumped, none overlapping
+- [ ] the coordinator's Settings show this PC's address `loads`
 
 ### Following
 

@@ -44,11 +44,13 @@ macros**. The door stays open for two minutes and the button counts down.
 Then on the **alt's** macro:
 
 1. **Extensions**, **Fleet panel**, **Settings**, **Set up this macro**.
-2. **Role**: `tad` or `fuzzy`. The list does not start on either of them -
-   change it, or the account will not follow.
+2. **Role**: `tad` or `fuzzy`. Nothing is picked for you, and the buttons
+   stay grey until a role is chosen.
 3. **User**: the alt's Roblox username.
 4. Wait for the line saying `Found ... accepting new macros`, then press
-   **Join this fleet**.
+   **Join this fleet**. If nothing is found after a few seconds, type the
+   address the main's Settings window shows (`Address: ...`) in **Not found?
+   Type its address**, then press **Join this fleet**.
 
 A message says `Joined`. From now on that macro rejoins by itself every time
 it starts; this step is never repeated.
@@ -124,8 +126,9 @@ happens.**
   isolation* drops it. Put both PCs on the same normal network, or run the
   macros on one PC.
 
-The **Address** box in Advanced does not help here: it is used to reconnect
-to a fleet the macro has already joined, never to join one.
+Or go round it: the main's Settings window shows the main PC's address in
+section 1. Type it in the alt's join window under **Not found? Type its
+address**. The alt keeps that address and uses it to reconnect from then on.
 
 **The alt joined but keeps farming its own field.**
 
