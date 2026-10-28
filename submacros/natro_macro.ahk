@@ -2757,6 +2757,9 @@ ext_fleetFoundAt := "", ext_fleetBeaconSock := 0, ext_fleetTryAt := 0
 ;field-following: the field we last told the fleet we are farming, and the
 ;field a resident has been told to follow the main into
 ext_fleetMyField := "", ext_fleetFollowField := ""
+;this account's role as the fleet last said it, and the log lines waiting to be
+;written - see ext_fleetSetRole and ext_fleetNote
+ext_fleetMyRole := "", ext_fleetNotes := []
 ;why the fleet turned this macro away, when it did. A refusal is final, so it
 ;is kept rather than retried - see the BYE case in extensions\fleet.ahk
 ext_fleetRefused := ""
@@ -11067,7 +11070,9 @@ nm_Start(){
 		}
 	Loop 
 		for i in priorityList
-			(%"nm_" i%)()
+			;a fleet follower gathers and does nothing else
+			if !ext_fleetSkipsTask(i)
+				(%"nm_" i%)()
 	nm_planter() => (mp_Planter(),ba_planter())
 }
 
@@ -16835,24 +16840,27 @@ nm_GoGather(){
 		, BlackQuestCheck, BrownQuestCheck, BuckoQuestCheck, RileyQuestCheck, PolarQuestCheck
 		, BlackQuestComplete, BrownQuestComplete, BuckoQuestComplete, RileyQuestComplete, PolarQuestComplete
 
+	;a fleet follower is never called away to any of these - its one job is the
+	;main's field, see ext_fleetResident
+	resident := ext_fleetResident()
 	;VICIOUS BEE
-	if nm_NightInterrupt()
+	if (!resident && nm_NightInterrupt())
 		return
 	;MONDO
-	if nm_MondoInterrupt()
+	if (!resident && nm_MondoInterrupt())
 		return
 	;MONDO SPAWN
-	if ext_mondoInterrupt()
+	if (!resident && ext_mondoInterrupt())
 		return
 	;STICKER STACK
-	if ext_stickerStackInterrupt()
+	if (!resident && ext_stickerStackInterrupt())
 		return
 	;BLUE BOOSTER
-	if ext_blueBoosterReady() {
+	if (!resident && ext_blueBoosterReady()) {
 		nm_toBooster("blue")
 		return
 	}
-	if !(nm_GatherBoostInterrupt()){
+	if (!resident && !nm_GatherBoostInterrupt()){
 		;BUGS GatherInterruptCheck
 		if nm_BugrunInterrupt()
 			return
@@ -16869,14 +16877,14 @@ nm_GoGather(){
 	;FIELD OVERRIDES
 	global fieldOverrideReason:="None"
 	loop 1 {
-		;fleet follow override: a resident gathers whatever field the main is
+		;fleet follow override: a follower gathers whatever field the main is
 		;farming, ahead of its own configured field and every other override -
-		;standing in the main's field is the whole of a resident's job. Picked
-		;up here, at the top of a gather trip, so the resident finishes the trip
-		;it is on before switching; that is the least disruptive hook and the
-		;only one that never cuts a pattern in half. fieldOverrideReason stays
-		;"None" on purpose: the resident then farms this field byte-for-byte
-		;like one of its own, boost detection and gather-start hotkeys included.
+		;standing in the main's field is the whole of its job. A change of field
+		;does not wait for this: the gather loop cuts the trip short within a
+		;quarter of a second, see ext_fleetFollowMoved, and this is where the
+		;next trip picks the new field up. fieldOverrideReason stays "None" on
+		;purpose: the follower then farms this field byte-for-byte like one of
+		;its own, boost detection and gather-start hotkeys included.
 		if (followField := ext_fleetFollowTarget()) {
 			FieldName:=followField
 			FieldPattern:=FieldDefault[FieldName]["pattern"]
@@ -16885,7 +16893,10 @@ nm_GoGather(){
 			FieldPatternShift:=FieldDefault[FieldName]["shiftlock"]
 			FieldPatternInvertFB:=FieldDefault[FieldName]["invertFB"]
 			FieldPatternInvertLR:=FieldDefault[FieldName]["invertLR"]
-			FieldUntilMins:=FieldDefault[FieldName]["gathertime"]
+			;no time limit: a follower leaves the main's field when its bag is
+			;full or the main moves, and a clock is neither - a day stands for
+			;never without a branch in the loop condition
+			FieldUntilMins:=1440
 			FieldUntilPack:=FieldDefault[FieldName]["percent"]
 			FieldReturnType:=FieldDefault[FieldName]["convert"]
 			FieldSprinklerLoc:=FieldDefault[FieldName]["sprinkler"]
@@ -16949,8 +16960,8 @@ nm_GoGather(){
 				break
 			}
 		}
-		;questing override
-		if((BlackQuestCheck || BrownQuestCheck || BuckoQuestCheck || RileyQuestCheck || PolarQuestCheck) && (QuestGatherField && QuestGatherField!="None")){
+		;questing override - never on a follower, which takes no quests
+		if(!resident && (BlackQuestCheck || BrownQuestCheck || BuckoQuestCheck || RileyQuestCheck || PolarQuestCheck) && (QuestGatherField && QuestGatherField!="None")){
 			fieldOverrideReason:="Quest"
 			thisfield:=QuestGatherField
 			if(QuestGatherField=FieldName1) {
@@ -16990,7 +17001,7 @@ nm_GoGather(){
 		}
 		;Gather in manual planters field override
 
-		if((MPlanterGatherA) && (PlanterMode = 1)) {
+		if(!resident && (MPlanterGatherA) && (PlanterMode = 1)) {
 
 			; define available planter gather slots/fields: selected by user for planter gather, with planter in field, and not 'holding at full grown'
 			(eligible := []).Length := 3
@@ -17050,7 +17061,7 @@ nm_GoGather(){
 		}
 
 		;Gather in planters+ field override
-		if((gotoPlanterField) && (PlanterMode = 2)){
+		if(!resident && (gotoPlanterField) && (PlanterMode = 2)){
 			Loop 3{
 				inverseIndex:=(4-A_Index)
 				If(PlanterField%inverseIndex%="dandelion" || PlanterField%inverseIndex%="sunflower" || PlanterField%inverseIndex%="mushroom" || PlanterField%inverseIndex%="blue flower" || PlanterField%inverseIndex%="clover" || PlanterField%inverseIndex%="strawberry" || PlanterField%inverseIndex%="spider" || PlanterField%inverseIndex%="bamboo" || PlanterField%inverseIndex%="pineapple" || PlanterField%inverseIndex%="stump" || PlanterField%inverseIndex%="cactus" || PlanterField%inverseIndex%="pumpkin" || PlanterField%inverseIndex%="pine tree" || PlanterField%inverseIndex%="rose" || PlanterField%inverseIndex%="mountain top" || PlanterField%inverseIndex%="pepper" || PlanterField%inverseIndex%="coconut"){
@@ -17248,15 +17259,22 @@ nm_GoGather(){
 
 			;high priority interrupts
 			if (Mod(A_Index, 5) = 1) { ; every 250ms
-				if ext_mondoDue() {
+				;the main moved, and a follower goes with it now rather than at
+				;the end of the trip - every second spent here is a second out of
+				;the main's field
+				if ext_fleetFollowMoved(FieldName) {
+					interruptReason := "Following the main"
+					break
+				}
+				if (!resident && ext_mondoDue()) {
 					interruptReason := "Mondo Spawning"
 					break
 				}
-				if ext_stickerStackDue() {
+				if (!resident && ext_stickerStackDue()) {
 					interruptReason := "Sticker Stack Ready"
 					break
 				}
-				if ext_blueBoosterReady() {
+				if (!resident && ext_blueBoosterReady()) {
 					interruptReason := "Blue Booster Ready"
 					break
 				}
@@ -17268,7 +17286,7 @@ nm_GoGather(){
 					interruptReason := "You Died!"
 					break
 				}
-				if nm_NightInterrupt() {
+				if (!resident && nm_NightInterrupt()) {
 					interruptReason := "Night"
 					break
 				}
@@ -17305,7 +17323,7 @@ nm_GoGather(){
 					break
 				}
 				;mondo
-				if nm_MondoInterrupt(){
+				if (!resident && nm_MondoInterrupt()){
 					interruptReason := "Mondo"
 					if (PMondoGuidComplete)
 						PMondoGuidComplete:=0
@@ -17348,20 +17366,20 @@ nm_GoGather(){
 				;Coconut (Paper) interrupt: the reserved planter comes due on its own
 				;schedule, and a gather session can run long enough to leave it sitting
 				;grown for the best part of an hour
-				if (CoconutPaperCheckInterrupt && ba_isReservedSlot(CoconutPaperSlot)
+				if (!resident && CoconutPaperCheckInterrupt && ba_isReservedSlot(CoconutPaperSlot)
 					&& (PlanterField3 != "None") && (nowUnix() >= PlanterHarvestTime3)) {
 					interruptReason := "Paper Planter"
 					break
 				}
-				if nm_BugrunInterrupt() {
+				if (!resident && nm_BugrunInterrupt()) {
 					interruptReason := "Kill Bugs"
 					break
 				}
-				if nm_BeesmasInterrupt() {
+				if (!resident && nm_BeesmasInterrupt()) {
 					interruptReason := "Beesmas Machine"
 					break
 				}
-				if nm_MemoryMatchInterrupt() {
+				if (!resident && nm_MemoryMatchInterrupt()) {
 					interruptReason := "Memory Match"
 					break
 				}
@@ -17371,7 +17389,9 @@ nm_GoGather(){
 
 		Click "Up"
 		if interruptReason {
-			bypass := (interruptReason ~= "i)Disconnect|You Died!|Night|Inactive Honey")
+			;a follower leaving for the main's new field is reset to the hive at
+			;the top of the next trip, so walking home first would only delay it
+			bypass := (interruptReason ~= "i)Disconnect|You Died!|Night|Inactive Honey|Following the main")
 			if (!bypass && InStr(patterns[FieldPattern], ";@NoInterrupt"))
 				KeyWait "F14", "T180 L"
 			break

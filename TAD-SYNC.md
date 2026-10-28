@@ -70,12 +70,35 @@ main will come back to.
 
 # 4. Start everything
 
-Start every macro the usual way (F1). The alts gather the main's field from
-their **next gather trip**: an alt finishes the pattern it is on before it
-moves, so the switch can take a few minutes.
+Start every macro the usual way (F1).
 
-An alt that starts or restarts later is told the main's field as soon as it
-joins.
+The main says which field it is going to as soon as it picks it, before it
+walks there. Every tad and fuzzy stops what it is doing within a quarter of a
+second, resets to its hive and goes to that field. It stays there until the
+main moves again or its own bag is full. A full bag is converted the way that
+macro's Natro is set, reset or walk, and the alt goes straight back.
+
+An alt that starts, restarts or reconnects later is told the main's field as
+soon as it joins. The field is also repeated every five seconds, so an alt
+that missed the order is put right within one beat.
+
+# What a tad or fuzzy account does not do
+
+An account set as `tad` or `fuzzy` has one job: being in the main's field,
+as soon as possible and for as long as possible. Its macro skips everything
+else Natro would do:
+
+- planters, quests and bug runs;
+- collecting, dispensers and the sticker stack;
+- boosts, boosters and the shrine;
+- Mondo and the night hunt.
+
+It gathers with no time limit: only a full bag or the main moving makes it
+leave.
+
+Until the main has said where it is, the alt farms its own field. If Fleet is
+switched off on it, or the fleet turns it away for good, it is an ordinary
+Natro again and does all of the above.
 
 # Changing an account later
 
@@ -109,7 +132,13 @@ to a fleet the macro has already joined, never to join one.
 - Its role is not `tad` or `fuzzy`: check section 3 on the main.
 - The main's role is not `main`. Only an account set as main is followed.
 - The main is on a trip whose box is unticked in step 3.
-- The alt has not finished its current trip yet.
+- The main has not started a gather trip yet since it was started.
+- The alt's Natro has no pattern for the main's field.
+
+Each macro writes what it heard and did in `settings\fleet_macro.log`. On the
+alt, `the main is farming X - following it now` means the order arrived, and
+`gather trip: following the main into X` means it acted on it. On the main,
+each field is listed with whether it was announced.
 
 **The main's PC is turned off.**
 

@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These thirty-nine checks run the real coordinator process, the real socket
+These forty-one checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -107,6 +107,10 @@ layer and the real protocol. They are the strongest evidence in the repository.
 - [x] a fleet log is size-checked on the first line of a run, so a macro that
       writes a few lines per session cannot grow it across restarts - not on
       the wire, but in the same self-test
+- [x] the main's field is on the roster every follower receives, and reads
+      back the way a follower reads it, with no GOTO involved
+- [x] only a fuzzy or a tad is pulled out of a field for the main, and a field
+      differing only in capitals is not a move - the rule, not the gather loop
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -419,7 +423,16 @@ PCs, two macros, and a network you can unplug.
 ### Following
 
 - [ ] a fuzzy or tad gathers the field the main is farming
-- [ ] it switches at the **top of a gather trip**, never mid-pattern
+- [ ] it leaves its field **within a quarter of a second** of the main
+      choosing another, without walking home first `loads`
+- [ ] it never does planters, quests, bugs, collecting, boosts, Mondo or the
+      night hunt, and gathers with no time limit `loads`
+- [ ] a full bag converts the way its own Natro is set, then it goes straight
+      back to the main's field `loads`
+- [ ] a main that reconnects - or meets a coordinator that just took over -
+      says its field at once rather than at its next trip `loads`
+- [ ] a follower that missed the GOTO is put right by the roster within a
+      beat `loads`
 - [ ] it farms that field exactly as one of its own - boost detection and
       gather-start hotkeys included
 - [ ] a `guid` or an `atk` never follows
@@ -428,8 +441,9 @@ PCs, two macros, and a network you can unplug.
 - [ ] a suppressed trip leaves the residents where they are rather than recalling
       them
 - [ ] a resident re-roled away from fuzzy/tad stops following without a restart
-- [ ] every macro writes `settings\fleet_macro.log`: a follower shows `told to
-      follow` when the order arrives and `gather trip: following` when it acts,
+- [ ] every macro writes `settings\fleet_macro.log`: a follower shows `the main
+      is farming X` when the order arrives and `gather trip: following` when it
+      acts,
       and the main shows each field it announced or kept to itself `loads`
 
 ### Failover - the dangerous one
@@ -518,6 +532,11 @@ runs two fleets at once. Checks 36 to 38 do now.
 ## Known holes, written down rather than forgotten
 
 Not bugs to find - bugs already known about, with no fix yet.
+
+- **Two accounts set as main would pull the followers back and forth.** A
+  GOTO carries the field of whichever main reported last, and the roster is
+  read for the lowest main row, so the two could disagree on every beat and
+  cut every trip short. The roster editor does not stop a second main.
 
 - **One folder per fleet is proven on the wire, not across fleets.** The
   identity reaches a macro during binding and names the folder its

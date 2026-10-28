@@ -434,11 +434,6 @@ ext_fleetHello() {
 	ext_fleetServers.Clear(), ext_fleetServerVer := { version: -1, by: -1 }
 	ext_fleetRoster.Clear(), ext_fleetRosterVer := { version: -1, by: -1 }
 	ext_fleetHandedUp := ""
-	;and the field we last said we were farming. A coordinator we are meeting
-	;for the first time - or one that has just been started by a takeover - has
-	;no record of it, so the next gather trip has to say so again instead of
-	;finding our own note that nothing has changed and staying quiet.
-	ext_fleetMyField := ""
 	ext_fleetNote("connected to " ext_fleetTrying ", saying hello as row " FleetRow)
 	;the fleet this macro belongs to, so a coordinator of another one can say so
 	;instead of answering with a wrong secret - which is final, and cost a macro
@@ -446,6 +441,14 @@ ext_fleetHello() {
 	sock_SendLine(ext_fleetSock, fleet_Frame("HELLO", Map("row", FleetRow
 		, "secret", FleetSecret, "fid", ext_fleetId()
 		, "machine", A_ComputerName)))
+	;And the field we last said we were farming, said again straight away. A
+	;coordinator we are meeting for the first time - or one a takeover has just
+	;started - has no record of it, and its followers are waiting on it. This
+	;used to be left to the next gather trip, which on the main is the end of
+	;the trip it is on: up to a whole trip with every follower out of place.
+	;After the HELLO on the same connection, so it is read once we are seated.
+	if (ext_fleetMyField != "")
+		sock_SendLine(ext_fleetSock, fleet_Frame("FIELD", Map("name", ext_fleetMyField)))
 }
 
 ;A frame from the coordinator.
@@ -454,7 +457,7 @@ ext_fleetOnLine(line) {
 	global ext_fleetEvents, ext_fleetFollowField, ext_fleetSock, ext_fleetRefused
 	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant
 	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant
-	global ext_fleetMandate, ext_fleetOtherFleet, ext_fleetTrying
+	global ext_fleetMandate, ext_fleetOtherFleet, ext_fleetTrying, FleetRow
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -476,6 +479,11 @@ ext_fleetOnLine(line) {
 		case "ROSTER":
 			if (row := Integer(fleet_Field(frame, "row", 0)))
 				ext_fleetPeers[row] := frame.fields
+			if (row = FleetRow)
+				ext_fleetSetRole(fleet_Field(frame, "role"))
+			;the main's field, read off the roster on every beat - what puts a
+			;follower right when the GOTO below never reached it
+			ext_fleetSetFollow(roster_LeadField(ext_fleetPeers))
 			ext_fleetCoordSeen := nowUnix()
 		case "EVENT":
 			;stamped on arrival rather than from the frame: the difference is
@@ -531,6 +539,10 @@ ext_fleetOnLine(line) {
 			}
 			if (row := fleet_Num(fleet_Field(frame, "row")))
 				ext_fleetRoster[row] := frame.fields
+			;the configured role, which reaches a macro even before its own
+			;ROSTER row does
+			if (row && (row = FleetRow))
+				ext_fleetSetRole(fleet_Field(frame, "role"))
 			ext_fleetReplicate()
 			ext_fleetCoordSeen := nowUnix()
 		case "GONE":
@@ -542,13 +554,10 @@ ext_fleetOnLine(line) {
 				ext_fleetPeers.Delete(row)
 			ext_fleetCoordSeen := nowUnix()
 		case "GOTO":
-			;the main is farming this field and we are a resident. Store it;
-			;travelling there is the gather loop's job, at its next trip. Both
-			;halves are written down, because the time between them is exactly
-			;what nobody could see when a follower seemed not to follow.
-			ext_fleetFollowField := fleet_Field(frame, "field")
-			ext_fleetNote("told to follow the main into " ext_fleetFollowField
-				. " - from the next gather trip")
+			;the main is farming this field and we are a follower. Stored only:
+			;the gather loop sees the change within a quarter of a second and
+			;cuts its trip short - see ext_fleetFollowMoved
+			ext_fleetSetFollow(fleet_Field(frame, "field"))
 			ext_fleetCoordSeen := nowUnix()
 		case "BYE":
 			;Two kinds of refusal, and treating them alike was a mistake worth
@@ -917,27 +926,14 @@ ext_fleetFollowReport() {
 ;gathered it, so it is a valid key by construction - the guard is for the day
 ;that stops being true.
 ext_fleetFollowTarget() {
-	global FleetCheck, ext_fleetFollowField, FieldDefault, ext_fleetPeers, FleetRow
-	local mine
+	global ext_fleetFollowField, FieldDefault
 
-	if (!FleetCheck || (ext_fleetFollowField = ""))
+	;a role changed in the roster editor takes effect here without a restart -
+	;see ext_fleetSetRole. While disconnected the last order stands: a dropped
+	;connection is not a change of job, and reverting on every blip would walk
+	;the macro back and forth for nothing.
+	if ((ext_fleetFollowField = "") || !ext_fleetResident())
 		return ""
-	;A role changed in the roster editor has to take effect without restarting
-	;the macro it describes, and nothing else ever withdraws a GOTO - so an
-	;account that is no longer a resident stops following here. Checked against
-	;the roster rather than against a local setting, because the roster is the
-	;one copy everybody agrees on. While disconnected the last order stands: a
-	;dropped connection is not a change of job, and reverting on every blip
-	;would walk the macro back and forth for nothing.
-	if ext_fleetPeers.Has(FleetRow) {
-		mine := ext_FleetCell(ext_fleetPeers[FleetRow], "role")
-		if ((mine != "") && !roster_Follows(mine)) {
-			ext_fleetNote("stopped following the main: this account is now "
-				. mine ", and only fuzzy and tad follow")
-			ext_fleetFollowField := ""
-			return ""
-		}
-	}
 	if !FieldDefault.Has(ext_fleetFollowField) {
 		ext_fleetNote("cannot follow the main into " ext_fleetFollowField
 			. ": this macro has no such field - farming its own")
@@ -945,6 +941,80 @@ ext_fleetFollowTarget() {
 	}
 	ext_fleetNote("gather trip: following the main into " ext_fleetFollowField)
 	return ext_fleetFollowField
+}
+
+;Is this macro a follower right now: a fuzzy or a tad, in a fleet it is
+;talking to?
+;
+;Such an account has one job, which is to stand in the main's field as soon
+;as it can and for as long as it can. So everything else Natro would do is
+;skipped - planters, quests, bugs, collecting, boosts, Mondo, the night - and
+;the interrupts that would pull it out of the field do not apply: see
+;ext_fleetSkipsTask and nm_GoGather. Only a full bag still sends it home,
+;the way its own Natro is set to convert.
+;
+;A macro with Fleet switched off, or one the fleet turned away for good, is on
+;its own again and farms like any Natro. The role is the last one heard, so a
+;connection that drops does not turn a follower back into a farmer.
+ext_fleetResident() {
+	global FleetCheck, FleetRow, ext_fleetRefused, ext_fleetMyRole
+
+	return FleetCheck && (FleetRow > 0) && (ext_fleetRefused = "")
+		&& roster_Follows(ext_fleetMyRole)
+}
+
+;Should Natro's main loop skip this task? Everything but gathering, on a
+;follower. One name, read by nm_Start, so the list of what a follower gives
+;up cannot drift between places.
+ext_fleetSkipsTask(task) {
+	return (task != "GoGather") && ext_fleetResident()
+}
+
+;Should the gather in field be cut short, because the main has moved?
+;
+;Asked by the gather loop four times a second, so it reads memory and nothing
+;else. A field this build has no pattern for is never a reason to leave: the
+;next trip could not go there either, and the macro would walk back and forth
+;to its own field for nothing.
+ext_fleetFollowMoved(field) {
+	global ext_fleetFollowField, ext_fleetMyRole, FieldDefault
+
+	return ext_fleetResident() && FieldDefault.Has(ext_fleetFollowField)
+		&& roster_FollowMoves(ext_fleetMyRole, ext_fleetFollowField, field)
+}
+
+;The main's field, from a GOTO or off the roster. Both say the same thing and
+;both come here, so it is written down once, and only when it changes - the
+;roster repeats it on every beat. An empty field is no news rather than an
+;order to stop: a coordinator that has just taken over knows nothing yet, and
+;the follower stays in the field the main will come back to.
+ext_fleetSetFollow(field) {
+	global ext_fleetFollowField
+
+	if ((field = "") || (field == ext_fleetFollowField))
+		return 0
+	ext_fleetFollowField := field
+	ext_fleetNote("the main is farming " field
+		. (ext_fleetResident() ? " - following it now" : ""))
+	return 1
+}
+
+;This account's role, as the fleet last said it. Kept apart from the live
+;roster, which is emptied on every reconnect, because what this macro does
+;between two connections must not depend on whether it is connected.
+ext_fleetSetRole(role) {
+	global ext_fleetMyRole
+	local was := roster_Follows(ext_fleetMyRole)
+
+	if ((role = "") || (role == ext_fleetMyRole))
+		return 0
+	ext_fleetMyRole := role
+	if (roster_Follows(role) && !was)
+		ext_fleetNote("this account is " role ": it follows the main and does"
+			. " nothing else - no planters, quests, bugs, collecting or boosts")
+	else if (was && !roster_Follows(role))
+		ext_fleetNote("this account is now " role ": it farms on its own again")
+	return 1
 }
 
 ;Leaving on purpose, which the fleet cannot tell from a crash on its own - both
@@ -1106,6 +1176,8 @@ ext_fleetEndCoord() {
 ;upstream's exit path is not ours to edit, and OnExit takes more than one.
 ext_fleetOnExit(*) {
 	ext_fleetEndCoord()
+	;the last lines are the ones that say why it stopped
+	ext_fleetNoteFlush()
 }
 
 ;Something went wrong in a way nobody would otherwise hear about.
@@ -1133,15 +1205,34 @@ ext_fleetProblem(text) {
 ;folder: it is the file somebody is asked to send, and it has to be there
 ;before this macro has joined anything, since failing to join is one of the
 ;things it records.
+;
+;Written from a timer, not here. Most notes are taken inside the socket
+;dispatch, which holds Critical, and a disk there stalls every timer in a
+;macro that is also sending keystrokes to a game - the reason the replica is
+;written the same way. At most two hundred wait: a macro whose timers never
+;run has bigger problems than its log, and the queue must not grow for ever.
 ext_fleetNote(text) {
-	global ext_fleetEvents
+	global ext_fleetEvents, ext_fleetNotes
 	local line := FormatTime(A_Now, "HH:mm:ss") "  " text
 
 	ext_fleetEvents.InsertAt(1, line)
 	while (ext_fleetEvents.Length > 80)
 		ext_fleetEvents.Pop()
-	fleet_Append("settings\fleet_macro.log", text)
+	if (ext_fleetNotes.Length < 200)
+		ext_fleetNotes.Push(text)
+	SetTimer ext_fleetNoteFlush, -1
 	return line
+}
+
+;The queue is swapped for an empty one before it is written, so a note taken
+;while this runs lands in the next batch rather than in the one being walked.
+ext_fleetNoteFlush() {
+	global ext_fleetNotes
+	local pending := ext_fleetNotes, text
+
+	ext_fleetNotes := []
+	for _, text in pending
+		fleet_Append("settings\fleet_macro.log", text)
 }
 
 ;Bring the whole thing up. Called once, from the macro's start-up.
@@ -1177,6 +1268,11 @@ ext_fleetStart() {
 		. (FleetCheck ? "" : ", talking to the fleet is switched off"))
 	if (!FleetCheck || (FleetRow <= 0))
 		return 0
+	;the role from this machine's copy of the roster, so a follower behaves as
+	;one from its first trip rather than from whenever it reaches the fleet
+	rows := roster_Load(ext_fleetRosterFile())
+	if rows.Has(FleetRow)
+		ext_fleetSetRole(rows[FleetRow].role)
 	;the designated host starts a coordinator without waiting to discover there
 	;is none - it is the expected state at the beginning of a session
 	if (FleetRow = FleetHostRow)

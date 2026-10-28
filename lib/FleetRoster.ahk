@@ -89,6 +89,33 @@ roster_Follows(role) {
 	return (role = "fuzzy") || (role = "tad")
 }
 
+;The field the main last announced, read off the live roster, or "" when no
+;main has said one. rows is row -> the fields of that row's ROSTER frame.
+;
+;The GOTO carrying the same field is an event. A follower that was
+;restarting, reconnecting or meeting a coordinator that had just taken over
+;when it went out never saw it again until the main changed field - which on a
+;main left on one field is never. Every row goes out on every beat, so reading
+;the field here is reading state, and a missed order is put right a beat later.
+roster_LeadField(rows) {
+	local _, f
+
+	for _, f in rows
+		if (f.Has("role") && (f["role"] = "main") && f.Has("field") && (f["field"] != ""))
+			return f["field"]
+	return ""
+}
+
+;Should a gather in current be cut short to follow the main into target?
+;
+;Only on an account that follows, and only towards a field that is known and
+;different. Compared without regard to case, like every field name in Natro:
+;a field written with another capital is the same field, and reading it as a
+;move would cut every trip short.
+roster_FollowMoves(role, target, current) {
+	return roster_Follows(role) && (target != "") && (target != current)
+}
+
 ;Read the roster. Returns a Map of row number to its entry, empty if the file is
 ;not there yet - a fleet with nobody in it is a legitimate starting state, not an
 ;error to report.

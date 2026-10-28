@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Thirty-eight things are checked, each because it is a way the design could be wrong
+;Forty-one things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -51,6 +51,9 @@
 ;	36. another fleet's macro is told so       and does not give up for ever
 ;	37. an unknown identity falls through      an older macro behaves as before
 ;	38. and the wire says so, not finally      a wrong door is not a closed one
+;	39. an oversized log rotates on line one   a quiet macro's file stays small
+;	40. the main's field is on the roster      a missed GOTO heals within a beat
+;	41. only a follower leaves for the main    and never for the field it is in
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -239,6 +242,7 @@ Sleep 1200
 seenBy["main"] := Map(), seenBy["fuzzy"] := Map(), seenBy["late"] := Map()
 gotoField := "", fieldSent := 0
 lateField := ""             ;what a resident joining afterwards was told
+leadOnRoster := ""          ;the main's field, as the late resident read it off the roster
 pinged := 0                 ;did the fuzzy macro get asked how fast it answers
 goneRows := Map()           ;every row the main was told had left
 bothSeen := Map("main", 0, "fuzzy", 0)   ;each client saw the whole roster, at some point
@@ -601,8 +605,8 @@ Handle(label, row, name, s, event, data) {
 	global bothSeen, row2, rttSeen, lateField
 	global srv, srvGen, srvMainLink, srvMainOwner
 	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
-	global cfgTookUp, myCv
-	local frame
+	global cfgTookUp, myCv, leadOnRoster
+	local frame, r, f, rows
 
 	if (event = "connect") {
 		if (data != "")
@@ -625,6 +629,15 @@ Handle(label, row, name, s, event, data) {
 		;be able to say what was true while it was there
 		if (seenBy[label].Has(1) && seenBy[label].Has(2))
 			bothSeen[label] := 1
+		;read the way a follower reads it, from the rows alone and with no GOTO
+		;involved - caught while it is true, since the wipe later empties the
+		;fleet on purpose
+		if ((label = "late") && (leadOnRoster = "")) {
+			rows := Map()
+			for r, f in seenBy["late"]
+				rows[r] := f.fields
+			leadOnRoster := roster_LeadField(rows)
+		}
 		if (Integer(fleet_Field(frame, "row", 0)) = 2) {
 			row2 := frame
 			if (Integer(fleet_Field(frame, "rtt", -1)) >= 0)
@@ -880,6 +893,25 @@ Report(*) {
 	try FileDelete appendLog
 	try FileDelete appendLog ".1"
 
+	;--- following the main ---------------------------------------------------
+	;
+	;The GOTO is an event, and a follower that was reconnecting when it went
+	;out never saw it again until the main changed field - which on a main left
+	;on one field is never. The roster goes out on every beat, so the field read
+	;off it is state: a follower that missed the order is right a beat later.
+	allOk := Check(lines, "a follower finds the main's field on the roster"
+		, leadOnRoster == "Sunflower") && allOk
+	;and what cuts a gather short. A guid farms its own field and must never
+	;be pulled out of it; a field name differing only in capitals is the same
+	;field in Natro, and reading it as a move would cut every trip short.
+	allOk := Check(lines, "only a fuzzy or tad is pulled out of another field"
+		, roster_FollowMoves("fuzzy", "Sunflower", "Pine Tree")
+		&& roster_FollowMoves("tad", "Sunflower", "Pine Tree")
+		&& !roster_FollowMoves("guid", "Sunflower", "Pine Tree")
+		&& !roster_FollowMoves("main", "Sunflower", "Pine Tree")
+		&& !roster_FollowMoves("fuzzy", "", "Pine Tree")
+		&& !roster_FollowMoves("tad", "sunflower", "Sunflower")) && allOk
+
 	;--- the mandate --------------------------------------------------------
 	;
 	;Written before the verb that reads it. The row that launched a coordinator
@@ -968,7 +1000,8 @@ Report(*) {
 	lines.Push("after it left: GONE for row 2=" (goneRows.Has(2) ? "yes" : "no")
 		. ", still in the live view=" (seenBy["main"].Has(2) ? "yes" : "no")
 		. ", still in the roster file=" (leftRoster.Has(2) ? "yes" : "no"))
-	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing"))
+	lines.Push("the late resident was told: " (lateField != "" ? lateField : "nothing")
+		. ", and read off the roster: " (leadOnRoster != "" ? leadOnRoster : "nothing"))
 	lines.Push("row 3 set itself up again and was handed row "
 		. ((boundRow >= 0) ? boundRow : "nothing at all")
 		. " of fleet " ((boundFid != "") ? boundFid : "(it was not told)"))
