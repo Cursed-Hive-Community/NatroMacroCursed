@@ -498,7 +498,8 @@ fleet_Ping() {
 fleet_Beat() {
 	global peers, term, startedBy, mandate, roster, rosterPath, rosterStamp
 	global servers, serversPath, serversStamp, rosterVer, serversVer, lastSeated
-	local p, stamp, fresh, ver
+	static beats := 0
+	local p, stamp, fresh, ver, configChanged := 0
 
 	;pick up an edited roster without a restart
 	if ((stamp := fleet_RosterStamp()) != rosterStamp) {
@@ -526,6 +527,7 @@ fleet_Beat() {
 			fleet_Event("roster reloaded, " roster.Count " rows, version "
 				. rosterVer.version)
 			fleet_ApplyRoster()
+			configChanged := 1
 		}
 	}
 	for _, p in peers {
@@ -546,6 +548,7 @@ fleet_Beat() {
 			fleet_BumpServers()
 		fleet_Event("servers reloaded, " servers.Count " of them, version "
 			. serversVer.version)
+		configChanged := 1
 	}
 	;nobody connected for long enough that nobody wants us - see FLEET_IDLE_SECS
 	if fleet_Seated()
@@ -559,8 +562,17 @@ fleet_Beat() {
 	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", startedBy
 		, "mandate", mandate, "at", nowUnix())))
 	fleet_Ping()
-	fleet_BroadcastRoster()
-	fleet_BroadcastServers()
+	;The configuration goes out when it changes and to every macro that joins.
+	;It is repeated as well, once a minute rather than on every beat: a copy
+	;that went astray - a replica that could not be written, a frame dropped
+	;with a connection - is put right without anybody changing anything, and a
+	;minute is as long as that is worth waiting. Every beat sent the whole
+	;roster and server list to every macro twelve times a minute for nothing.
+	if (!Mod(++beats, 12) || configChanged) {
+		fleet_BroadcastRoster()
+		fleet_BroadcastServers()
+	}
+	configChanged := 0
 	;broadcast every beat, not only when something changed. The detail panel
 	;shows values that go stale on their own - how long ago a macro was last
 	;heard from, how long it took to answer - and a roster that only moves on

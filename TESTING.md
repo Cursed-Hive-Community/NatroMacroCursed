@@ -515,6 +515,9 @@ it has been watched happen.
 - [ ] editing the roster on the coordinator reaches every macro
 - [ ] a server added on the coordinator reaches every macro
 - [ ] a server deleted disappears everywhere within a beat
+- [ ] the configuration goes out on a change, on a join and once a minute,
+      not on every beat - the self-test's propagation checks pass on that
+      `loads`
 - [ ] the owner dropdown lists accounts that have never connected
 - [ ] the table and the servers window can be edited on **any** macro in the
       fleet once its copy is whole, and the change reaches every macro `loads`
@@ -649,7 +652,3 @@ Not bugs to find - bugs already known about, with no fix yet.
   nothing else, which is the vocabulary that was asked for.
 - **Colour has never been seen.** Every palette decision in the Fleet window is
   unverified.
-- **The configuration is rebroadcast every beat** even when nothing changed. The
-  version makes it free for the receiver, not for the network. It should go out
-  on change and on a join only - which it already does, so what is left is to
-  stop sending it on the beat as well.
