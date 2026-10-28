@@ -516,7 +516,7 @@ ext_fleetOnLine(line) {
 			ext_fleetCoordSeen := nowUnix()
 		case "ROSTER":
 			if (row := Integer(fleet_Field(frame, "row", 0)))
-				ext_fleetPeers[row] := frame.fields
+				ext_fleetPeers[row] := fleet_LocalTimes(frame.fields, nowUnix())
 			if (row = FleetRow)
 				ext_fleetSetRole(fleet_Field(frame, "role"))
 			;the main's field, read off the roster on every beat - what puts a

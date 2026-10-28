@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Forty-nine things are checked, each because it is a way the design could be wrong
+;Fifty-one things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -62,6 +62,8 @@
 ;	47. a roster with two mains is recognised  so a hand-up cannot sneak one in
 ;	48. a follower away from the main shows    the panel says what is wrong
 ;	49. a higher term's beacon wins            a stale coordinator loses its macros
+;	50. durations become this machine's times  two clocks never meet
+;	51. and the coordinator sends durations    the wire carries no clock
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -1033,6 +1035,19 @@ Report(*) {
 		&& (fleet_BeaconVerdict(4, 3, 0) = "note")
 		&& (fleet_BeaconVerdict(2, 0, 0) = "note")
 		&& (fleet_BeaconVerdict(0, 3, 1) = "note")) && allOk
+	;A guiding star's end and "last heard from" were absolute times taken on one
+	;machine and read on another, so two minutes of drift between PCs made the
+	;countdown two minutes wrong. They travel as durations, turned back into
+	;times on arrival against this machine's clock.
+	lt := fleet_LocalTimes(Map("left", "90", "age", "4"), 1000)
+	lt0 := fleet_LocalTimes(Map("until", "5000", "seen", "777"), 1000)
+	allOk := Check(lines, "durations become this machine's times on arrival"
+		, (lt["until"] = 1090) && (lt["seen"] = 996)
+		&& (lt0["until"] = 5000) && (lt0["seen"] = 777)) && allOk
+	allOk := Check(lines, "the coordinator sends how long ago, not when"
+		, IsObject(row2) && (fleet_Field(row2, "age") != "")
+		&& (Integer(fleet_Field(row2, "age")) >= 0)
+		&& (fleet_Field(row2, "left") != "")) && allOk
 	allOk := Check(lines, "a roster with two mains is recognised"
 		, roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "main" }))
 		&& !roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "tad" }))

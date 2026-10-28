@@ -124,3 +124,19 @@ fleet_BeaconVerdict(beaconTerm, myTerm, connected) {
 		return "ignore"
 	return ((beaconTerm > myTerm) && connected) ? "switch" : "note"
 }
+
+;Turn the durations a ROSTER frame carries back into times on this machine's
+;clock: "left" of a guiding star into "until", "age" of the last word into
+;"seen". A frame from an older coordinator carries only the absolute times,
+;and those are left as they came.
+;
+;The times used to travel as they were, read on one machine's clock and
+;counted down against another's: two minutes of drift between PCs made a
+;countdown two minutes wrong, and ten made "last heard from" meaningless.
+fleet_LocalTimes(fields, now) {
+	if (fields.Has("left") && (fields["left"] != ""))
+		fields["until"] := (Integer(fields["left"]) > 0) ? now + Integer(fields["left"]) : 0
+	if (fields.Has("age") && (fields["age"] != ""))
+		fields["seen"] := now - Integer(fields["age"])
+	return fields
+}

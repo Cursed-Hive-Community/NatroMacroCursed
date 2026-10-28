@@ -339,7 +339,11 @@ fleet_OnReport(s, frame) {
 				fleet_LeadField(p.field)
 		case "GUIDING":
 			p.guidingField := fleet_Field(frame, "field")
-			p.guidingUntil := Integer(fleet_Field(frame, "until", 0))
+			;seconds left, turned into this machine's time here - an absolute
+			;time from the reporting machine would carry its clock's drift
+			p.guidingUntil := (fleet_Field(frame, "left") != "")
+				? nowUnix() + Integer(fleet_Field(frame, "left"))
+				: Integer(fleet_Field(frame, "until", 0))
 		case "CHARGE":
 			p.charge := Integer(fleet_Field(frame, "tokens", 0))
 		case "MONDO_IN":
@@ -578,9 +582,13 @@ fleet_Broadcast() {
 			, "machine", p.machine, "user", p.user
 		, "server", p.server, "field", p.field
 			, "guiding", p.guidingField, "until", p.guidingUntil, "charge", p.charge
+			;as durations as well as times: "left" and "age" are what a macro
+			;reads, against its own clock - see fleet_LocalTimes. The times stay
+			;for a macro on an older build.
+			, "left", Max(0, p.guidingUntil - nowUnix())
 			;both are for the detail panel: how long this macro takes to answer,
 			;and when it last said anything at all
-			, "rtt", p.rtt, "seen", p.lastSeen
+			, "rtt", p.rtt, "seen", p.lastSeen, "age", nowUnix() - p.lastSeen
 			;and which configuration that macro is holding, so a divergence has
 			;somewhere to show itself
 			, "cv", p.cv, "cby", p.cby)

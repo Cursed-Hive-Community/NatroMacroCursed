@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These forty-nine checks run the real coordinator process, the real socket
+These fifty-one checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -121,6 +121,8 @@ layer and the real protocol. They are the strongest evidence in the repository.
       by the rule the cards are coloured with
 - [x] a beacon on a lower term is ignored and one on a higher term moves a
       connected macro to it, by the rule the macro applies
+- [x] a guiding star's end and "last heard from" travel as durations and are
+      turned back into this machine's times, and the coordinator sends them
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -647,11 +649,6 @@ Not bugs to find - bugs already known about, with no fix yet.
   nothing else, which is the vocabulary that was asked for.
 - **Colour has never been seen.** Every palette decision in the Fleet window is
   unverified.
-- **Absolute timestamps cross machines.** `until` on a guiding star comes from
-  the reporting macro's clock and is counted down against the viewer's. Two
-  minutes of drift between PCs makes the countdown two minutes wrong, and ten
-  makes "last heard from" meaningless. Durations should travel as seconds
-  remaining. Not fixed.
 - **The configuration is rebroadcast every beat** even when nothing changed. The
   version makes it free for the receiver, not for the network. It should go out
   on change and on a join only - which it already does, so what is left is to
