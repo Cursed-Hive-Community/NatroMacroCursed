@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These thirty-eight checks run the real coordinator process, the real socket
+These thirty-nine checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -104,6 +104,9 @@ layer and the real protocol. They are the strongest evidence in the repository.
       sent leaves the secret deciding as it always did
 - [x] and the refusal is not final, so that macro keeps looking for its own
       fleet instead of letting go of it
+- [x] a fleet log is size-checked on the first line of a run, so a macro that
+      writes a few lines per session cannot grow it across restarts - not on
+      the wire, but in the same self-test
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
@@ -425,6 +428,9 @@ PCs, two macros, and a network you can unplug.
 - [ ] a suppressed trip leaves the residents where they are rather than recalling
       them
 - [ ] a resident re-roled away from fuzzy/tad stops following without a restart
+- [ ] every macro writes `settings\fleet_macro.log`: a follower shows `told to
+      follow` when the order arrives and `gather trip: following` when it acts,
+      and the main shows each field it announced or kept to itself `loads`
 
 ### Failover - the dangerous one
 

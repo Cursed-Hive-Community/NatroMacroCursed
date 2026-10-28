@@ -390,6 +390,7 @@ ext_fleetOnSocket(s, event, data) {
 		ext_fleetOnLine(data)
 	else if (event = "close") {
 		ext_fleetSock := 0
+		ext_fleetNote("lost the connection to the coordinator")
 		ext_fleetLostCoord()
 		ext_fleetRetryLater()
 	}
@@ -419,7 +420,7 @@ ext_fleetLostCoord() {
 ext_fleetHello() {
 	global ext_fleetSock, ext_fleetPeers, FleetRow, FleetSecret, ext_fleetMyField
 	global ext_fleetServers, ext_fleetServerVer, ext_fleetRoster, ext_fleetRosterVer
-	global ext_fleetHandedUp
+	global ext_fleetHandedUp, ext_fleetTrying
 
 	;Forget the old picture before asking for a new one. The coordinator answers
 	;a HELLO with the whole roster, and rows are merged by number rather than
@@ -438,6 +439,7 @@ ext_fleetHello() {
 	;no record of it, so the next gather trip has to say so again instead of
 	;finding our own note that nothing has changed and staying quiet.
 	ext_fleetMyField := ""
+	ext_fleetNote("connected to " ext_fleetTrying ", saying hello as row " FleetRow)
 	;the fleet this macro belongs to, so a coordinator of another one can say so
 	;instead of answering with a wrong secret - which is final, and cost a macro
 	;its own fleet for knocking on the wrong door on its own machine
@@ -477,11 +479,10 @@ ext_fleetOnLine(line) {
 			ext_fleetCoordSeen := nowUnix()
 		case "EVENT":
 			;stamped on arrival rather than from the frame: the difference is
-			;milliseconds, and it saves converting unix time to a local clock
-			ext_fleetEvents.InsertAt(1, FormatTime(A_Now, "HH:mm:ss") "  "
-				. fleet_Field(frame, "text"))
-			while (ext_fleetEvents.Length > 80)
-				ext_fleetEvents.Pop()
+			;milliseconds, and it saves converting unix time to a local clock.
+			;Marked as the fleet's, so this macro's file says which lines it was
+			;told and which it did.
+			ext_fleetNote("fleet: " fleet_Field(frame, "text"))
 			ext_fleetCoordSeen := nowUnix()
 		case "TAKEOVER":
 			ext_fleetOnTakeOver(frame)
@@ -542,8 +543,12 @@ ext_fleetOnLine(line) {
 			ext_fleetCoordSeen := nowUnix()
 		case "GOTO":
 			;the main is farming this field and we are a resident. Store it;
-			;travelling there and gathering is the gather loop's job, added next.
+			;travelling there is the gather loop's job, at its next trip. Both
+			;halves are written down, because the time between them is exactly
+			;what nobody could see when a follower seemed not to follow.
 			ext_fleetFollowField := fleet_Field(frame, "field")
+			ext_fleetNote("told to follow the main into " ext_fleetFollowField
+				. " - from the next gather trip")
 			ext_fleetCoordSeen := nowUnix()
 		case "BYE":
 			;Two kinds of refusal, and treating them alike was a mistake worth
@@ -559,11 +564,8 @@ ext_fleetOnLine(line) {
 			;The reason is kept for the panel rather than put in the status
 			;line: being turned away by the fleet says nothing about what this
 			;macro itself is doing.
-			ext_fleetEvents.InsertAt(1, FormatTime(A_Now, "HH:mm:ss")
-				. "  the fleet turned this macro away: "
+			ext_fleetNote("the fleet turned this macro away: "
 				. fleet_Field(frame, "why", "refused"))
-			while (ext_fleetEvents.Length > 80)
-				ext_fleetEvents.Pop()
 			;another fleet answering on an address we tried. Not this macro's
 			;fault and not the fleet's, so the address is passed over for a
 			;minute and the next candidate gets a turn - without this the
@@ -861,13 +863,21 @@ ext_fleetServerRows() {
 ;never chase the main anywhere but to farm. Sent only on a change, since the
 ;gather loop runs the same field many times over.
 ext_fleetReportField(field) {
-	global ext_fleetSock, ext_fleetMyField
+	global ext_fleetSock, ext_fleetMyField, fieldOverrideReason
 
-	if (!ext_fleetSock || (field = "") || !ext_fleetFollowReport())
+	if (!ext_fleetSock || (field = ""))
 		return 0
+	;said, because from the followers' side a trip the main keeps to itself
+	;looks exactly like an announcement that never arrived
+	if !ext_fleetFollowReport() {
+		ext_fleetNote("farming " field " for a " StrLower(fieldOverrideReason)
+			. " trip - not announced, Advanced says followers skip those")
+		return 0
+	}
 	if (field = ext_fleetMyField)
 		return 0
 	ext_fleetMyField := field
+	ext_fleetNote("farming " field " - told the fleet")
 	return sock_SendLine(ext_fleetSock, fleet_Frame("FIELD", Map("name", field)))
 }
 
@@ -922,12 +932,18 @@ ext_fleetFollowTarget() {
 	if ext_fleetPeers.Has(FleetRow) {
 		mine := ext_FleetCell(ext_fleetPeers[FleetRow], "role")
 		if ((mine != "") && !roster_Follows(mine)) {
+			ext_fleetNote("stopped following the main: this account is now "
+				. mine ", and only fuzzy and tad follow")
 			ext_fleetFollowField := ""
 			return ""
 		}
 	}
-	if !FieldDefault.Has(ext_fleetFollowField)
+	if !FieldDefault.Has(ext_fleetFollowField) {
+		ext_fleetNote("cannot follow the main into " ext_fleetFollowField
+			. ": this macro has no such field - farming its own")
 		return ""
+	}
+	ext_fleetNote("gather trip: following the main into " ext_fleetFollowField)
 	return ext_fleetFollowField
 }
 
@@ -1040,6 +1056,7 @@ ext_fleetTakeOver(why) {
 	if (ext_fleetCoordPid && ProcessExist(ext_fleetCoordPid))
 		return 0
 	nm_setStatus("Starting", "Fleet coordinator`n" why)
+	ext_fleetNote("starting a coordinator: " why)
 	ext_fleetTerm++
 	;the failure is caught rather than swallowed: a wrong path here means no
 	;coordinator ever starts, and the macro would otherwise retry for ever
@@ -1098,13 +1115,33 @@ ext_fleetOnExit(*) {
 ;the fleet's own log where the panel shows it, and the last one is kept so a
 ;line of the panel can say so without scrolling.
 ext_fleetProblem(text) {
-	global ext_fleetEvents, ext_fleetLastProblem
+	global ext_fleetLastProblem
 
-	ext_fleetLastProblem := FormatTime(A_Now, "HH:mm:ss") "  " text
-	ext_fleetEvents.InsertAt(1, ext_fleetLastProblem)
+	ext_fleetLastProblem := ext_fleetNote(text)
+	return 1
+}
+
+;One line of what this macro saw the fleet do, or did about it: in the panel,
+;and in a file of its own.
+;
+;The panel alone kept eighty lines in memory, so a macro restarted to try
+;again - which is what anybody does when it seems not to work - lost exactly
+;the lines that would have said why. The coordinator's log could only say what
+;was sent, never whether it arrived or what was done with it.
+;
+;One file per macro folder, beside nm_config.ini rather than in a fleet's
+;folder: it is the file somebody is asked to send, and it has to be there
+;before this macro has joined anything, since failing to join is one of the
+;things it records.
+ext_fleetNote(text) {
+	global ext_fleetEvents
+	local line := FormatTime(A_Now, "HH:mm:ss") "  " text
+
+	ext_fleetEvents.InsertAt(1, line)
 	while (ext_fleetEvents.Length > 80)
 		ext_fleetEvents.Pop()
-	return 1
+	fleet_Append("settings\fleet_macro.log", text)
+	return line
 }
 
 ;Bring the whole thing up. Called once, from the macro's start-up.
@@ -1132,6 +1169,12 @@ ext_fleetStart() {
 	;listening costs nothing and an unbound macro needs it most: it is how the
 	;join dialog finds a fleet to join in the first place
 	ext_fleetDiscover()
+	;the first line of every run, with the date the other lines leave out, so a
+	;file holding several sessions can be told apart - and so a macro that is
+	;not in a fleet at all says that, rather than leaving an empty file
+	ext_fleetNote("macro started " FormatTime(A_Now, "yyyy-MM-dd")
+		. ((FleetRow > 0) ? " - row " FleetRow ", fleet " ext_fleetId() : " - not in a fleet")
+		. (FleetCheck ? "" : ", talking to the fleet is switched off"))
 	if (!FleetCheck || (FleetRow <= 0))
 		return 0
 	;the designated host starts a coordinator without waiting to discover there

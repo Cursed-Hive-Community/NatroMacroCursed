@@ -1068,24 +1068,9 @@ fleet_Event(text) {
 }
 
 ;A plain text log beside the macro's own settings. Debugging a fleet by watching
-;seven windows is hopeless; one file with timestamps is not.
-;
-;Capped, because the thing that writes to it fastest is a fault: a coordinator
-;that cannot reach a macro logs a line every few seconds all night. Half a
-;megabyte is further back than anyone reads, and the previous half stays beside
-;it under .1. The size is only looked at every so often - a stat per line would
-;cost more than the lines do.
+;seven windows is hopeless; one file with timestamps is not. Bounded - see
+;fleet_Append.
 fleet_Log(text) {
 	global logPath
-	static cap := 524288, written := 0
-
-	if (Mod(++written, 200) = 0) {
-		try {
-			if (FileGetSize(logPath) > cap) {
-				try FileDelete logPath ".1"
-				FileMove logPath, logPath ".1", 1
-			}
-		}
-	}
-	try FileAppend FormatTime(A_Now, "HH:mm:ss") "  " text "`n", logPath, "UTF-8"
+	fleet_Append(logPath, text)
 }

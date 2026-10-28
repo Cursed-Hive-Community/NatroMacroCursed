@@ -863,6 +863,23 @@ Report(*) {
 	allOk := Check(lines, "binding hands over the fleet's identity"
 		, fleet_IsId(boundFid)) && allOk
 
+	;--- a log that stays small -----------------------------------------------
+	;
+	;Every macro now writes one, and a macro writes a handful of lines per run -
+	;so a size checked only every two hundred lines would never be checked, and
+	;the file would grow across restarts for good. The first line of a run has
+	;to look. Cap and interval are shrunk so the test needs a few lines, not
+	;half a megabyte.
+	appendLog := A_ScriptDir "\..\settings\fleet_append_selftest.log"
+	try FileDelete appendLog
+	try FileDelete appendLog ".1"
+	FileAppend StrRepeatSelfTest("x", 300) "`n", appendLog, "UTF-8"
+	appendOk := fleet_Append(appendLog, "first line of a run", 100, 1000)
+	allOk := Check(lines, "the first line of a run rotates an oversized log"
+		, appendOk && FileExist(appendLog ".1") && (FileGetSize(appendLog) < 100)) && allOk
+	try FileDelete appendLog
+	try FileDelete appendLog ".1"
+
 	;--- the mandate --------------------------------------------------------
 	;
 	;Written before the verb that reads it. The row that launched a coordinator
@@ -1032,6 +1049,11 @@ FleetLog() {
 		return "(no log at all - the coordinator never got as far as writing one)"
 	try return FileRead(LOGFILE, "UTF-8")
 	return "(the log exists but could not be read)"
+}
+
+;A string of n copies of c, to make a file of a known size.
+StrRepeatSelfTest(c, n) {
+	return StrReplace(Format("{:" n "}", ""), " ", c)
 }
 
 Check(lines, what, ok) {

@@ -347,6 +347,39 @@ fleet_IsId(id) {
 
 ;Where this fleet keeps its roster.
 ;
+;Append one line to a fleet log, and keep the log bounded.
+;
+;Shared by the coordinator and by every macro, because both write all night: a
+;coordinator that cannot reach a macro logs a line every few seconds, and a
+;macro writes one per order and per gather trip. Half a megabyte is further
+;back than anyone reads, and the previous half stays beside it under .1.
+;
+;The size is looked at on the first line of a run and then every so often - a
+;stat per line would cost more than the lines do. The first line matters for a
+;macro: it writes a handful of lines per session, so a check every two hundred
+;would never come round and the file would grow across restarts for good.
+;
+;A failure is returned, not raised. The log is how a fault gets seen; it must
+;never be the fault that stops a macro.
+fleet_Append(path, text, cap := 524288, every := 200) {
+	static written := Map()
+
+	written[path] := written.Has(path) ? written[path] + 1 : 1
+	if ((written[path] = 1) || (Mod(written[path], every) = 0)) {
+		try {
+			if (FileGetSize(path) > cap) {
+				try FileDelete path ".1"
+				FileMove path, path ".1", 1
+			}
+		}
+	}
+	try
+		FileAppend FormatTime(A_Now, "HH:mm:ss") "  " text "`n", path, "UTF-8"
+	catch
+		return 0
+	return 1
+}
+
 ;An id we will not make a folder out of falls back to the old flat path. That
 ;is the case worth being careful about and it is the first thing checked: an
 ;empty id would otherwise build settings\fleet\\roster.ini, which is not a
