@@ -891,6 +891,7 @@ ext_fleetReportField(field) {
 	if (field = ext_fleetMyField)
 		return 0
 	ext_fleetMyField := field
+	ext_FleetSave("FleetLastField", field)
 	ext_fleetNote("farming " field " - told the fleet")
 	return sock_SendLine(ext_fleetSock, fleet_Frame("FIELD", Map("name", field)))
 }
@@ -1259,7 +1260,7 @@ ext_fleetNoteFlush() {
 
 ;Bring the whole thing up. Called once, from the macro's start-up.
 ext_fleetStart() {
-	global FleetCheck, FleetRow, FleetHostRow, ext_fleetRefused
+	global FleetCheck, FleetRow, FleetHostRow, ext_fleetRefused, ext_fleetMyField, FleetLastField
 	global ext_fleetRosterDisk, ext_fleetServerDisk
 	global FleetRosterPath, FleetServersPath
 
@@ -1290,6 +1291,13 @@ ext_fleetStart() {
 		. (FleetCheck ? "" : ", talking to the fleet is switched off"))
 	if (!FleetCheck || (FleetRow <= 0))
 		return 0
+	;The field this macro last announced, said again by the first HELLO. A main
+	;restarted used to say nothing until its first gather trip - which comes
+	;after Mondo and the planters, and was measured at ten minutes on a real
+	;install - so a follower that had restarted too had nowhere to go. It is
+	;almost always where the main is about to farm anyway; if not, the main's
+	;first trip puts it right.
+	ext_fleetMyField := FleetLastField
 	;the role from this machine's copy of the roster, so a follower behaves as
 	;one from its first trip rather than from whenever it reaches the fleet
 	rows := roster_Load(ext_fleetRosterFile())

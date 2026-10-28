@@ -456,6 +456,8 @@ PCs, two macros, and a network you can unplug.
       back to the main's field `loads`
 - [ ] a main that reconnects - or meets a coordinator that just took over -
       says its field at once rather than at its next trip `loads`
+- [ ] a main that **restarts** says the last field it announced as soon as it
+      connects, before Mondo and the planters `loads`
 - [ ] a follower that missed the GOTO is put right by the roster within a
       beat `loads`
 - [ ] it farms that field exactly as one of its own - boost detection and

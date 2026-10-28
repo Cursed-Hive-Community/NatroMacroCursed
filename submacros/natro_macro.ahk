@@ -964,7 +964,10 @@ nm_importConfig()
 		, "FleetFollowOwn", 1
 		, "FleetFollowBoost", 1
 		, "FleetFollowQuest", 0
-		, "FleetFollowPlanter", 0)
+		, "FleetFollowPlanter", 0
+		;the field this macro last told the fleet it was farming, so a main that
+		;restarts can say it again the moment it reconnects - see ext_fleetStart
+		, "FleetLastField", "")
 
 	local k, v, i, j
 	for k,v in config ; load the default values as globals, will be overwritten if a new value exists when reading
