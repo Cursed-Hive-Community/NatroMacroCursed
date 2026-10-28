@@ -11673,7 +11673,8 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		} 
 	}
 
-	if convert = 1 
+	;a sticker stack that is due goes on first, so the convert happens under it
+	if ((convert = 1) && !ext_stickerStackInterrupt(1, 0))
 		nm_convert()
 
 	if ((nowUnix() - resetTime) < wait)
@@ -12146,7 +12147,7 @@ nm_gotoCannon(){
 		CloseRoblox()
 	}
 }
-nm_findHiveSlot(){
+nm_findHiveSlot(convertAfter := 1, forceBalloonConvert := 0){
 	global FwdKey, LeftKey, BackKey, RightKey, RotLeft, RotRight, ZoomIn, ZoomOut, KeyDelay, HiveConfirmed, bitmaps
 
 	hwnd := GetRobloxHWND()
@@ -12185,7 +12186,8 @@ nm_findHiveSlot(){
 			}
 			Sleep 500
 			if nm_ConfirmAtHive() {
-				nm_convert()
+				if convertAfter
+					nm_convert(forceBalloonConvert)
 				break
 			}
 			else
@@ -12207,7 +12209,7 @@ nm_findHiveSlot(){
 nm_Collect(){
 	global GatherFieldBoostedStart, LastGlitter, resetTime
 
-	if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt())
+	if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt() || ext_mondoErrandsPaused())
 		return
 
 	;MACHINES
@@ -13793,7 +13795,9 @@ nm_Boost(){
 	if(nm_NightInterrupt() || nm_MondoInterrupt())
 		return
 
-	nm_StickerStack()
+	;with the interrupt on, the stack is placed the moment it comes due instead
+	if !StickerStackInterruptCheck
+		nm_StickerStack()
 
 	if ((QuestBoostCheck = 0) && QuestGatherField && (QuestGatherField != "None"))
 		return
@@ -13803,13 +13807,14 @@ nm_Boost(){
 	nm_shrine()
 	nm_toAnyBooster()
 }
-nm_StickerStack(){
+nm_StickerStack(resetBeforeTravel := 1){
 	global StickerStackCheck, LastStickerStack, StickerStackItem, StickerStackMode, StickerStackTimer, StickerStackHive, StickerStackCub, StickerStackVoucher, SC_E, bitmaps
 
 	if (StickerStackCheck && (nowUnix()-LastStickerStack)>StickerStackTimer) {
-		loop 2 {
-			nm_Reset()
-			nm_setStatus("Traveling", "Sticker Stack" ((A_Index > 1) ? " (Attempt 2)" : ""))
+		loop 5 {
+			if resetBeforeTravel
+				nm_Reset()
+			nm_setStatus("Traveling", "Sticker Stack" ((A_Index > 1) ? " (Attempt " A_Index ")" : ""))
 
 			nm_gotoCollect("stickerstack")
 			GetRobloxClientPos()
@@ -16633,6 +16638,11 @@ nm_Mondo(){
 	global MondoBuffCheck, PMondoGuid, LastGuid, MondoAction, LastMondoBuff, PMondoGuidComplete, GatherFieldBoostedStart, LastGlitter
 	if nm_NightInterrupt()
 		return
+	if ext_mondoInterrupt()
+		return
+	;the buff is the interrupt's job when it is on, from :59 rather than :00
+	if ((MondoInterruptCheck = 1) && (MondoBuffCheck = 1) && (MondoAction = "Buff"))
+		return
 	if nm_MondoInterrupt(){
 		mondobuff := nm_imgSearch("mondobuff.png",50,"buff")
 		If (mondobuff[1] = 0) {
@@ -17237,7 +17247,11 @@ nm_GoGather(){
 	if(FieldPatternShift) {
 		nm_setShiftLock(1)
 	}
-	while(((nowUnix()-gatherStart)<(FieldUntilMins*60)) || (PFieldBoosted && (nowUnix()-GatherFieldBoostedStart)<840) || (PFieldBoostExtend && (nowUnix()-GatherFieldBoostedStart)<1800 && (nowUnix()-LastGlitter)<900) || (PFieldGuidExtend && FieldGuidDetected && (nowUnix()-gatherStart)<(FieldUntilMins*60+PFieldGuidExtend*60) && (nowUnix()-GatherFieldBoostedStart)>900 && (nowUnix()-LastGlitter)>900) || (PPopStarExtend && HasPopStar && PopStarActive)){
+	;With Glitter Extend a trip ends on its own time limit, boosted or not: the
+	;lease is renewed from the convert instead (ext_boostLeaseConvertRenew), as
+	;DefinetlyNotRay has it, so standing in the field to wait for it is no longer
+	;needed.
+	while(((nowUnix()-gatherStart)<(FieldUntilMins*60)) || (PFieldGuidExtend && FieldGuidDetected && (nowUnix()-gatherStart)<(FieldUntilMins*60+PFieldGuidExtend*60) && (nowUnix()-GatherFieldBoostedStart)>900 && (nowUnix()-LastGlitter)>900) || (PPopStarExtend && HasPopStar && PopStarActive)){
 		if !fieldPatternShift
 			MouseMove windowX+350, windowY+GetYOffset()+100
 		if(!DisableToolUse)
@@ -17266,13 +17280,18 @@ nm_GoGather(){
 					interruptReason := "Following the main"
 					break
 				}
+				;Mondo and the stack go straight from the field. Walking home and
+				;converting first is minutes, and both are on a clock that does
+				;not wait: the minute before the spawn, the moment the stack is up.
 				if (!resident && ext_mondoDue()) {
-					interruptReason := "Mondo Spawning"
-					break
+					ext_gatherAbandon()
+					ext_mondoInterrupt()
+					return
 				}
-				if (!resident && ext_stickerStackDue()) {
-					interruptReason := "Sticker Stack Ready"
-					break
+				if (!resident && ext_stickerStackGatherDue()) {
+					ext_gatherAbandon()
+					ext_stickerStackInterrupt(1, 1)
+					return
 				}
 				if (!resident && ext_blueBoosterReady()) {
 					interruptReason := "Blue Booster Ready"
@@ -17303,7 +17322,7 @@ nm_GoGather(){
 						;use glitter early if boosted and close to glitter time
 						;about to walk off to convert, so take the wider window: the
 						;lease would run out during the trip otherwise
-						if ext_boostLeaseConvertWindow()
+						if ext_boostLeaseBackpackWindow()
 							ext_boostLeaseRenew(FieldName, "Glitter Extend")
 						break
 					}
@@ -17327,6 +17346,13 @@ nm_GoGather(){
 					interruptReason := "Mondo"
 					if (PMondoGuidComplete)
 						PMondoGuidComplete:=0
+					;with Mondo Interrupt on, Natro's own Mondo is gone to from
+					;the field too, rather than after a walk home and a convert
+					if MondoInterruptCheck {
+						ext_gatherAbandon()
+						ext_mondoInterrupt()
+						return
+					}
 					break
 				}
 			}
@@ -17723,7 +17749,7 @@ nm_loot(length, reps, direction, tokenlink:=0){ ; length in tiles instead of ms 
 	}
 	nm_endWalk()
 }
-nm_convert(){
+nm_convert(forceBalloonConvert := 0){
 	global AFBrollingDice, AFBuseGlitter, AFBuseBooster, CurrentField, HiveConfirmed, EnzymesKey, LastEnzymes
 		, ConvertStartTime, TotalConvertTime, SessionConvertTime
 		, BackpackPercent, BackpackPercentFiltered
@@ -17736,6 +17762,8 @@ nm_convert(){
 	;a balloon convert runs ten minutes and will straddle the hour sooner or
 	;later, so the spawn has to be checked here as well as before a trip
 	if ext_mondoInterrupt()
+		return
+	if ext_stickerStackInterrupt(1, 0)
 		return
 
 	hwnd := GetRobloxHWND()
@@ -17768,12 +17796,12 @@ nm_convert(){
 			if (disconnectcheck()) {
 				return
 			}
-			;breaking off a convert to renew the lease only pays while there is
-			;still a lease to renew - the window is the last minute of it
-			if ext_boostLeaseConvertWindow() {
-				nm_setStatus("Interrupted", "Field Boosted")
+			if ext_stickerStackInterrupt(1, 0)
 				return
-			}
+			;the last minute of the lease: walk out, glitter, walk back and carry on
+			ext_boostLeaseConvertRenew(FieldName)
+			if ext_mondoInterrupt()
+				return
 			inactiveHoney := (nm_activeHoney() = 0) ? inactiveHoney + 1 : 0
 			if (BackpackConvertTime>60 && inactiveHoney>30) {
 				nm_setStatus("Interrupted", "Inactive Honey")
@@ -17798,7 +17826,7 @@ nm_convert(){
 		nm_setStatus("Converting", "Backpack Emptied`nTime: " duration)
 	}
 	;empty balloon
-	if((ConvertBalloon="always") || (ConvertBalloon="Every" && (nowUnix() - LastConvertBalloon)>(ConvertMins*60)) || (ConvertBalloon="Gather" && (ConvertGatherFlag=1 || (nowUnix() - LastConvertBalloon)>2700))) {
+	if(forceBalloonConvert || (ConvertBalloon="always") || (ConvertBalloon="Every" && (nowUnix() - LastConvertBalloon)>(ConvertMins*60)) || (ConvertBalloon="Gather" && (ConvertGatherFlag=1 || (nowUnix() - LastConvertBalloon)>2700))) {
 		ConvertGatherFlag := 0
 		;balloon check
 		strikes:=0
@@ -17810,6 +17838,8 @@ nm_convert(){
 				nm_setStatus("Converting", "Balloon Refreshed")
 				IniWrite LastConvertBalloon:=nowUnix(), "settings\nm_config.ini", "Settings", "LastConvertBalloon"
 				PostSubmacroMessage("background", 0x5554, 6, LastConvertBalloon)
+				if ext_stickerStackInterrupt(1, 0)
+					return
 				strikes := 10
 				break
 			}
@@ -17828,6 +17858,10 @@ nm_convert(){
 					nm_setStatus("Interrupted", "AFB")
 					return
 				}
+				if ext_mondoInterrupt()
+					return
+				if ext_stickerStackInterrupt(1, 0)
+					return
 				inactiveHoney := (nm_activeHoney() = 0) ? inactiveHoney + 1 : 0
 				;An enzyme is worth far more spent on a boosted convert than on a
 				;plain one, so holding it back until the field is boosted is the
@@ -17851,12 +17885,11 @@ nm_convert(){
 				if (disconnectcheck()) {
 					return
 				}
-				;breaking off a convert to renew the lease only pays while there is
-				;still a lease to renew - the window is the last minute of it
-				if ext_boostLeaseConvertWindow() {
-					nm_setStatus("Interrupted", "Field Boosted")
+				if ext_stickerStackInterrupt(1, 0)
 					return
-				}
+				ext_boostLeaseConvertRenew(FieldName)
+				if ext_mondoInterrupt()
+					return
 				GetRobloxClientPos(hwnd)
 				if (Mod(A_Index, 30) = 0) {
 					MouseMove windowX+windowWidth-30, windowY+offsetY+16
@@ -17872,10 +17905,18 @@ nm_convert(){
 					|| (Gdip_ImageSearch(pBMScreen, bitmaps["hiveballoon"], , windowWidth//2, windowHeight-offsetY-36-400, , , 40, , 3) = 1)) {
 					Gdip_DisposeImage(pBMScreen)
 					ballooncomplete:=1
+					if ext_stickerStackInterrupt(1, 0)
+						return
 					break
 				}
 				Gdip_DisposeImage(pBMScreen)
-				Sleep 1000
+				;the second between two looks is watched as well: a stack that
+				;comes due goes on within a tenth of a second, not a second later
+				Loop 10 {
+					Sleep 100
+					if ext_stickerStackInterrupt(1, 0)
+						return
+				}
 			}
 			if(ballooncomplete){
 				duration := DurationFromSeconds(BalloonConvertTime, "mm:ss")
@@ -19333,7 +19374,7 @@ nm_QuestRotate(){
 
 	if ((BlackQuestCheck=0) && (BrownQuestCheck=0) && (BuckoQuestCheck=0) && (RileyQuestCheck=0) && (HoneyQuestCheck=0) && (PolarQuestCheck=0))
 		return
-	if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt())
+	if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt() || ext_mondoErrandsPaused())
 		return
 
 	;open quest log
@@ -21349,7 +21390,7 @@ ba_planter(){
 	}
 	if (PlanterMode != 2)
 		return
-	if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt())
+	if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt() || ext_mondoErrandsPaused())
 		return
 
 	; if enabled, take any/all planter screenshots before further planter actions
@@ -23106,7 +23147,7 @@ mp_Planter() { ;//todo: merge these manual planter functions as much as possible
 
 	If (PlanterMode != 1)
 		Return
-	if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt())
+	if (nm_NightInterrupt() || nm_MondoInterrupt() || nm_GatherBoostInterrupt() || ext_mondoErrandsPaused())
 		return
 
 	; if enabled, take any/all planter screenshots before further planter actions

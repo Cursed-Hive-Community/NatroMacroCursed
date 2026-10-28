@@ -133,19 +133,22 @@ two sockets a seat has:
       does, so the check cannot pass for a seat that had stopped listening
 - [x] a frame cut in half is never mistaken for the one that was sent
 
-And thirty-four checks on the extensions' arithmetic — every window in time
+And forty-two checks on the extensions' arithmetic — every window in time
 that any of them turns on, each with a row one second outside it, one exactly
 on its edge and one inside:
 
-- [x] the lease window at thirty, sixty and a hundred and five seconds, and the
-      upper edge being exclusive because at 900 the lease is over
+- [x] the lease window at thirty, sixty, seventy and a hundred and five
+      seconds, and the upper edge being exclusive because at 900 the lease is
+      over
 - [x] pre-glitter between ten and eleven minutes before the booster, and not
       while a glitter is still running
-- [x] the blue booster at 2660 of its 2700 second cooldown
+- [x] the blue booster at 2660 of its 2700 second cooldown, and due again at
+      once after a trip that found nothing to press
 - [x] the sticker stack past its timer, after a failure, and never twice inside
       a minute
 - [x] Mondo at :59, through the :00 to :14 catch-up window, and the fifty-five
       minute guard against claiming one spawn twice
+- [x] no planter, quest or collect round started between :55 and :00
 
 They run in well under a second: no socket, no sleep, no clock read. The
 functions they call were deliberately separated from the state they used to
@@ -233,8 +236,13 @@ The windows are DefinetlyNotRay's measured values and are deliberately kept.
 
 - [ ] glitter fires in the **last 30 seconds** of a lease while gathering
       (870-900s after the boost was detected)
-- [ ] glitter fires in the **last minute** when about to leave and convert
-      (840-900s), because the trip would outlast the lease otherwise
+- [ ] glitter fires in the **last 70 seconds** when a full bag sends the macro
+      home (830-900s), because the trip would outlast the lease otherwise
+- [ ] in the **last minute** of a lease during a convert (840-900s), the macro
+      walks to the field, glitters, walks back and **carries on converting**
+      `loads`
+- [ ] a trip ends on its own time limit even while boosted, as in
+      DefinetlyNotRay's version `loads`
 - [ ] **one renewal per lease** and no more - a second would throw away whatever
       is left of the first
 - [ ] the status line says `Boosted / Glitter Extend` when it fires
@@ -264,12 +272,20 @@ the cooldown.
       cooldown is up (2660s), rather than waiting for the trip to end
 - [ ] it arrives as the booster becomes available instead of standing there
 - [ ] pressing it starts a fresh lease owed its own renewal
-- [ ] a trip that never reached the booster retries in **5 minutes**, not at once
-      (`ext_blueBoosterFailed`)
+- [ ] a trip that found no booster to press - it arrived early - goes again
+      **at once** and lands on it (`ext_blueBoosterFailed`); it used to wait
+      five minutes and was seen arriving six minutes late `loads`
 
 ### Sticker stack interrupt
 
-- [ ] the macro breaks off as soon as the timer is up and places the stack
+- [ ] the macro breaks off as soon as the timer is up and goes **straight from
+      the field**, without walking home or converting first `loads`
+- [ ] in the last minute of a boost lease it waits for the glitter first
+      `loads`
+- [ ] it is placed in the middle of a backpack or balloon convert too, and the
+      balloon convert is **resumed** afterwards `loads`
+- [ ] a reset that is about to convert places a due stack first `loads`
+- [ ] five attempts at reaching the stack rather than two `loads`
 - [ ] it then returns to the hive to convert **under** the stack - the second
       half is the point of the first
 - [ ] a placement that failed retries after 15 seconds, and never twice inside a
@@ -283,9 +299,12 @@ Needs: Sticker Stack enabled in the Boost tab, where the timer and item live.
 ### Mondo interrupt
 
 - [ ] the macro leaves at **:59** and is standing at Mountain Top as the chick
-      appears
-- [ ] the field boost is renewed **before** leaving when the lease is in its last
-      105 seconds
+      appears, **straight from the field** `loads`
+- [ ] it also leaves from the middle of a convert `loads`
+- [ ] with the interrupt on, Natro's own Mondo - **Kill** included - is gone to
+      straight from the field, without walking home and converting `loads`
+- [ ] glitter is pressed **before** leaving when the lease is in its last 105
+      seconds, and the boost counts again from that press
 - [ ] arriving between **:00 and :14** still counts, for the times it was
       mid-pattern with a full backpack
 - [ ] one spawn is never claimed twice (the 3300s guard)
@@ -293,8 +312,8 @@ Needs: Sticker Stack enabled in the Boost tab, where the timer and item live.
 - [ ] a spawn that never appears is reported, not waited on for ever
 - [ ] it does nothing unless Mondo is set to **Buff**
 
-Not implemented and deliberately so: the **Kill** path, which is what an `atk`
-account is for. It waits for the queue - see the note above `ext_mondoDue`.
+Leaving at :59 is for **Buff** only, as in DefinetlyNotRay's version: a Kill
+macro is not sent early, but no longer walks home and converts before going.
 
 ### Limits and process lifecycle
 

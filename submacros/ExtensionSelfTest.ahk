@@ -51,6 +51,14 @@ nm_findHiveSlot(*) {
 }
 nm_StickerStack(*) {
 }
+nm_endWalk(*) {
+}
+nm_setShiftLock(*) {
+}
+nm_walkFrom(*) {
+}
+nm_fieldBoostGlitter(*) {
+}
 nm_HealthDetection(*) {
 	return []
 }
@@ -77,6 +85,10 @@ Lease(900, 30, 0, "gathering: the lease is over")
 Lease(839, 60, 0, "converting: one second before the window")
 Lease(840, 60, 1, "converting: exactly on the edge")
 Lease(899, 60, 1, "converting: the last second")
+;a full bag is the last chance to glitter before walking off to convert, so
+;its window opens ten seconds before the converting one - DefinetlyNotRay's 830
+Lease(829, 70, 0, "backpack full: one second before the window")
+Lease(830, 70, 1, "backpack full: exactly on the edge")
 Lease(794, 105, 0, "mondo trip: one second before the window")
 Lease(795, 105, 1, "mondo trip: exactly on the edge")
 ;a lease that never started reads as age zero, and must not look like a window
@@ -110,6 +122,10 @@ Blue(sinceUse, want, what) {
 Blue(2659, 0, "blue booster: one second early")
 Blue(2660, 1, "blue booster: exactly on time")
 Blue(5000, 1, "blue booster: long overdue")
+;A trip that found no booster to press arrived early, and the cooldown ends
+;within the minute. It is due again at once, so the next trip leaves straight
+;away and lands on it - five minutes later it was six minutes late.
+Blue(ext_blueBoosterRetryAge(), 1, "blue booster: a failed trip is retried at once")
 
 ;--- the sticker stack ------------------------------------------------------
 ;
@@ -143,6 +159,19 @@ Mondo(15, 9999, 0, "mondo: :15, the spawn has been and gone")
 Mondo(30, 9999, 0, "mondo: the middle of the hour")
 Mondo(59, 3300, 0, "mondo: this spawn was claimed fifty-five minutes ago")
 Mondo(59, 3301, 1, "mondo: the last one was long enough ago")
+
+;--- the errands before mondo -----------------------------------------------
+;
+;From :55 to :00 the macro starts nothing long - no planter, quest or collect
+;round - so it is free when the chick spawns rather than halfway across the map.
+Pause(utcMin, want, what) {
+	Expect(ext_mondoErrandsPausedAt(utcMin), want, what)
+}
+Pause(54, 0, "errands: :54, still time for one")
+Pause(55, 1, "errands: :55, held for mondo")
+Pause(59, 1, "errands: :59, held for mondo")
+Pause(0, 1, "errands: :00, the spawn itself")
+Pause(1, 0, "errands: :01, back to normal")
 
 Report()
 return

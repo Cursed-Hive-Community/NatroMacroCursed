@@ -84,6 +84,26 @@ ext_boostLeaseGatherWindow() {
 ext_boostLeaseConvertWindow() {
 	return ext_boostLeaseCanRenew() && ext_boostLeaseWindowAt(ext_boostLeaseAge(), 60)
 }
+;A full bag: the last moment to glitter standing in the field before the walk
+;to the hive. Ten seconds wider than the converting window - DefinetlyNotRay's
+;830 - because the convert that follows will not be back in time otherwise.
+ext_boostLeaseBackpackWindow() {
+	return ext_boostLeaseCanRenew() && ext_boostLeaseWindowAt(ext_boostLeaseAge(), 70)
+}
+;Renew from the middle of a convert: walk to the field, glitter, walk back and
+;carry on converting. Breaking the convert off instead, as this used to, came
+;back to the field to gather - and lost the half-converted balloon.
+ext_boostLeaseConvertRenew(fieldName) {
+	if (!ext_boostLeaseConvertWindow() || (fieldName = "") || (fieldName = "None"))
+		return 0
+	nm_setStatus("Traveling", "Glitter Renewal`n" fieldName)
+	nm_gotoField(fieldName)
+	Sleep 1000
+	ext_boostLeaseRenew(fieldName, "Glitter Renewed - Returning to Convert")
+	nm_walkFrom(fieldName)
+	nm_findHiveSlot()
+	return 1
+}
 ;Glitter is spammed rather than pressed once. The press is only registered while
 ;the character is idle enough for the game to accept a hotbar key, and five
 ;seconds of pressing costs nothing next to losing the renewal.

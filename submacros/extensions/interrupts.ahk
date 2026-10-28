@@ -41,15 +41,31 @@ ext_blueBoosterUsed() {
 	IniWrite LastBlueBoostUse, "settings\nm_config.ini", "Boost", "LastBlueBoostUse"
 	return 1
 }
-;The trip never reached the booster. Worth retrying, but not at once: a route
-;that fails once tends to fail again, and retrying on the spot would spend the
-;night walking. Five minutes, then try again.
+;The trip found no booster to press. Nearly always that is a trip which left
+;early and arrived before the cooldown was up - which is what leaving forty
+;seconds early does whenever the walk is quick - so the booster comes up within
+;the minute and the next trip lands on it. So it is due again at once, which is
+;DefinetlyNotRay's own repair: the next trip leaves straight away.
+;
+;This used to wait five minutes, on the theory that a route that fails once
+;fails again. On a real install that made the booster six minutes late, and
+;it threw away the real time of the last press doing so.
+;
+;Natro's own booster round is put back thirty minutes, as his is, so it does
+;not set off for the same booster in between.
 ext_blueBoosterFailed() {
-	global LastBlueBoostUse
+	global LastBlueBoostUse, LastBlueBoost
 
-	LastBlueBoostUse := nowUnix() - 2660 + 300
+	LastBlueBoostUse := nowUnix() - ext_blueBoosterRetryAge()
 	IniWrite LastBlueBoostUse, "settings\nm_config.ini", "Boost", "LastBlueBoostUse"
+	LastBlueBoost := nowUnix() - 900
+	IniWrite LastBlueBoost, "settings\nm_config.ini", "Collect", "LastBlueBoost"
 	return 1
+}
+;How long ago a failed trip says the booster was pressed: the whole cooldown,
+;so it reads as due.
+ext_blueBoosterRetryAge() {
+	return 2700
 }
 ;A sticker stack runs on a timer, and what it is worth is whatever gets
 ;converted underneath it. Natro offers one only in nm_Boost, between gathering
@@ -84,23 +100,43 @@ ext_stickerStackDueAt(sinceStack, timer, sinceFail, sinceUse) {
 	;and never twice inside a minute, whatever the timers say
 	return (sinceUse >= 60)
 }
-;nm_StickerStack returns nothing, but it records the moment it succeeds, so
-;that is what tells a placement from a failure here. Reading the clock it
-;already keeps leaves the shared routine untouched.
+;The gather loop's question. A stack that comes due in the last minute of a
+;boost lease waits for the renewal, so the glitter is pressed standing in the
+;field rather than lost to the trip - DefinetlyNotRay's order.
+ext_stickerStackGatherDue() {
+	return ext_stickerStackDue() && !ext_boostLeaseNearEnd(60)
+}
+;nm_StickerStack records the moment it succeeds, so comparing that clock before
+;and after tells a placement from a failure without asking it.
+;
+;Asked from three places, which is the point: between trips, from the field
+;the moment it comes due, and all through a convert - a balloon convert runs
+;ten minutes, and a stack that waited for the end of it was a stack spent on
+;ten minutes less honey. resetBefore is 0 at the hive, where the trip can start
+;from where the macro stands. A balloon convert that was broken off for it is
+;picked up again afterwards rather than left half done.
 ;
 ;handling guards against re-entry: the reset below can pass through code that
 ;checks interrupts again, and a stack placed twice is a stack wasted.
-ext_stickerStackInterrupt(convertAfter := 1) {
+ext_stickerStackInterrupt(convertAfter := 1, resetBefore := 1) {
 	global LastStickerStack, ext_stickerStackFailedAt, ext_stickerStackUsedAt
+	global state, objective, ConvertGatherFlag, AFBuseGlitter
 	static handling := 0
-	local before
+	local before, resumeBalloon
 
 	if (handling || !ext_stickerStackDue())
 		return 0
 	handling := 1
+	resumeBalloon := (state = "Converting") && InStr(objective, "Balloon")
+	;a glitter Auto Field Boost was about to press would run out while the
+	;macro is away, so it goes first
+	if AFBuseGlitter {
+		nm_setStatus("Priority", "Boosting Field: Glitter")
+		nm_fieldBoostGlitter()
+	}
 	nm_setStatus("Priority", "Sticker Stack Ready")
 	before := LastStickerStack
-	nm_StickerStack()
+	nm_StickerStack(resetBefore)
 	if (LastStickerStack = before) {
 		ext_stickerStackFailedAt := nowUnix()
 		nm_setStatus("Failed", "Sticker Stack")
@@ -110,9 +146,29 @@ ext_stickerStackInterrupt(convertAfter := 1) {
 	ext_stickerStackFailedAt := 0, ext_stickerStackUsedAt := nowUnix()
 	nm_setStatus("Traveling", convertAfter ? "Hive, to convert under the stack" : "Hive")
 	nm_Reset(2, 2000, 0, 1)
-	if (convertAfter && !nm_findHiveSlot())
-		nm_setStatus("Failed", "Could not confirm the hive after the stack")
+	if convertAfter {
+		if resumeBalloon
+			ConvertGatherFlag := 1
+		if !nm_findHiveSlot(1, resumeBalloon)
+			nm_setStatus("Failed", "Could not confirm the hive after the stack")
+	}
 	handling := 0
+	return 1
+}
+;Stop gathering where the macro stands, for an interrupt that goes straight
+;from the field rather than walking home and converting first: the end of a
+;trip without the trip. The gather time is still counted.
+ext_gatherAbandon() {
+	global GatherStartTime, TotalGatherTime, SessionGatherTime
+
+	Click "Up"
+	nm_endWalk()
+	nm_setShiftLock(0)
+	if GatherStartTime {
+		TotalGatherTime += nowUnix() - GatherStartTime
+		SessionGatherTime += nowUnix() - GatherStartTime
+	}
+	GatherStartTime := 0
 	return 1
 }
 ;Mondo Chick spawns at the top of the hour at Mountain Top, and the buff is
@@ -167,6 +223,35 @@ ext_mondoDueAt(utcMin, sinceBuff) {
 		return 0
 	return (sinceBuff > 3300)
 }
+;From :55 to the spawn the macro starts no planter, quest or collect round, so
+;it is not halfway across the map when the chick appears. Only on a macro that
+;goes to Mondo at all: for one that does not, holding the errands is pure loss.
+ext_mondoErrandsPaused() {
+	global MondoBuffCheck
+
+	if (MondoBuffCheck != 1)
+		return 0
+	return ext_mondoErrandsPausedAt(FormatTime(A_NowUTC, "m") + 0)
+}
+ext_mondoErrandsPausedAt(utcMin) {
+	return (utcMin >= 55) || (utcMin = 0)
+}
+;A lease in its last 105 seconds would not survive the round trip, so glitter
+;goes on before leaving. Pressed this way the boost starts again from the press,
+;as DefinetlyNotRay has it, rather than counting as the lease's one renewal.
+ext_mondoPreExitGlitter(fieldName) {
+	global LastGlitter, GatherFieldBoostedStart, fieldOverrideReason
+
+	if !ext_boostLeaseNearEnd(105)
+		return 0
+	ext_spamGlitter()
+	LastGlitter := nowUnix()
+	GatherFieldBoostedStart := LastGlitter
+	fieldOverrideReason := "Boost"
+	IniWrite LastGlitter, "settings\nm_config.ini", "Boost", "LastGlitter"
+	nm_setStatus("Boosted", "Mondo Interrupt`n" fieldName)
+	return 1
+}
 ;A chick nobody has touched reads exactly 100, so the spawn counts as found once
 ;a bar is showing below full - which is what a fight underway looks like, and
 ;the fight is what the macro came to stand next to.
@@ -190,10 +275,7 @@ ext_mondoInterrupt() {
 		return 0
 	handling := 1
 	nm_updateAction("Mondo Interrupt")
-	;the round trip runs to a few minutes, so a lease in its last 105 seconds
-	;would not survive it - renew now rather than come back to nothing
-	if ext_boostLeaseNearEnd(105)
-		ext_boostLeaseRenew(CurrentField, "Mondo Interrupt")
+	ext_mondoPreExitGlitter(CurrentField)
 	nm_setStatus("Traveling", "Mondo Interrupt`nMountain Top")
 	nm_Reset(0, 2000, 0)
 	nm_gotoField("Mountain Top")
@@ -225,8 +307,10 @@ ext_mondoInterrupt() {
 				break
 			Sleep 1000
 		}
-	} else
+	} else {
 		nm_setStatus("Failed", "Mondo Chick not found")
+		Sleep 750
+	}
 	;found or not, this hour's attempt is spent - otherwise the catch-up window
 	;would send the macro back every few seconds until :14
 	LastMondoBuff := nowUnix()
