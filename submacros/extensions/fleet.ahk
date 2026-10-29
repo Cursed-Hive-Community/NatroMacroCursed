@@ -339,7 +339,7 @@ ext_fleetBound(row, newSecret, newId := "") {
 }
 
 ext_fleetFinishBind() {
-	global ext_fleetBoundWith, ext_fleetBindSock, ext_fleetBindResult
+	global ext_fleetBoundWith, ext_fleetBindSock, ext_fleetBindResult, ext_fleetBindTyped
 	local joined
 
 	if !IsObject(ext_fleetBoundWith)
@@ -362,6 +362,12 @@ ext_fleetFinishBind() {
 	if (ext_fleetBoundWith.secret != "")
 		ext_FleetSave("FleetSecret", ext_fleetBoundWith.secret)
 	ext_FleetSave("FleetCheck", 1)
+	;the address typed to get here works, and a network that drops the beacon
+	;drops it every time - without it the macro would bind and never find the
+	;fleet again
+	if (ext_fleetBindTyped != "")
+		ext_FleetSave("FleetAddress", ext_fleetBindTyped)
+	ext_fleetBindTyped := ""
 	ext_fleetBoundWith := ""
 	if ext_fleetBindSock
 		sock_Close(ext_fleetBindSock), ext_fleetBindSock := 0
@@ -2257,19 +2263,18 @@ ext_FleetJoinRefresh() {
 }
 
 ext_FleetJoinDo(*) {
-	global FleetJoinGui, FleetPort
+	global FleetJoinGui, FleetPort, ext_fleetBindTyped
 	local open := ext_fleetOpenFleets(), role := ext_fleetRolePicked(FleetJoinGui["JoinRole"])
 	local typed := Trim(FleetJoinGui["JoinAddr"].Value), addr, port
 
 	if (role = "")
 		return
-	if (typed != "") {
-		;Kept as the reconnect address too: a network that drops the beacon
-		;drops it every time, and the macro would bind and then never find
-		;the fleet again.
+	;A typed address becomes the reconnect address too, but only once the
+	;fleet has let this macro in - see ext_fleetFinishBind. Saved here, a
+	;mistyped one was kept and knocked on at every reconnection for good.
+	ext_fleetBindTyped := typed
+	if (typed != "")
 		addr := typed, port := FleetPort
-		ext_FleetSave("FleetAddress", typed)
-	}
 	else if open.Length
 		addr := open[1].addr, port := open[1].port
 	else

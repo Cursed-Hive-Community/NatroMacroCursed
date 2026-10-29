@@ -2765,6 +2765,8 @@ ext_fleetMyField := "", ext_fleetFollowField := ""
 ext_fleetMyRole := "", ext_fleetNotes := []
 ;where a coordinator on a higher term was heard, tried first - see ext_fleetSwitch
 ext_fleetPrefer := ""
+;an address typed in the join window, kept only once the fleet lets us in
+ext_fleetBindTyped := ""
 ;why the fleet turned this macro away, when it did. A refusal is final, so it
 ;is kept rather than retried - see the BYE case in extensions\fleet.ahk
 ext_fleetRefused := ""
