@@ -1,4 +1,4 @@
-<#
+﻿<#
   nm-git-adopt.ps1 - Turn an existing Natro Macro folder into a git repository,
   in place, without re-downloading anything and without touching settings\.
 
@@ -43,6 +43,11 @@ Write-Host ''
 
 Assert-NmGitInstalled
 Set-NmRepo $Target
+
+# before anything touches the folder: a folder made by another Windows user
+# is the common case here, and git refuses to work in one without saying
+# anything a person can act on
+Assert-NmFolderUsable $Target
 
 if (-not (Test-NmMacroFolder $Target)) {
   Stop-NmWithError 'This folder does not look like a Natro Macro install (submacros\natro_macro.ahk is missing).'

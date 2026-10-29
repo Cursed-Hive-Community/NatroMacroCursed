@@ -1,4 +1,4 @@
-<#
+﻿<#
   nm-git-update.ps1 - Update Natro Macro in place, using git.
 
   The stock updater (submacros\update.bat) downloads a .zip and extracts it into
@@ -63,6 +63,10 @@ Write-Host ''
 # ---------------------------------------------------------------------------
 Write-NmStep 'Checking git'
 Assert-NmGitInstalled
+
+# the same folder can change hands between installing and updating - a copy
+# onto another machine, a different login - so this is asked every time
+Assert-NmFolderUsable $Root
 Set-NmRepo $Root
 Write-NmInfo (Get-NmGitVersion)
 
