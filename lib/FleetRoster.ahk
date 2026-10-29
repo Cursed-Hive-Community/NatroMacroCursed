@@ -348,6 +348,15 @@ fleet_EditVersion(disk, fleet, by) {
 	return { version: Max(disk.version, fleet.version) + 1, by: by, bench: 0 }
 }
 
+;What a hand-up is remembered by, so the same offer is not sent on every frame
+;of every beat: the configuration, the version the fleet runs, and the version
+;offered. Both versions, because an edit made after an earlier offer - one
+;the coordinator refused, say - is a new offer against the same fleet version,
+;and keyed on the fleet's alone it was never sent.
+fleet_HandUpKey(what, theirs, mine) {
+	return what "/" theirs.version "/" theirs.by "/" mine.version "/" mine.by
+}
+
 fleet_ConfigBeats(a, b) {
 	if (fleet_IsBench(a) != fleet_IsBench(b))
 		return !fleet_IsBench(a)

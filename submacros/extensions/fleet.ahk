@@ -775,7 +775,7 @@ ext_fleetHandUp(what) {
 		return 0
 	if !fleet_ConfigBeats(mine, theirs)
 		return 0
-	key := what "/" theirs.version "/" theirs.by
+	key := fleet_HandUpKey(what, theirs, mine)
 	if (ext_fleetHandedUp = key)
 		return 0
 	ext_fleetHandedUp := key

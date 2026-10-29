@@ -10,7 +10,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Fifty-one things are checked, each because it is a way the design could be wrong
+;Fifty-two things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -64,6 +64,7 @@
 ;	49. a higher term's beacon wins            a stale coordinator loses its macros
 ;	50. durations become this machine's times  two clocks never meet
 ;	51. and the coordinator sends durations    the wire carries no clock
+;	52. a new edit is handed up once more      an earlier hand-up does not mute it
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's
@@ -1048,6 +1049,16 @@ Report(*) {
 		, IsObject(row2) && (fleet_Field(row2, "age") != "")
 		&& (Integer(fleet_Field(row2, "age")) >= 0)
 		&& (fleet_Field(row2, "left") != "")) && allOk
+	;A hand-up is sent once per pair of versions, not once per version of the
+	;fleet's: keyed on the fleet's alone, an edit made after a refused hand-up
+	;was never sent until somebody else changed the configuration.
+	allOk := Check(lines, "a new edit is handed up even after an earlier one"
+		, (fleet_HandUpKey("roster", { version: 5, by: 1 }, { version: 6, by: 3 })
+			!= fleet_HandUpKey("roster", { version: 5, by: 1 }, { version: 7, by: 3 }))
+		&& (fleet_HandUpKey("roster", { version: 5, by: 1 }, { version: 6, by: 3 })
+			= fleet_HandUpKey("roster", { version: 5, by: 1 }, { version: 6, by: 3 }))
+		&& (fleet_HandUpKey("roster", { version: 5, by: 1 }, { version: 6, by: 3 })
+			!= fleet_HandUpKey("servers", { version: 5, by: 1 }, { version: 6, by: 3 }))) && allOk
 	allOk := Check(lines, "a roster with two mains is recognised"
 		, roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "main" }))
 		&& !roster_HasTwoMains(Map(1, { role: "main" }, 4, { role: "tad" }))

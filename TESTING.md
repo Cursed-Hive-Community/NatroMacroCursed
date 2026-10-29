@@ -56,7 +56,7 @@ See the `windows-vm` skill for the harness.
 
 ## Proven on the wire
 
-These fifty-one checks run the real coordinator process, the real socket
+These fifty-two checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -123,6 +123,8 @@ layer and the real protocol. They are the strongest evidence in the repository.
       connected macro to it, by the rule the macro applies
 - [x] a guiding star's end and "last heard from" travel as durations and are
       turned back into this machine's times, and the coordinator sends them
+- [x] a hand-up is remembered by both versions, so a new edit is offered even
+      after an earlier offer against the same fleet version
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
 read, and a UDP datagram with the sender's address.
