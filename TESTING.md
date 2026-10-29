@@ -50,7 +50,19 @@ composited, so `PrintWindow` returns solid black however it is asked. The
 substitute is to build the real window and dump every control's name, type,
 rectangle, enabled state and text. That catches a wrong field, a collision, an
 overflow and a control that should be greyed out. It cannot catch a colour.
-See the `windows-vm` skill for the harness.
+
+The harness is `submacros/FleetUiDump.ahk`. It takes the window to build -
+`join`, `setup`, `panel`, `panelfull`, `servers` or `adv` - and, for some,
+the row this macro sits on, then writes `settings\ui_dump.txt`:
+
+```
+.\submacros\AutoHotkey64.exe /script .\submacros\FleetUiDump.ahk setup 1
+```
+
+It reads the same fleet state file as the macro,
+`submacros/extensions/fleetstate.ahk`, so it cannot fall behind it.
+`tools/win-test.sh` validates it but does not run it: the dump is read by a
+person.
 
 ---
 
@@ -226,10 +238,11 @@ only - **no colour in this fork has ever been looked at**.
 - [x] One account: all ten rows, including an account owning two servers
 - [x] Advanced: the four follow switches, their checked state, the group box and
       hint not overlapping
+- [x] Join window: role first and empty, both buttons grey until a role is
+      picked, the address field and the hint inside their frames
 
 Never dumped:
 
-- [ ] the join dialog (`ext_FleetJoinGUI`) `loads`
 - [ ] the Extensions tab and its two live strip lines `loads`
 - [ ] the Git Sync window `loads`
 
