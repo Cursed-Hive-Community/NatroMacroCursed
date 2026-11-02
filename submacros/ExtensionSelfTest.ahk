@@ -127,6 +127,29 @@ Blue(5000, 1, "blue booster: long overdue")
 ;away and lands on it - five minutes later it was six minutes late.
 Blue(ext_blueBoosterRetryAge(), 1, "blue booster: a failed trip is retried at once")
 
+;--- the boosted field ------------------------------------------------------
+;
+;A boost is farmed until it ends, and it ends fifteen minutes after whichever
+;came last: the boost itself or the glitter that renewed it. start is when the
+;boost was seen, zero for none.
+Chase(start, glitter, now, want, what) {
+	Expect(ext_boostChaseLiveAt(start, glitter, now), want, what)
+}
+Chase(0, 0, 1000, 0, "boosted field: nothing remembered")
+Chase(1000, 0, 1899, 1, "boosted field: the last second of the boost")
+Chase(1000, 0, 1900, 0, "boosted field: the boost is over")
+;a glitter from before the boost is not a renewal of it
+Chase(1000, 500, 1899, 1, "boosted field: an older glitter changes nothing")
+Chase(1000, 500, 1900, 0, "boosted field: and does not stretch it")
+Chase(1000, 1880, 2779, 1, "boosted field: renewed, the last second")
+Chase(1000, 1880, 2780, 0, "boosted field: renewed, and now over")
+;the field's box in the Boost tab, read by name - a lookup /Validate cannot
+;check, because the name is only built when it runs
+global PineTreeBoosterCheck := 0, BlueFlowerBoosterCheck := 1
+Expect(ext_boostChaseBox("Pine Tree"), 0, "boosted field: an unticked field is not chased")
+Expect(ext_boostChaseBox("Blue Flower"), 1, "boosted field: a ticked field is")
+Expect(ext_boostChaseBox("Mountain Top"), 1, "boosted field: Mountain Top has no box and is")
+
 ;--- the sticker stack ------------------------------------------------------
 ;
 ;Past its timer, not within fifteen seconds of a failure, and never twice

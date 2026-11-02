@@ -304,6 +304,13 @@ the cooldown.
 - [ ] a trip that found no booster to press - it arrived early - goes again
       **at once** and lands on it (`ext_blueBoosterFailed`); it used to wait
       five minutes and was seen arriving six minutes late `loads`
+- [ ] every trip goes back to the boosted field **until the boost ends**,
+      not only the first one (`ext_boostChaseField`). Seen on a real
+      install: one trip there, then Pine Tree, sometimes back. The
+      deadline and the Boost tab box are `wire`, by the extension
+      self-test; the trip itself is `loads`
+- [ ] a macro restarted halfway through a boost goes back to its field
+      `loads`
 
 ### Sticker stack interrupt
 

@@ -742,6 +742,8 @@ nm_importConfig()
 		, "LastGlitter", 1
 		, "LastBlueBoostUse", 1
 		, "PreGlitterStart", 0
+		, "BoostChaseField", "None"
+		, "BoostChaseStart", 0
 		, "LastMicroConverter", 1
 		, "LastGuid", 1
 		, "AutoFieldBoostActive", 0
@@ -14104,6 +14106,8 @@ nm_toBooster(location){
 					if nm_fieldBoostCheck(v, 1)
 					{
 						nm_setStatus("Boosted", v), RecentFBoost := v
+						;remembered, so every trip until the boost ends comes back here
+						ext_boostChaseRemember(v, (location = "blue") ? LastBlueBoostUse : nowUnix())
 						break 2
 					}
 
@@ -16856,7 +16860,9 @@ nm_GoGather(){
 		;boosted field override
 		if(BoostChaserCheck){
 
-			BoostChaserField:="None"
+			;a boost already found is farmed until it ends, whether or not its icon
+			;is recognised this time - see ext_boostChaseField
+			BoostChaserField:=ext_boostChaseField()
 			blueBoosterFields		:=Map("PineTreeBoosterCheck","Pine Tree", "BambooBoosterCheck","Bamboo", "BlueFlowerBoosterCheck","Blue Flower", "StumpBoosterCheck","Stump")
 			redBoosterFields		:=Map("RoseBoosterCheck","Rose", "StrawberryBoosterCheck","Strawberry", "MushroomBoosterCheck","Mushroom", "PepperBoosterCheck","Pepper")
 			mountainBoosterfields	:=Map("CactusBoosterCheck","Cactus", "PumpkinBoosterCheck","Pumpkin", "PineappleBoosterCheck","Pineapple", "SpiderBoosterCheck","Spider", "CloverBoosterCheck","Clover", "DandelionBoosterCheck","Dandelion", "SunflowerBoosterCheck","Sunflower")
@@ -16864,6 +16870,8 @@ nm_GoGather(){
 			otherFields				:=["Mountain Top"]
 
 			loop 1 {
+				if(BoostChaserField!="none")
+					break
 				for i, location in ["blue", "mountain", "red", "coconut"] {
 					for k, v in %location%BoosterFields {
 						if((nm_fieldBoostCheck(v, 1)) && (%k%)) {
@@ -16904,6 +16912,7 @@ nm_GoGather(){
 				if ((nowUnix()-GatherFieldBoostedStart>900) && (nowUnix()-LastGlitter>900)) {
 					GatherFieldBoostedStart:=nowUnix()
 				}
+				ext_boostChaseRemember(BoostChaserField, GatherFieldBoostedStart)
 				break
 			}
 		}
@@ -17187,7 +17196,9 @@ nm_GoGather(){
 	;With Glitter Extend a trip ends on its own time limit, boosted or not: the
 	;lease is renewed from the convert instead (ext_boostLeaseConvertRenew), as
 	;DefinetlyNotRay has it, so standing in the field to wait for it is no longer
-	;needed.
+	;needed. The next trip comes back to the boosted field because the field is
+	;remembered - see ext_boostChaseField. Without that half, the boost was farmed
+	;for one trip and then left whenever its icon was not recognised.
 	while(((nowUnix()-gatherStart)<(FieldUntilMins*60)) || (PFieldGuidExtend && FieldGuidDetected && (nowUnix()-gatherStart)<(FieldUntilMins*60+PFieldGuidExtend*60) && (nowUnix()-GatherFieldBoostedStart)>900 && (nowUnix()-LastGlitter)>900) || (PPopStarExtend && HasPopStar && PopStarActive)){
 		if !fieldPatternShift
 			MouseMove windowX+350, windowY+GetYOffset()+100

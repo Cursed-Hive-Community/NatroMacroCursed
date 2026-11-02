@@ -217,3 +217,79 @@ ext_preGlitterClear() {
 ext_boostLeaseNearEnd(sec := 60) {
 	return ext_boostLeaseCanRenew() && ext_boostLeaseWindowAt(ext_boostLeaseAge(), sec)
 }
+;Boost Chase - staying with the boosted field
+;
+;Natro works out which field is boosted afresh at the start of every trip, by
+;finding the boost's icon in the buff bar, and a trip that does not recognise
+;it goes to the macro's own field instead. With the boost's whole duration no
+;longer held inside one trip - Glitter Extend ends a trip on its own clock -
+;that check is made several times per boost, and every miss is a trip out of
+;the boost.
+;
+;So the field is remembered from the moment the boost is seen, and every trip
+;goes back to it until the boost ends. The buff bar is then only how a boost
+;nobody remembered gets found. Reimplemented from DefinetlyNotRay's boosted
+;field override (LastBoostedField and LastBoostedTime in his version).
+;
+;On with Glitter Extend or the blue booster interrupt: those are the two that
+;took the boost out of the gather loop, so plain Natro is left exactly as it is.
+ext_boostChaseOn() {
+	global PFieldBoosted, BlueBoosterInterruptCheck
+	return (PFieldBoosted || BlueBoosterInterruptCheck)
+}
+;Still running: fifteen minutes from whichever came last, the boost or the
+;glitter that renewed it - the lease's own deadline, with nothing read.
+ext_boostChaseLiveAt(start, glitter, now) {
+	return ((start > 0) && (now < (Max(start, glitter) + 900)))
+}
+;Saved, so a macro restarted halfway through a boost goes back to it as well.
+ext_boostChaseRemember(fieldName, start) {
+	global BoostChaseField, BoostChaseStart
+
+	if (!ext_boostChaseOn() || (fieldName = "") || (fieldName = "None"))
+		return 0
+	if ((BoostChaseField = fieldName) && (BoostChaseStart = start))
+		return 1
+	BoostChaseField := fieldName, BoostChaseStart := start
+	IniWrite BoostChaseField, "settings\nm_config.ini", "Boost", "BoostChaseField"
+	IniWrite BoostChaseStart, "settings\nm_config.ini", "Boost", "BoostChaseStart"
+	return 1
+}
+ext_boostChaseForget() {
+	global BoostChaseField, BoostChaseStart
+
+	if (BoostChaseField = "None")
+		return 0
+	BoostChaseField := "None", BoostChaseStart := 0
+	IniWrite BoostChaseField, "settings\nm_config.ini", "Boost", "BoostChaseField"
+	IniWrite BoostChaseStart, "settings\nm_config.ini", "Boost", "BoostChaseStart"
+	return 1
+}
+;The field to farm, or "None". Called once at the start of a trip.
+;
+;The field's own box in the Boost tab still decides whether it is chased at
+;all, exactly as it does for a boost found on the buff bar. The lease is taken
+;back to the boost's real start, which a restart would otherwise lose.
+ext_boostChaseField() {
+	global BoostChaseField, BoostChaseStart, LastGlitter, GatherFieldBoostedStart
+
+	if (!ext_boostChaseOn() || (BoostChaseField = "None"))
+		return "None"
+	if !ext_boostChaseLiveAt(BoostChaseStart, LastGlitter, nowUnix()) {
+		ext_boostChaseForget()
+		return "None"
+	}
+	if !ext_boostChaseBox(BoostChaseField)
+		return "None"
+	GatherFieldBoostedStart := Max(GatherFieldBoostedStart, BoostChaseStart)
+	return BoostChaseField
+}
+;PineTreeBoosterCheck and its neighbours. Mountain Top has no box and is always
+;chased, as Natro has it.
+ext_boostChaseBox(fieldName) {
+	global
+	local name := StrReplace(fieldName, " ") "BoosterCheck"
+
+	try return %name%
+	return 1
+}
