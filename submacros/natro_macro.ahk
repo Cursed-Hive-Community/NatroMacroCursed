@@ -12228,7 +12228,10 @@ nm_Blender(){
 	nm_BlenderRotation()
 	TimeForBlender := BlenderTime%LastBlenderRot% - TimerInterval ; due to BlenderTime being calcuted with TimerInterval integrated to fix that we simply subtract it before
 
-	if (BlenderCheck && (nowUnix() - TimeForBlender) > TimerInterval) {
+	;Ready in the timers window goes at once, whichever slot it was pressed on:
+	;the time it clears is only the one the macro waits on when that slot was
+	;the last to craft
+	if (BlenderCheck && (BlenderEnd || (nowUnix() - TimeForBlender) > TimerInterval)) {
 		Loop 2 {
 			hwnd := GetRobloxHWND()
 			offsetY := GetYOffset(hwnd)
@@ -12275,6 +12278,12 @@ nm_Blender(){
 					MouseMove windowX+WindowWidth//2 - 120, windowY+Floor(0.48*windowHeight) + 120 ; close green craft button
 					Sleep 150
 					Click
+				}
+				;a Ready pressed while nothing was crafting is answered by this visit
+				;too, or it would force one on every round from now on
+				if BlenderEnd {
+					IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderEnd"
+					BlenderEnd := 0
 				}
 				gdip_disposeimage(BlenderSS)
 				Sleep 800

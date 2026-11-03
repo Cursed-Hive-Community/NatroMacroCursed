@@ -490,6 +490,13 @@ ba_resetBlenderTimer(GuiCtrl, *) {
 		Iniwrite 0, "settings\nm_config.ini", "Blender", "BlenderTime" i
 		IniWrite i, "settings\nm_config.ini", "Blender", "BlenderRot"
 		IniWrite 1, "settings\nm_config.ini", "Blender", "BlenderEnd"
+		;the running macro read these from the file only when it started, so
+		;Ready did nothing until a restart
+		if WinExist("natro_macro ahk_class AutoHotkey") {
+			PostMessage 0x5552, 238 + i, 0 ; BlenderTime
+			PostMessage 0x5552, 236, i ; BlenderRot
+			PostMessage 0x5552, 384, 1 ; BlenderEnd
+		}
 	}
 }
 ba_setBlenderData(GuiCtrl, *) {

@@ -381,4 +381,5 @@
 	, "CoconutPaperCheckInterrupt"
 	, "CoconutPaperFirstCheck"
 	, "CoconutPaperPredicted"
+	, "BlenderEnd"
 ]
