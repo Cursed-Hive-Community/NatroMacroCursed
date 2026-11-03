@@ -44,6 +44,9 @@ DisconnectCheck(*) {
 }
 PostSubmacroMessage(*) {
 }
+ext_mondoDueAt(*) {
+	return 0
+}
 global exe_path32 := A_AhkPath, MainGui := ""
 global FleetCheck := 0
 global FleetRow := 0

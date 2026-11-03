@@ -12,7 +12,9 @@
 ;
 ;- never moved: the main; a tad or fuzzy, except to make room for the atk at
 ;  Mondo; a guid whose star is running on a blue field;
-;- the atk sits in the main around Mondo. It takes a free seat, else a tad's
+;- the atk sits in the main for Mondo and no longer: it says so itself, by the
+;  extensions' own timer (ext_mondoDueAt - from :59, until its Mondo is done or
+;  :14). It takes a free seat, else a tad's
 ;  (the first in roster order), else a fuzzy's, else a guid's with no star
 ;  running. It beats a guid that is ready at the same time. After Mondo it
 ;  leaves, and whoever gave up a seat has it back before any waiting guid;
@@ -46,12 +48,6 @@ fleet_HopBlue(text) {
 	return m
 }
 
-;From :57 to :14, UTC, the atk is wanted in the main: Mondo spawns on the hour,
-;the Mondo interrupt leaves at :59 and catches up until :14, and moving server
-;takes a minute or two.
-fleet_HopMondoAt(utcMin) {
-	return (utcMin >= 57) || (utcMin <= 14)
-}
 ;Where an account is, or is on its way to.
 fleet_HopWhere(p, state) {
 	return state.pending.Has(p.row) ? state.pending[p.row].to : p.server
@@ -61,12 +57,15 @@ fleet_HopWhere(p, state) {
 ;"reserve".
 ;
 ;peers: row -> {row, role, online, present, server, charge, guidingField,
-;guidingUntil, waitSince}. online says it can be given an order. present says
+;guidingUntil, waitSince}. server is main, reserve, or "" for a server that is
+;none of the fleet's - a main link changed by hand, a public fallback - which
+;counts as out of the main like the reserve. online says it can be given an order. present says
 ;it is to be counted where it last was, which the caller keeps true for a while
 ;after a macro goes quiet - its Roblox may well still be in the server. charge
 ;is -1 when it has not been read.
 ;
-;opt: {now, capacity, threshold, blue (fleet_HopBlue), mondo}.
+;opt: {now, capacity, threshold, blue (fleet_HopBlue), mondo}. mondo is whether
+;the atk says it wants its seat now.
 ;
 ;state is kept by the caller between beats and updated here: pending, row ->
 ;{to, at}, the moves ordered and not yet seen done; yielded, the rows that gave

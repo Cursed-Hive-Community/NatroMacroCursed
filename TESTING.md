@@ -407,6 +407,10 @@ extension self-test; nothing acts on them yet.
 - [x] at Mondo a tad makes room for the atk (the first of two), else a
       fuzzy, else the guid with least and no star; the atk beats a ready
       guid `wire`
+- [ ] the atk asks for its seat by the extensions' Mondo timer - from :59 -
+      and gives it back as soon as its Mondo is done `loads`
+- [x] accounts in a server that is none of the fleet's - a main link changed
+      by hand - are brought over like those in the reserve `wire`
 - [x] after Mondo the atk leaves and the resident is back before any guid
       `wire`
 - [x] waiting guids: ready ones first, the longest waiting first, then by
@@ -431,6 +435,9 @@ extension self-test; nothing acts on them yet.
       settings `loads`
 - [ ] the macro says which server it is in when it connects and every beat,
       and remembers it across a restart `loads`
+- [ ] after a crash it reconnects to the server the fleet last sent it to,
+      while that is still one of the fleet's, else to its own Private Server
+      link `loads`
 - [ ] a reconnect that lands in a fallback or public server reports none of
       the fleet's, and the coordinator leaves that account alone `loads`
 - [ ] on a guid, background.ahk reads the star every five seconds and the

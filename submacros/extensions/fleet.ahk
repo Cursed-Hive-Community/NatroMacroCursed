@@ -656,12 +656,18 @@ ext_fleetServerNow() {
 	return servers_KindOf(ext_fleetServerRows(), (FleetServerNow != "") ? FleetServerNow : PrivServer)
 }
 ;Tell the coordinator, every beat: a state rather than an event, so a
-;coordinator that has just taken over learns it within ten seconds.
+;coordinator that has just taken over learns it within ten seconds. An atk also
+;says whether it wants its seat for Mondo, by the extensions' own timer - from
+;:59, and only until its Mondo is done - so it is in the main for the kill and
+;no longer.
 ext_fleetSayServer() {
-	global ext_fleetSock
+	global ext_fleetSock, ext_fleetMyRole, LastMondoBuff
+	local mondo := 0
 
+	if (ext_fleetMyRole = "atk")
+		mondo := ext_mondoDueAt(FormatTime(A_NowUTC, "m") + 0, nowUnix() - LastMondoBuff)
 	if ext_fleetSock
-		sock_SendLine(ext_fleetSock, fleet_Frame("STATE", Map("server", ext_fleetServerNow())))
+		sock_SendLine(ext_fleetSock, fleet_Frame("STATE", Map("server", ext_fleetServerNow(), "mondo", mondo)))
 }
 ;The coordinator sends this account to another server. Natro's own reconnect
 ;does the move: Roblox is closed, and the next reconnect goes to the link the
@@ -669,7 +675,7 @@ ext_fleetSayServer() {
 ;second delay, as the remote control's reconnect has, so it is not counted as
 ;a disconnect.
 ext_fleetOnMove(frame) {
-	global ext_fleetJoinLink, FleetServerNow, PrivServer
+	global ext_fleetJoinLink, FleetServerNow, PrivServer, FleetServerAssigned
 	local slot := fleet_Num(fleet_Field(frame, "slot")), rows := ext_fleetServerRows()
 	local where := fleet_Field(frame, "server"), why := fleet_Field(frame, "why")
 
@@ -682,6 +688,7 @@ ext_fleetOnMove(frame) {
 		return 0
 	}
 	ext_fleetJoinLink := rows[slot].link
+	IniWrite (FleetServerAssigned := rows[slot].link), "settings\nm_config.ini", "Fleet", "FleetServerAssigned"
 	ext_fleetNote("the fleet sends this macro to the " where " server - " why)
 	nm_setStatus("Fleet", "moving to the " where " server - " why)
 	nm_ForceReconnect(1)
@@ -711,7 +718,7 @@ ext_fleetSayGuiding(field) {
 		sock_SendLine(ext_fleetSock, fleet_Frame("GUIDING", Map("field", field, "left", 600)))
 }
 ;Is this guid stopped at its threshold, waiting for a seat in the main? Only
-;in the reserve, only with the hop on, and only while the fleet is there: a
+;out of the main - the reserve, or a server that is none of the fleet's, only with the hop on, and only while the fleet is there: a
 ;macro that has lost the coordinator farms on its own, as every fleet macro
 ;does.
 ext_fleetGuidHeld() {
@@ -722,7 +729,7 @@ ext_fleetGuidHeld() {
 		return 0
 	main := servers_Main(ext_fleetServerRows())
 	return main && main.hop && (ext_fleetMyCharge >= main.threshold)
-		&& (ext_fleetServerNow() = "reserve")
+		&& (ext_fleetServerNow() != "main")
 }
 ;For Natro's main loop: wait at the hive instead of doing anything, while the
 ;guid is held. Nothing at all - the user's choice: any task that goes through a
@@ -746,13 +753,24 @@ ext_fleetGuidWait() {
 	return 1
 }
 
-;For DisconnectCheck: the link to try first, in place of the private server, or
-;"" to reconnect as Natro always has. Natro's PrivServer itself is never
-;changed - a fallback that works is swapped into it and written to the settings,
-;and the fleet's link must not end up there.
+;For DisconnectCheck: the link to try first, in place of the account's own
+;Private Server link, or "" to reconnect as Natro always has.
+;
+;The server the fleet last sent this account to, as long as it is still one of
+;the fleet's: a guid in the main whose Roblox crashes goes back to its seat
+;rather than to wherever its own link points, and the servers can be changed
+;by hand at any time - a link no longer in the list is not gone back to. The
+;Private Server setting itself is never written: a fallback that works is
+;swapped into it and saved, and the fleet's link must not end up there.
 ext_fleetReconnectLink() {
-	global ext_fleetJoinLink
-	return ext_fleetJoinLink
+	global ext_fleetJoinLink, FleetCheck, FleetServerAssigned
+
+	if (ext_fleetJoinLink != "")
+		return ext_fleetJoinLink
+	if (FleetCheck && (FleetServerAssigned != "")
+		&& (servers_KindOf(ext_fleetServerRows(), FleetServerAssigned) != ""))
+		return FleetServerAssigned
+	return ""
 }
 ;For DisconnectCheck, once Roblox is back in a server: which link it joined,
 ;"" for a public server. Remembered across restarts and told to the fleet.

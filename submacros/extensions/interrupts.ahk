@@ -193,9 +193,12 @@ ext_gatherAbandon() {
 ;on every machine, so each atk decides for itself and no order has to travel.
 ;
 ;What it does need is for the atk to be in the right server at :59, and an
-;account parked in a reserve has to be brought back first. That is the queue,
-;which is not written, and a departure for a server the chick does not spawn in
-;is worse than no departure at all. So this waits for it.
+;account parked in a reserve has to be brought back first. The guid hop does
+;that now: the atk tells the coordinator it wants its seat by this file's own
+;timer, ext_mondoDueAt, and is seated from :59 until its Mondo is done - see
+;ext_fleetSayServer. The kill departure itself is still Natro's own Mondo
+;routine once the atk is there; a kill path here, leaving at :59 like the buff,
+;is not written.
 ;
 ;One thing settled in advance, so it is not re-argued later: the kill path
 ;breaks off a balloon convert to get there, where the buff path only does so

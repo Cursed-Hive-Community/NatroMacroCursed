@@ -365,6 +365,10 @@ ExpectEq(HopMoves(f), "6>main 5>main 4>main", "hop: free seats, the longest wait
 f := FullMain(HopPeer(7, "guid", "reserve", 150)), f[6].online := 0
 f[5].server := "reserve", f[5].charge := 100
 ExpectEq(HopMoves(f), "7>main", "hop: a macro gone quiet still holds its seat, and is given no order")
+;the main's link changed by hand: whoever is left in the old server is in none
+;of the fleet's, and is brought over like one in the reserve
+f := HopFleet(HopPeer(1, "main", ""), HopPeer(2, "tad", ""), HopPeer(4, "guid", "", 210), HopPeer(5, "guid", "main", 50))
+ExpectEq(HopMoves(f), "1>main 2>main 4>main", "hop: accounts left in a server the fleet no longer has are brought over")
 f := FullMain(HopPeer(7, "guid", "reserve", 210)), st := {pending: Map(), yielded: Map()}
 HopMoves(f, 0, st)
 ExpectEq(HopMoves(f, 0, st), "", "hop: a move ordered is not ordered again while it happens")
@@ -388,10 +392,6 @@ ExpectEq(servers_KindOf(hopServers, "https://www.roblox.com/share?code=" B32 "&t
 ExpectEq(servers_KindOf(hopServers, "https://www.roblox.com/games/1537690962?privateServerLinkCode=" B32), "", "hop: some other server")
 ExpectEq(servers_KindOf(hopServers, ""), "", "hop: a public server")
 ExpectEq(servers_LinkParts("https://www.roblox.com/share?code=" B32 "&type=Server").type, "ShareCode", "hop: read as Natro reads it")
-Expect(fleet_HopMondoAt(56), 0, "hop: :56, the atk is not wanted yet")
-Expect(fleet_HopMondoAt(57), 1, "hop: :57, it is")
-Expect(fleet_HopMondoAt(14), 1, "hop: :14, still")
-Expect(fleet_HopMondoAt(15), 0, "hop: :15, Mondo is over")
 
 Report()
 return

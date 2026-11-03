@@ -299,6 +299,9 @@ fleet_OnHello(s, frame) {
 		;charge -1 until a macro reads one: a guid not read yet waits behind every
 		;guid that has been; waitSince is when it reached the threshold
 		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: -1, waitSince: 0
+		;stated: it has said which server it is in at all; mondo: an atk saying
+		;it wants its seat for Mondo now
+		, stated: 0, mondo: 0
 		;-1 rather than 0: nothing has been measured yet, which is not the same
 		;as a macro that answered instantly
 		, rtt: -1, mondoIn: 0
@@ -355,7 +358,8 @@ fleet_OnReport(s, frame) {
 		case "MONDO_IN":
 			p.mondoIn := Integer(fleet_Field(frame, "secs", 0))
 		case "STATE":
-			p.server := fleet_Field(frame, "server")
+			p.server := fleet_Field(frame, "server"), p.stated := 1
+			p.mondo := fleet_Num(fleet_Field(frame, "mondo"))
 	}
 	fleet_Broadcast()
 }
@@ -1098,18 +1102,27 @@ fleet_FollowOne(p) {
 ;
 ;The rules are fleet_HopPlan's; this only gathers what the macros have said
 ;and sends the moves. Nothing happens unless the main server says the hop is
-;on. An account that has not said which server it is in takes no part - an
+;on. An account that has never said which server it is in takes no part - an
 ;older build, or one that has only just connected - because ordering it in or
-;out on a guess is how accounts end up bouncing between servers.
+;out on a guess is how accounts end up bouncing between servers. One that says
+;it is in none of the fleet's servers does: a main link changed by hand leaves
+;the whole fleet in a server it no longer has.
+;
+;The atk's seat follows what the atk says: it wants it from the extensions'
+;Mondo timer and only until its Mondo is done, so it spends as little time in
+;the main as the kill takes.
 fleet_Hop() {
 	global peers, servers, hopState
 	local main := servers_Main(servers), now := nowUnix(), fleet := Map(), row, p, o, target, opt
+	local mondo := 0
 
 	if !(main && main.hop)
 		return 0
 	for row, p in peers {
-		if ((p.server != "main") && (p.server != "reserve"))
+		if !p.stated
 			continue
+		if ((p.role = "atk") && p.mondo && p.socket)
+			mondo := 1
 		if (p.charge < main.threshold)
 			p.waitSince := 0
 		else if !p.waitSince
@@ -1124,7 +1137,7 @@ fleet_Hop() {
 	}
 	opt := { now: now, capacity: main.capacity, threshold: main.threshold
 		, blue: fleet_HopBlue(main.blue)
-		, mondo: fleet_HopMondoAt(Integer(FormatTime(A_NowUTC, "mm"))) }
+		, mondo: mondo }
 	for o in fleet_HopPlan(fleet, opt, hopState) {
 		target := (o.to = "main") ? main : servers_FirstReserve(servers)
 		if !target {

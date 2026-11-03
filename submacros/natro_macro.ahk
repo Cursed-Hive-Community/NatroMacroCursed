@@ -970,6 +970,8 @@ nm_importConfig()
 		, "FleetServerReserve", ""
 		;the server link this account last joined - see ext_fleetServerNow
 		, "FleetServerNow", ""
+		;the server link the fleet last sent this account to - see ext_fleetReconnectLink
+		, "FleetServerAssigned", ""
 		, "FleetCapacity", 6
 		;which of the main's gathering trips the residents are dragged along
 		;on - see ext_fleetFollowReport. Its own field and the boosted field
