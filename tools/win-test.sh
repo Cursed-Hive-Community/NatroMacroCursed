@@ -48,6 +48,7 @@ COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/
 COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk"
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
+COVER_passivetest="submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk"
 COVER_exttest="submacros/ExtensionSelfTest.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk"
 # the bench runs its own wiring check - tools/bench-selfcheck.txt, which the
 # bench loads and runs because it accepts a file of commands as an argument
@@ -57,11 +58,11 @@ COVER_bench="submacros/FleetBench.ahk tools/bench-selfcheck.txt lib/Socket.ahk l
 COVER_uidump="submacros/FleetUiDump.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk"
 
 # entry point -> coverage var
-ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump"
+ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump submacros/PassiveSelfTest.ahk:COVER_passivetest"
 # self-test -> name:script:diagfile:coverage var[:argument]
 # the fifth field is an argument the script takes before /quiet - only the
 # bench has one, because only the bench is driven by a file of commands
-TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest bench:submacros/FleetBench.ahk:fleet_bench.txt:COVER_bench:tools/bench-selfcheck.txt"
+TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest bench:submacros/FleetBench.ahk:fleet_bench.txt:COVER_bench:tools/bench-selfcheck.txt passives:submacros/PassiveSelfTest.ahk:passive_diag.txt:COVER_passivetest"
 
 # every owned file, for the full-run default
 ALL_FILES=(
@@ -71,6 +72,7 @@ ALL_FILES=(
   submacros/ExtensionSelfTest.ahk submacros/FleetBench.ahk tools/bench-selfcheck.txt
   submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk
   submacros/extensions/fleetstate.ahk submacros/FleetUiDump.ahk submacros/extensions/blender.ahk
+  submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk
 )
 
 # --- arguments --------------------------------------------------------------
@@ -151,6 +153,14 @@ if [ "$SYNC" -eq 1 ]; then
     scp -q -o LogLevel=ERROR -o StrictHostKeyChecking=accept-new "$f" "${VM_USER}@${VM_HOST}:${VM_REPO}/${f}"
   done
   echo "   ${#CHANGED[@]} copied"
+  # the passive reader's captures and assets are data, not code: copied whole
+  # whenever its test runs, so a new capture is never left behind
+  if intersects "$COVER_passivetest"; then
+    $SSH "cd ${WIN_REPO} && if not exist nm_image_assets\\passives mkdir nm_image_assets\\passives" >/dev/null 2>&1 || true
+    scp -q -r -o LogLevel=ERROR tools/passive-rows "${VM_USER}@${VM_HOST}:${VM_REPO}/tools/"
+    scp -q -r -o LogLevel=ERROR nm_image_assets/passives/. "${VM_USER}@${VM_HOST}:${VM_REPO}/nm_image_assets/passives/"
+    echo "   passive rows and assets copied"
+  fi
 fi
 
 # the tests write their roster and logs into settings\, gitignored and so absent

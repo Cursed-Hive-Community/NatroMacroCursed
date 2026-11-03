@@ -395,6 +395,32 @@ script replaying the search; what was never seen is the timing.
 - [ ] a dialog that never comes up leaves the slot alone and the status says
       `Retrying` - rests on the E prompt still showing at the planter `loads`
 
+### Passive row reader
+
+`submacros/extensions/passives.ahk`, for the guid hop: the Guiding Star's
+charge, or its cooldown timer. `PassiveSelfTest` replays 47 rows cut from the
+user's captures (1300x669 to 2560x1440), each read with digit examples from
+other moments of play only. That is `wire` for the reading itself; nothing has
+read a live screen.
+
+- [x] the row and its cooldowns: 47 of 47, one capture with no passives at
+      all included `wire`
+- [x] visible icons: 340 of 340 recognised `wire`
+- [x] numbers: 291 of 291, none wrong - a strip of white background read as
+      a 1 was the one fault, fixed by asking for the digit's dark outline
+      `wire`
+- [x] timers: 29 of 32, none wrong, 3 refused `wire`
+- [x] the star at 241, whose number covers the bottom of its ring `wire`
+- [x] a star in cooldown read where it was last seen; with no memory, not
+      guessed at `wire`
+- [ ] the same on a live capture of the Roblox window, while playing
+- [ ] the time one read takes in the game, against the macro's loop
+- [ ] a cooldown at either end of the row: no capture has one, and the
+      reader does not return it - the star's is read from memory `wire` for
+      the memory only
+- [ ] the remembered place after the window is resized or the equipment
+      changes: nothing refreshes it until the star is seen again
+
 ### Blender
 
 Stock Natro's blender, repaired. The times are worked out from five minutes
