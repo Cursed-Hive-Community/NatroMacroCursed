@@ -155,6 +155,9 @@ leadField := ""
 
 ;when a macro was last actually connected, for the idle timeout above
 lastSeated := nowUnix()
+;the guid hop's memory between beats: the moves ordered and not yet seen done,
+;and who gave a seat to the atk - see fleet_HopPlan
+hopState := { pending: Map(), yielded: Map() }
 
 fleet_Log("coordinator starting, port " port ", term " term ", row " startedBy
 	. ((mandate != startedBy) ? ", on behalf of row " mandate : ""))
@@ -293,7 +296,9 @@ fleet_OnHello(s, frame) {
 		, user: roster[row].user
 		, machine: fleet_Field(frame, "machine", "")
 		, socket: s, state: "online", lastSeen: nowUnix()
-		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: 0
+		;charge -1 until a macro reads one: a guid not read yet waits behind every
+		;guid that has been; waitSince is when it reached the threshold
+		, field: "", server: "", guidingField: "", guidingUntil: 0, charge: -1, waitSince: 0
 		;-1 rather than 0: nothing has been measured yet, which is not the same
 		;as a macro that answered instantly
 		, rtt: -1, mondoIn: 0
@@ -563,6 +568,7 @@ fleet_Beat() {
 	fleet_Send(fleet_Frame("HEARTBEAT", Map("term", term, "row", startedBy
 		, "mandate", mandate, "at", nowUnix())))
 	fleet_Ping()
+	fleet_Hop()
 	;The configuration goes out when it changes and to every macro that joins.
 	;It is repeated as well, once a minute rather than on every beat: a copy
 	;that went astray - a replica that could not be written, a frame dropped
@@ -1088,6 +1094,52 @@ fleet_FollowOne(p) {
 ;Something worth a line in everybody's view, not only in the log file here.
 ;The macros keep their own copy, so the panel can show what the fleet has
 ;been doing without reading a file off somebody else's machine.
+;The guid hop, once a beat: who goes in and out of the main server.
+;
+;The rules are fleet_HopPlan's; this only gathers what the macros have said
+;and sends the moves. Nothing happens unless the main server says the hop is
+;on. An account that has not said which server it is in takes no part - an
+;older build, or one that has only just connected - because ordering it in or
+;out on a guess is how accounts end up bouncing between servers.
+fleet_Hop() {
+	global peers, servers, hopState
+	local main := servers_Main(servers), now := nowUnix(), fleet := Map(), row, p, o, target, opt
+
+	if !(main && main.hop)
+		return 0
+	for row, p in peers {
+		if ((p.server != "main") && (p.server != "reserve"))
+			continue
+		if (p.charge < main.threshold)
+			p.waitSince := 0
+		else if !p.waitSince
+			p.waitSince := now
+		;present for ten minutes after it went quiet: its Roblox may well still
+		;be holding the seat
+		fleet[row] := { row: row, role: p.role
+			, online: ((p.state = "online") && p.socket) ? 1 : 0
+			, present: (p.socket || ((now - p.lastSeen) < 600)) ? 1 : 0
+			, server: p.server, charge: p.charge, guidingField: p.guidingField
+			, guidingUntil: p.guidingUntil, waitSince: p.waitSince }
+	}
+	opt := { now: now, capacity: main.capacity, threshold: main.threshold
+		, blue: fleet_HopBlue(main.blue)
+		, mondo: fleet_HopMondoAt(Integer(FormatTime(A_NowUTC, "mm"))) }
+	for o in fleet_HopPlan(fleet, opt, hopState) {
+		target := (o.to = "main") ? main : servers_FirstReserve(servers)
+		if !target {
+			fleet_Event("guid hop: nowhere to send row " o.row " - the fleet has no reserve server")
+			if hopState.pending.Has(o.row)
+				hopState.pending.Delete(o.row)
+			continue
+		}
+		sock_SendLine(peers[o.row].socket, fleet_Frame("MOVE"
+			, Map("server", o.to, "slot", target.slot, "why", o.why)))
+		fleet_Event("guid hop: row " o.row " (" peers[o.row].name ") to the " o.to " - " o.why)
+	}
+	return 1
+}
+
 fleet_Event(text) {
 	fleet_Log(text)
 	fleet_Send(fleet_Frame("EVENT", Map("at", nowUnix(), "text", text)))

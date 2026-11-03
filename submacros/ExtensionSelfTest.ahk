@@ -355,6 +355,7 @@ ExpectEq(HopMoves(f, 0, st), "8>reserve 2>main 6>reserve 7>main", "hop: after Mo
 ExpectEq(st.yielded.Count, 0, "hop: and the tad's seat is no longer owed")
 f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "tad", "reserve"), HopPeer(4, "guid", "reserve", 210))
 ExpectEq(HopMoves(f), "2>main 4>main", "hop: a tad restarted into the reserve is let back in before a guid")
+ExpectEq(HopMoves(f, 1), "2>main 4>main", "hop: at Mondo too - only a resident that gave its seat to the atk waits")
 f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "tad", "main"), HopPeer(4, "guid", "reserve", 120)
 	, HopPeer(5, "guid", "reserve", 205, , , 50), HopPeer(6, "guid", "reserve", 210, , , 40))
 ExpectEq(HopMoves(f), "6>main 5>main 4>main", "hop: free seats, the longest waiting ready guid first, then by tokens")

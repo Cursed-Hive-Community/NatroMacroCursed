@@ -420,7 +420,10 @@ extension self-test; nothing acts on them yet.
       without overlap, read only until the fleet is reached `layout`
 - [x] a field reported as PineTree by the notice is the blue Pine Tree
       `wire`
-- [ ] the coordinator acting on it, and the macros moving server
+- [x] the coordinator runs the plan every beat and sends MOVE, with the
+      slot, and says why in its log: a fuzzy reporting the reserve is sent
+      to the main `wire`
+- [ ] a macro obeying MOVE, and reporting the server it is in
 
 ### Passive row reader
 

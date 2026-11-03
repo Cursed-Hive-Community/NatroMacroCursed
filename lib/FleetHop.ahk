@@ -148,22 +148,23 @@ fleet_HopPlan(peers, opt, state) {
 			move(atk, "main", "Mondo")
 	} else if (atk && !opt.mondo && inMain(atk))
 		move(atk, "reserve", "Mondo is over")
-	;residents back first: whoever gave a seat to the atk, then any tad or fuzzy
-	;that is out for another reason - a restart into the reserve
-	if !opt.mondo {
-		for _, r in rows {
-			p := peers[r]
-			if ((p.role != "tad" && p.role != "fuzzy") || !p.online || inMain(p))
-				continue
-			if (free <= 0 && (s := free_guid(1)))
-				move(s, "reserve", "a resident needs its seat back")
-			if (free > 0) {
-				move(p, "main", state.yielded.Has(r) ? "back after Mondo" : "residents sit in the main")
-				;a Map throws on deleting a key it does not have, and a resident
-				;out for any other reason - a restart into the reserve - is not in it
-				if state.yielded.Has(r)
-					state.yielded.Delete(r)
-			}
+	;residents back first: whoever gave a seat to the atk once Mondo is over, and
+	;at any time a tad or fuzzy that is out for another reason - a restart into
+	;the reserve
+	for _, r in rows {
+		p := peers[r]
+		if ((p.role != "tad" && p.role != "fuzzy") || !p.online || inMain(p))
+			continue
+		if (opt.mondo && state.yielded.Has(r))
+			continue
+		if (free <= 0 && (s := free_guid(1)))
+			move(s, "reserve", "a resident needs its seat back")
+		if (free > 0) {
+			move(p, "main", state.yielded.Has(r) ? "back after Mondo" : "residents sit in the main")
+			;a Map throws on deleting a key it does not have, and a resident
+			;out for any other reason - a restart into the reserve - is not in it
+			if state.yielded.Has(r)
+				state.yielded.Delete(r)
 		}
 	}
 	;the guids waiting, best first

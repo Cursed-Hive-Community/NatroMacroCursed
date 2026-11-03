@@ -155,6 +155,19 @@ servers_Main(list) {
 	return 0
 }
 
+;The reserve a guid is sent to: the first, in slot order. 0 when there is none.
+servers_FirstReserve(list) {
+	local keys := [], s
+
+	for s, _ in list
+		keys.Push(s)
+	roster_Sort(keys)
+	for _, s in keys
+		if (list[s].kind != "main")
+			return list[s]
+	return 0
+}
+
 ;How many reserves there are, which is the number the settings window shows.
 servers_Reserves(list) {
 	local s, e, n := 0

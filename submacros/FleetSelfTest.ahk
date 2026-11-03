@@ -241,6 +241,10 @@ secondMainWhy := ""         ;what a macro binding as a second main was told
 srvGen := ""                ;the generation of the server list last seen
 srv := Map()                ;the server list as the main macro holds it
 srvMainLink := "", srvMainOwner := -1, srvMainHop := ""
+;the guid hop: a MOVE each client was sent, as server/slot. The fixture's main
+;server has the hop on and five seats; the fuzzy says it is in the reserve, and
+;a resident belongs in the main
+moveSeen := Map()
 myCv := -1                  ;the version the main said it held, come back round
 goneAtWipe := -1            ;how many rows had been struck before the wipe
 cfg := Map()                ;the roster as configured, as the main macro holds it
@@ -320,6 +324,7 @@ SetTimer Leave, -11500
 ;the process went, and calling a handover that worked a failure.
 SetTimer Handover, -15000
 SetTimer Stray, -3000
+SetTimer HopState, -3500
 SetTimer Report, -25000
 return
 
@@ -644,6 +649,12 @@ Blank(*) {
 
 ;What ext_FleetLeave does on the macro side: say so, then go. The coordinator
 ;should strike the row rather than list it offline.
+HopState(*) {
+	global clientA, clientB
+
+	sock_SendLine(clientA, fleet_Frame("STATE", Map("server", "main")))
+	sock_SendLine(clientB, fleet_Frame("STATE", Map("server", "reserve")))
+}
 Leave(*) {
 	global clientB
 
@@ -667,7 +678,7 @@ Handle(label, row, name, s, event, data) {
 	global bothSeen, row2, rttSeen, lateField
 	global srv, srvGen, srvMainLink, srvMainOwner, srvMainHop
 	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
-	global cfgTookUp, myCv, leadOnRoster
+	global cfgTookUp, myCv, leadOnRoster, moveSeen
 	local frame, r, f, rows
 
 	if (event = "connect") {
@@ -681,6 +692,8 @@ Handle(label, row, name, s, event, data) {
 		return
 	if !(frame := fleet_Parse(data))
 		return
+	if (frame.verb = "MOVE")
+		moveSeen[label] := fleet_Field(frame, "server") "/" fleet_Field(frame, "slot")
 	if (frame.verb = "ROSTER") {
 		seenBy[label][Integer(fleet_Field(frame, "row", 0))] := frame
 		if ((label = "main") && (Integer(fleet_Field(frame, "row", 0)) = 1)
@@ -802,7 +815,7 @@ Report(*) {
 	global HANDROSTER, handPid, handRefused, handTold, handDoor
 	global beaconSeen, HANDPORT, beaconSock, strayPid, keepPid, strayStopped, secondMainWhy
 	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe, boundFid
-	global srv, srvGen, srvMainLink, srvMainOwner, srvMainHop
+	global srv, srvGen, srvMainLink, srvMainOwner, srvMainHop, moveSeen
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
 	global cfgTookUp, byeFinal, otherWhy, clientOther
 	global ROSTER, gotoField
@@ -857,6 +870,9 @@ Report(*) {
 	allOk := Check(lines, "the server list reaches a macro, link and owner intact"
 		, (srvMainLink == "https://roblox.test/main?code=a b%c")
 			&& (srvMainOwner = 2)) && allOk
+	allOk := Check(lines, "guid hop: a fuzzy in the reserve is sent to the main server, the main is left alone ("
+		. (moveSeen.Has("fuzzy") ? moveSeen["fuzzy"] : "nothing") ")"
+		, moveSeen.Has("fuzzy") && (moveSeen["fuzzy"] = "main/1") && !moveSeen.Has("main")) && allOk
 	allOk := Check(lines, "the guid hop settings reach a macro on the main server (" srvMainHop ")"
 		, srvMainHop = "1/210/5/Pine Tree|Rose") && allOk
 	allOk := Check(lines, "a deleted server disappears from the macro's copy"
