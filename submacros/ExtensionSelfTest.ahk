@@ -39,6 +39,9 @@ OnError(SelfTestError)
 #Include "%A_ScriptDir%\..\lib"
 #Include "nowUnix.ahk"
 #Include "FleetHop.ahk"
+#Include "FleetProtocol.ahk"
+#Include "FleetRoster.ahk"
+#Include "FleetServers.ahk"
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
 #Include "%A_ScriptDir%\extensions\interrupts.ahk"
 #Include "%A_ScriptDir%\extensions\blender.ahk"
@@ -373,6 +376,18 @@ for r in [4, 5, 6]
 	f[r].guidingField := "PineTree", f[r].guidingUntil := 1500
 ExpectEq(HopMoves(f), "", "hop: PineTree from the notice is the blue Pine Tree")
 ExpectEq(fleet_HopBlue(" Pine Tree|Rose||").Count, 2, "hop: blue fields read from Pine Tree|Rose")
+;where an account is, from the link it joined: the coordinator seats only the
+;accounts that can say
+A32 := "0123456789abcdef0123456789abcdef", B32 := "fedcba9876543210fedcba9876543210"
+hopServers := Map(1, servers_Blank(1, "main"), 2, servers_Blank(2))
+hopServers[1].link := "https://www.roblox.com/games/1537690962?privateServerLinkCode=" A32
+hopServers[2].link := "https://www.roblox.com/share?code=" B32 "&type=Server"
+ExpectEq(servers_KindOf(hopServers, "https://www.roblox.com/games/1537690962/Bee-Swarm?privateServerLinkCode=" A32 "&x=1"), "main"
+	, "hop: the main's link, pasted another way")
+ExpectEq(servers_KindOf(hopServers, "https://www.roblox.com/share?code=" B32 "&type=Server"), "reserve", "hop: a share link")
+ExpectEq(servers_KindOf(hopServers, "https://www.roblox.com/games/1537690962?privateServerLinkCode=" B32), "", "hop: some other server")
+ExpectEq(servers_KindOf(hopServers, ""), "", "hop: a public server")
+ExpectEq(servers_LinkParts("https://www.roblox.com/share?code=" B32 "&type=Server").type, "ShareCode", "hop: read as Natro reads it")
 Expect(fleet_HopMondoAt(56), 0, "hop: :56, the atk is not wanted yet")
 Expect(fleet_HopMondoAt(57), 1, "hop: :57, it is")
 Expect(fleet_HopMondoAt(14), 1, "hop: :14, still")

@@ -423,7 +423,16 @@ extension self-test; nothing acts on them yet.
 - [x] the coordinator runs the plan every beat and sends MOVE, with the
       slot, and says why in its log: a fuzzy reporting the reserve is sent
       to the main `wire`
-- [ ] a macro obeying MOVE, and reporting the server it is in
+- [x] which fleet server a link is, by kind and code, so a link pasted
+      another way still matches and a link code never matches a share code
+      `wire`
+- [ ] on MOVE, Roblox is closed and the next reconnect joins the server the
+      fleet named, not the private server, which is left as it was in the
+      settings `loads`
+- [ ] the macro says which server it is in when it connects and every beat,
+      and remembers it across a restart `loads`
+- [ ] a reconnect that lands in a fallback or public server reports none of
+      the fleet's, and the coordinator leaves that account alone `loads`
 
 ### Passive row reader
 

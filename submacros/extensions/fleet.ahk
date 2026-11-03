@@ -493,6 +493,7 @@ ext_fleetHello() {
 	;After the HELLO on the same connection, so it is read once we are seated.
 	if (ext_fleetMyField != "")
 		sock_SendLine(ext_fleetSock, fleet_Frame("FIELD", Map("name", ext_fleetMyField)))
+	ext_fleetSayServer()
 }
 
 ;A frame from the coordinator.
@@ -597,6 +598,9 @@ ext_fleetOnLine(line) {
 			if (row && ext_fleetPeers.Has(row))
 				ext_fleetPeers.Delete(row)
 			ext_fleetCoordSeen := nowUnix()
+		case "MOVE":
+			ext_fleetOnMove(frame)
+			ext_fleetCoordSeen := nowUnix()
 		case "GOTO":
 			;the main is farming this field and we are a follower. Stored only:
 			;the gather loop sees the change within a quarter of a second and
@@ -635,6 +639,70 @@ ext_fleetOnLine(line) {
 				ext_fleetStop()
 			}
 	}
+}
+
+;--- the server this account is in -------------------------------------------
+;
+;The guid hop moves accounts between the fleet's servers, and the coordinator
+;only seats the ones that say where they are. The macro knows: it is the link
+;it last joined, kept in FleetServerNow across restarts, because Roblox can stay
+;in a server the fleet sent it to while the macro restarts. Before the first
+;reconnect it is the account's own private server.
+
+;The server this account is in now.
+ext_fleetServerNow() {
+	global FleetServerNow, PrivServer
+
+	return servers_KindOf(ext_fleetServerRows(), (FleetServerNow != "") ? FleetServerNow : PrivServer)
+}
+;Tell the coordinator, every beat: a state rather than an event, so a
+;coordinator that has just taken over learns it within ten seconds.
+ext_fleetSayServer() {
+	global ext_fleetSock
+
+	if ext_fleetSock
+		sock_SendLine(ext_fleetSock, fleet_Frame("STATE", Map("server", ext_fleetServerNow())))
+}
+;The coordinator sends this account to another server. Natro's own reconnect
+;does the move: Roblox is closed, and the next reconnect goes to the link the
+;fleet named instead of the private server - see ext_fleetReconnectLink. A one
+;second delay, as the remote control's reconnect has, so it is not counted as
+;a disconnect.
+ext_fleetOnMove(frame) {
+	global ext_fleetJoinLink, FleetServerNow, PrivServer
+	local slot := fleet_Num(fleet_Field(frame, "slot")), rows := ext_fleetServerRows()
+	local where := fleet_Field(frame, "server"), why := fleet_Field(frame, "why")
+
+	if (!rows.Has(slot) || (servers_LinkParts(rows[slot].link).type = "")) {
+		ext_fleetNote("the fleet sent this macro to the " where " server, which has no usable link")
+		return 0
+	}
+	if servers_SameServer(rows[slot].link, (FleetServerNow != "") ? FleetServerNow : PrivServer) {
+		ext_fleetSayServer()
+		return 0
+	}
+	ext_fleetJoinLink := rows[slot].link
+	ext_fleetNote("the fleet sends this macro to the " where " server - " why)
+	nm_setStatus("Fleet", "moving to the " where " server - " why)
+	nm_ForceReconnect(1)
+	return 1
+}
+;For DisconnectCheck: the link to try first, in place of the private server, or
+;"" to reconnect as Natro always has. Natro's PrivServer itself is never
+;changed - a fallback that works is swapped into it and written to the settings,
+;and the fleet's link must not end up there.
+ext_fleetReconnectLink() {
+	global ext_fleetJoinLink
+	return ext_fleetJoinLink
+}
+;For DisconnectCheck, once Roblox is back in a server: which link it joined,
+;"" for a public server. Remembered across restarts and told to the fleet.
+ext_fleetReconnected(link) {
+	global ext_fleetJoinLink, FleetServerNow
+
+	ext_fleetJoinLink := ""
+	IniWrite (FleetServerNow := link), "settings\nm_config.ini", "Fleet", "FleetServerNow"
+	ext_fleetSayServer()
 }
 
 ;Keep a copy of the fleet's configuration on this machine.
@@ -1074,10 +1142,11 @@ ext_fleetBeat() {
 	;the heartbeat carries which configuration this macro holds, so that one
 	;macro sitting on a different version from the rest can be seen rather than
 	;deduced. It is the only symptom the stale-copy failure has.
-	if ext_fleetSock
+	if ext_fleetSock {
 		sock_SendLine(ext_fleetSock, fleet_Frame("HEARTBEAT"
 			, Map("cv", ext_fleetRosterDisk.version, "cby", ext_fleetRosterDisk.by)))
-	else
+		ext_fleetSayServer()
+	} else
 		ext_fleetConnect()
 }
 

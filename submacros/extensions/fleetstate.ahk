@@ -55,6 +55,9 @@ ext_fleetServerDisk := { version: 0, by: 0 }
 ;the coordinator process this macro started, so it can be ended again. Nothing
 ;else would ever end it - see ext_fleetEndCoord.
 ext_fleetCoordPid := 0
+;the server link the fleet has sent this account to, for the next reconnect -
+;see ext_fleetOnMove
+ext_fleetJoinLink := ""
 ;the last fault worth telling somebody about, and the row and secret handed
 ;over by a bind that is waiting for a timer to finish it off
 ext_fleetLastProblem := "", ext_fleetBoundWith := ""

@@ -50,7 +50,7 @@ COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
 COVER_background="submacros/background.ahk submacros/extensions/guidshots.ahk"
 COVER_passivetest="submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk"
-COVER_exttest="submacros/ExtensionSelfTest.ahk lib/FleetHop.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk"
+COVER_exttest="submacros/ExtensionSelfTest.ahk lib/FleetHop.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk"
 # the bench runs its own wiring check - tools/bench-selfcheck.txt, which the
 # bench loads and runs because it accepts a file of commands as an argument
 COVER_bench="submacros/FleetBench.ahk tools/bench-selfcheck.txt lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"

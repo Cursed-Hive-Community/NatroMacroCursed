@@ -968,6 +968,8 @@ nm_importConfig()
 		;was in them into fleet_roster_servers.ini - see ext_fleetSeedServers.
 		, "FleetServerMain", ""
 		, "FleetServerReserve", ""
+		;the server link this account last joined - see ext_fleetServerNow
+		, "FleetServerNow", ""
 		, "FleetCapacity", 6
 		;which of the main's gathering trips the residents are dragged along
 		;on - see ext_fleetFollowReport. Its own field and the boosted field
@@ -18354,6 +18356,11 @@ DisconnectCheck(testCheck := 0)
 				nm_setStatus("Error", ServerLabels[index] " Invalid")
 		}
 	}
+	; a fleet macro the coordinator sent to another server goes there first
+	if ((fleetLink := ext_fleetReconnectLink()) != "") {
+		(PossibleServers[1] := Map()).CaseSense := 0, PossibleServers[1]["link"] := fleetLink
+		PossibleServers[1]["code"] := servers_LinkParts(fleetLink).code, PossibleServers[1]["type"] := servers_LinkParts(fleetLink).type
+	}
 	; public server
 	PossibleServers[0] := Map("type", "None", "code", "")
 
@@ -18506,6 +18513,7 @@ DisconnectCheck(testCheck := 0)
 				PostSubmacroMessage("Status", 0x5553, 10, 6)
 			}
 			PostSubmacroMessage("Status", 0x5552, 221, (server = 0))
+			ext_fleetReconnected((server >= 1) ? PossibleServers[server]["link"] : "")
 
 			if (testCheck || (nm_claimHiveSlot() = 1))
 				return 1

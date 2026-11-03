@@ -155,6 +155,37 @@ servers_Main(list) {
 	return 0
 }
 
+;A server link as Natro's reconnect reads it: {type, code}, type LinkCode,
+;ShareCode or "" for a link it cannot use. The same two patterns as
+;DisconnectCheck in natro_macro.ahk, which builds its own list and is left
+;alone.
+servers_LinkParts(link) {
+	if RegExMatch(link, "i)(?<=privateServerLinkCode=)(.{32})", &m)
+		return { type: "LinkCode", code: m[0] }
+	if RegExMatch(link, "i)(?<=share\?code=)(.{32})(?=&type=Server)", &m)
+		return { type: "ShareCode", code: m[0] }
+	return { type: "", code: "" }
+}
+;Two links to the same server: the same kind of code and the same code. A
+;link code and a share code are different things, so 32 equal characters in
+;one of each are not one server.
+servers_SameServer(a, b) {
+	local pa := servers_LinkParts(a), pb := servers_LinkParts(b)
+
+	return (pa.type != "") && (pa.type = pb.type) && (pa.code = pb.code)
+}
+;Which of the servers a link is - "main", "reserve" - or "" for none of them,
+;or for a link Natro cannot use. By code, so a link pasted with other
+;parameters still matches.
+servers_KindOf(list, link) {
+	local s, e
+
+	for s, e in list
+		if servers_SameServer(e.link, link)
+			return e.kind
+	return ""
+}
+
 ;The reserve a guid is sent to: the first, in slot order. 0 when there is none.
 servers_FirstReserve(list) {
 	local keys := [], s
