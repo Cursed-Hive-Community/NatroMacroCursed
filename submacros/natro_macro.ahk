@@ -12346,13 +12346,15 @@ nm_Blender(){
 						TimerInterval := BlenderAmount%BlenderRot% * 300 ;set up time
 						IniWrite BlenderRot, "settings\nm_config.ini", "Blender", "LastBlenderRot" ; define this for GUI and to reset counter as used above
 
-						BlenderRot := Mod(BlenderRot, 3) + 1
-						nm_BlenderRotation()
+						;the repeat is spent by the slot that has just crafted: taken after
+						;rotating, it was the next slot's, which then lost a turn it never had
 						if (BlenderIndex%BlenderRot% != "Infinite") {
 							BlenderIndex%BlenderRot%-- ;subtract from blenderindex for looping only if its a number
 							MainGui["BlenderData" BlenderRot].Text := "(" BlenderAmount%BlenderRot% ") [" ((BlenderIndex%BlenderRot% = "Infinite") ? "∞" : BlenderIndex%BlenderRot%) "]"
 							IniWrite BlenderIndex%BlenderRot%, "settings\nm_config.ini", "Blender", "BlenderIndex" BlenderRot
 						}
+						BlenderRot := Mod(BlenderRot, 3) + 1
+						nm_BlenderRotation()
 						Sleep 100
 						MouseMove windowX+windowWidth//2 + 70, windowY+Floor(0.48*windowHeight) + 130 ;Click Confirm
 						Sleep 150
