@@ -1485,7 +1485,10 @@ bench_onServer(s, event, data) {
 			bench_seats[row].back := 0
 			bench_say("row " row " went away")
 		}
-		bench_bySocket.Delete(s)
+		;a macro can go before its HELLO ever arrived, and a Map throws on
+		;deleting a key it does not have
+		if bench_bySocket.Has(s)
+			bench_bySocket.Delete(s)
 		bench_drawSeats()
 		return
 	}
