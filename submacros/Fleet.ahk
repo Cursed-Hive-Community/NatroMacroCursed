@@ -26,6 +26,7 @@
 #Include "FleetProtocol.ahk"
 #Include "FleetRoster.ahk"
 #Include "FleetServers.ahk"
+#Include "FleetHop.ahk"
 #Include "nowUnix.ahk"
 
 ;How often the coordinator says it is alive, and how long a silent macro has

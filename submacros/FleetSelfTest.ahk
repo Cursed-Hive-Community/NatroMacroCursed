@@ -189,7 +189,9 @@ SERVERS := RegExReplace(ROSTER, "i)\.ini$", "_servers.ini")
 ;are characters the wire protocol has to survive, and a real private server
 ;link contains at least the last of them
 servers_Save(SERVERS, Map(1, { slot: 1, name: "Main", kind: "main", owner: 2
-		, link: "https://roblox.test/main?code=a b%c" }
+		, link: "https://roblox.test/main?code=a b%c"
+		;the guid hop's settings, a field name with a space and the separator in it
+		, hop: 1, threshold: 210, capacity: 5, blue: "Pine Tree|Rose" }
 	, 2, { slot: 2, name: "Reserve", kind: "reserve", owner: 3
 		, link: "https://roblox.test/reserve" }), 3, 1)
 ;row 3 exists in the roster from the start but does not connect until the main
@@ -238,7 +240,7 @@ clientD := 0, clientE := 0
 secondMainWhy := ""         ;what a macro binding as a second main was told
 srvGen := ""                ;the generation of the server list last seen
 srv := Map()                ;the server list as the main macro holds it
-srvMainLink := "", srvMainOwner := -1
+srvMainLink := "", srvMainOwner := -1, srvMainHop := ""
 myCv := -1                  ;the version the main said it held, come back round
 goneAtWipe := -1            ;how many rows had been struck before the wipe
 cfg := Map()                ;the roster as configured, as the main macro holds it
@@ -663,7 +665,7 @@ OnC(s, event, data) {
 Handle(label, row, name, s, event, data) {
 	global seenBy, SECRET, gotoField, fieldSent, pinged, goneRows
 	global bothSeen, row2, rttSeen, lateField
-	global srv, srvGen, srvMainLink, srvMainOwner
+	global srv, srvGen, srvMainLink, srvMainOwner, srvMainHop
 	global cfg, cfgGen, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
 	global cfgTookUp, myCv, leadOnRoster
 	local frame, r, f, rows
@@ -757,6 +759,8 @@ Handle(label, row, name, s, event, data) {
 		if (fleet_Field(frame, "kind") = "main") {
 			srvMainLink := fleet_Field(frame, "link")
 			srvMainOwner := Integer(fleet_Field(frame, "owner", -1))
+			srvMainHop := fleet_Field(frame, "hop") "/" fleet_Field(frame, "threshold") "/"
+				. fleet_Field(frame, "capacity") "/" fleet_Field(frame, "blue")
 		}
 	}
 	else if (frame.verb = "PING") {
@@ -798,7 +802,7 @@ Report(*) {
 	global HANDROSTER, handPid, handRefused, handTold, handDoor
 	global beaconSeen, HANDPORT, beaconSock, strayPid, keepPid, strayStopped, secondMainWhy
 	global clientC, clientD, clientE, boundRow, SERVERS, myCv, goneAtWipe, boundFid
-	global srv, srvGen, srvMainLink, srvMainOwner
+	global srv, srvGen, srvMainLink, srvMainOwner, srvMainHop
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
 	global cfgTookUp, byeFinal, otherWhy, clientOther
 	global ROSTER, gotoField
@@ -853,6 +857,8 @@ Report(*) {
 	allOk := Check(lines, "the server list reaches a macro, link and owner intact"
 		, (srvMainLink == "https://roblox.test/main?code=a b%c")
 			&& (srvMainOwner = 2)) && allOk
+	allOk := Check(lines, "the guid hop settings reach a macro on the main server (" srvMainHop ")"
+		, srvMainHop = "1/210/5/Pine Tree|Rose") && allOk
 	allOk := Check(lines, "a deleted server disappears from the macro's copy"
 		, (srv.Count = 1) && srv.Has(1)) && allOk
 	;Row 3 is configured from the start and does not connect for five seconds,

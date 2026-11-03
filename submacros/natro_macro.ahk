@@ -35,6 +35,7 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "FleetProtocol.ahk"
 #Include "FleetRoster.ahk"
 #Include "FleetServers.ahk"
+#Include "FleetHop.ahk"
 ;extension modules - features this fork adds on top of stock Natro, kept in
 ;their own files so they stay legible against an upstream diff
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"

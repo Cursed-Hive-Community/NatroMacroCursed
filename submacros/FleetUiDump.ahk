@@ -7,7 +7,7 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetUiDump.ahk setup 1
 ;
-;The first argument names the window - join, setup, panel, panelfull, servers
+;The first argument names the window - join, setup, panel, panelfull, servers, hop
 ;or adv - and the second, when given, is the row this macro sits on. Each
 ;control's type, name, rectangle, visible and enabled state and first sixty
 ;characters go to settings\ui_dump.txt, one per line.
@@ -26,6 +26,7 @@
 #Include "FleetProtocol.ahk"
 #Include "FleetRoster.ahk"
 #Include "FleetServers.ahk"
+#Include "FleetHop.ahk"
 #Include "%A_ScriptDir%\extensions\fleet.ahk"
 SetWorkingDir A_ScriptDir "\.."
 OnError(Dumped)
@@ -61,6 +62,7 @@ switch which {
 	case "setup": ext_FleetSetupGUI(), g := "FleetSetupGui"
 	case "panel": ext_FleetGUI(), g := "FleetGui"
 	case "servers": ext_FleetServersGUI(), g := "FleetServersGui"
+	case "hop": ext_FleetHopGUI(), g := "FleetHopGui"
 	case "panelfull":
 		global FieldDefault := Map("Pine Tree", 1)
 		FleetCheck := 1, ext_fleetMyRole := "fuzzy", ext_fleetFollowField := "Pine Tree"

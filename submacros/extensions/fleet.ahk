@@ -1943,6 +1943,7 @@ ext_FleetSetupGUI(*) {
 	;so it has a window, and this says what is in it.
 	FleetSetupGui.Add("Text", "x18 y94 w460 h40 vFleetServerSummary", "")
 	FleetSetupGui.Add("Button", "x486 y96 w96 h22", "Servers").OnEvent("Click", ext_FleetServersGUI)
+	FleetSetupGui.Add("Button", "x486 y119 w96 h20", "Guid hop").OnEvent("Click", ext_FleetHopGUI)
 
 	;no row column: the numbers are assigned at binding and nobody needs to see
 	;them. They are still in Advanced for the day something has to be matched up
@@ -2487,6 +2488,102 @@ ext_FleetServersGUI(*) {
 	ext_FleetServerDraw()
 	SetTimer ext_FleetServerWatch, 1000
 	FleetServersGui.Show("w620 h372")
+}
+
+;--- the guid hop ------------------------------------------------------------
+;
+;The guid hop's settings: whether the coordinator moves guids at all, the
+;charge a guid stops farming at in the reserve, the seats in the main, and the
+;blue fields - the ones the main farms, where a star is worth staying for. All
+;four live on the main server, so they are shared and edited like the servers,
+;and the window is read only where the servers are.
+ext_FleetHopGUI(*) {
+	global FleetHopGui
+	local f, i
+
+	if (IsSet(FleetHopGui) && IsObject(FleetHopGui)) {
+		FleetHopGui.Show()
+		return
+	}
+	FleetHopGui := Gui("+AlwaysOnTop +Border", "Fleet - guid hop")
+	FleetHopGui.OnEvent("Close", ext_FleetHopClose)
+	FleetHopGui.SetFont("s8 c808080 Norm", "Tahoma")
+	FleetHopGui.Add("Text", "x16 y12 w408 vFleetHopNote", "")
+	FleetHopGui.SetFont("s8 cDefault Norm", "Tahoma")
+	FleetHopGui.Add("CheckBox", "x16 y36 w408 vFleetHopOn"
+		, "Move the guids in and out of the main server")
+	FleetHopGui.Add("Text", "x16 y64 w190", "A guid in the reserve stops farming at")
+	FleetHopGui.Add("Edit", "x210 y61 w50 h20 Number vFleetHopThreshold")
+	FleetHopGui.Add("UpDown", "Range1-249", 200)
+	FleetHopGui.Add("Text", "x266 y64 w60", "tokens")
+	FleetHopGui.Add("Text", "x16 y90 w190", "Players the main server takes")
+	FleetHopGui.Add("Edit", "x210 y87 w50 h20 Number vFleetHopSeats")
+	FleetHopGui.Add("UpDown", "Range1-50", 6)
+	FleetHopGui.SetFont("s8 cDefault Bold", "Tahoma")
+	FleetHopGui.Add("GroupBox", "x8 y116 w424 h126", "Blue fields - the ones the main farms")
+	FleetHopGui.SetFont("s8 cDefault Norm", "Tahoma")
+	for i, f in fleet_HopFields()
+		FleetHopGui.Add("CheckBox", "x" (20 + Mod(i - 1, 3) * 136) " y" (136 + ((i - 1) // 3) * 17)
+			. " w130 vFleetHopField" i, f)
+	FleetHopGui.SetFont("s8 c808080 Norm", "Tahoma")
+	FleetHopGui.Add("Text", "x16 y250 w408 h26", "A star that lands on a blue field keeps its guid in the main"
+		. " for its ten minutes. Anywhere else, the guid goes back to charge at once.")
+	FleetHopGui.SetFont("s8 cDefault Norm", "Tahoma")
+	FleetHopGui.Add("Button", "x16 y284 w100 h26 vFleetHopSave", "Save").OnEvent("Click", ext_FleetHopSave)
+	FleetHopGui.Add("Button", "x324 y284 w100 h26", "Close").OnEvent("Click", ext_FleetHopClose)
+	ext_FleetHopDraw()
+	FleetHopGui.Show("w440 h322")
+}
+ext_FleetHopClose(*) {
+	global FleetHopGui
+
+	if (IsSet(FleetHopGui) && IsObject(FleetHopGui))
+		FleetHopGui.Destroy(), FleetHopGui := ""
+}
+ext_FleetHopDraw() {
+	global FleetHopGui
+	local main := servers_Main(ext_fleetServerList()), editable := ext_fleetEditable("servers")
+	local blue, i, f, name
+
+	if !(IsSet(FleetHopGui) && IsObject(FleetHopGui))
+		return
+	;a macro that has never heard the server list still shows what the settings
+	;would be, read only, rather than an empty window
+	if !main
+		main := servers_Blank(1, "main"), editable := 0
+	FleetHopGui["FleetHopNote"].Text := editable
+		? "On the main server, " main.name ", and shared with the fleet."
+		: "Connect to the fleet to change this."
+	FleetHopGui["FleetHopOn"].Value := main.hop
+	FleetHopGui["FleetHopThreshold"].Value := main.threshold
+	FleetHopGui["FleetHopSeats"].Value := main.capacity
+	blue := fleet_HopBlue(main.blue)
+	for i, f in fleet_HopFields()
+		FleetHopGui["FleetHopField" i].Value := blue.Has(fleet_HopKey(f))
+	for _, name in ["FleetHopOn", "FleetHopThreshold", "FleetHopSeats", "FleetHopSave"]
+		FleetHopGui[name].Enabled := editable
+	for i, f in fleet_HopFields()
+		FleetHopGui["FleetHopField" i].Enabled := editable
+}
+ext_FleetHopSave(*) {
+	global FleetHopGui, FleetServers
+	local main, blue := "", i, f
+
+	if !ext_fleetEditable("servers")
+		return
+	ext_fleetServerList()
+	if !(main := servers_Main(FleetServers))
+		return
+	for i, f in fleet_HopFields()
+		if FleetHopGui["FleetHopField" i].Value
+			blue .= ((blue = "") ? "" : "|") f
+	servers_Set(main, "hop", FleetHopGui["FleetHopOn"].Value)
+	servers_Set(main, "threshold", FleetHopGui["FleetHopThreshold"].Value)
+	servers_Set(main, "capacity", FleetHopGui["FleetHopSeats"].Value)
+	servers_Set(main, "blue", blue)
+	if ext_fleetSaveServers()
+		ext_FleetServerSummary()
+	ext_FleetHopDraw()
 }
 
 ext_FleetServersClose(*) {

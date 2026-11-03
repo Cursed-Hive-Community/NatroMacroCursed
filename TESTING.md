@@ -413,6 +413,13 @@ extension self-test; nothing acts on them yet.
       tokens `wire`
 - [x] a macro gone quiet keeps its seat counted and gets no order; a move is
       not ordered twice `wire`
+- [x] its settings - on or off, the threshold, the seats, the blue fields -
+      live on the main server and reach a macro intact, a field name with a
+      space and the separator included `wire`
+- [x] the Guid hop window, from Fleet settings: its controls, laid out
+      without overlap, read only until the fleet is reached `layout`
+- [x] a field reported as PineTree by the notice is the blue Pine Tree
+      `wire`
 - [ ] the coordinator acting on it, and the macros moving server
 
 ### Passive row reader

@@ -315,7 +315,7 @@ HopFleet(list*) {
 HopMoves(fleet, atMondo := 0, state := 0) {
 	if !state
 		state := {pending: Map(), yielded: Map()}
-	opt := {now: 1000, capacity: 6, threshold: 200, blue: Map("Pine Tree", 1), mondo: atMondo}
+	opt := {now: 1000, capacity: 6, threshold: 200, blue: fleet_HopBlue("Pine Tree"), mondo: atMondo}
 	s := ""
 	for o in fleet_HopPlan(fleet, opt, state)
 		s .= (s = "" ? "" : " ") o.row ">" o.to
@@ -366,6 +366,12 @@ HopMoves(f, 0, st)
 ExpectEq(HopMoves(f, 0, st), "", "hop: a move ordered is not ordered again while it happens")
 f[1].server := "reserve"
 ExpectEq(HopMoves(f), "1>main 6>reserve 7>main", "hop: the main is always let back in")
+;the notice images name a field PineTree, the windows Pine Tree
+f := FullMain(HopPeer(7, "guid", "reserve", 210))
+for r in [4, 5, 6]
+	f[r].guidingField := "PineTree", f[r].guidingUntil := 1500
+ExpectEq(HopMoves(f), "", "hop: PineTree from the notice is the blue Pine Tree")
+ExpectEq(fleet_HopBlue(" Pine Tree|Rose||").Count, 2, "hop: blue fields read from Pine Tree|Rose")
 Expect(fleet_HopMondoAt(56), 0, "hop: :56, the atk is not wanted yet")
 Expect(fleet_HopMondoAt(57), 1, "hop: :57, it is")
 Expect(fleet_HopMondoAt(14), 1, "hop: :14, still")

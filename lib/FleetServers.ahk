@@ -35,10 +35,16 @@
 ;added to one was a field silently dropped by another. They are all built from
 ;these now.
 servers_Keys() {
-	return ["name", "link", "owner", "kind"]
+	return ["name", "link", "owner", "kind", "hop", "threshold", "capacity", "blue"]
 }
+;hop to blue are the guid hop's settings, read on the main server only: whether
+;the coordinator moves guids at all, the charge a guid stops farming at in the
+;reserve, how many players the server takes, and the fields the main farms,
+;Pine Tree|Rose. Facts about the server, so they live on it. Off by default;
+;200 tokens, six seats.
 servers_Blank(slot, kind := "reserve") {
-	return { slot: slot, name: "server " slot, link: "", owner: 0, kind: kind }
+	return { slot: slot, name: "server " slot, link: "", owner: 0, kind: kind
+		, hop: 0, threshold: 200, capacity: 6, blue: "" }
 }
 ;One field from text - a line of the file or a field of a frame.
 servers_Set(e, k, v) {
@@ -47,6 +53,11 @@ servers_Set(e, k, v) {
 		case "link":  e.link := v
 		case "owner": e.owner := fleet_Num(v)
 		case "kind":  e.kind := (StrLower(v) = "main") ? "main" : "reserve"
+		case "hop":   e.hop := fleet_Num(v) ? 1 : 0
+		;a number out of range is a hand-edited file, not a reason to stop
+		case "threshold": e.threshold := Min(Max(fleet_Num(v), 1), 249)
+		case "capacity":  e.capacity := Min(Max(fleet_Num(v), 1), 50)
+		case "blue":  e.blue := v
 	}
 	return e
 }
@@ -60,6 +71,11 @@ servers_FromFields(slot, fields) {
 			servers_Set(e, k, fields[k])
 	return e
 }
+;One field of a server, or its default when the entry was made without it - by
+;code older than the field, or a test building one by hand.
+servers_Get(e, k) {
+	return e.HasOwnProp(k) ? e.%k% : servers_Blank(0).%k%
+}
 ;A server as a frame: verb SERVER from the coordinator, SETSERVER up to it, with
 ;the version of the list it belongs to and how many entries that version has.
 servers_Frame(verb, e, ver, n) {
@@ -67,7 +83,7 @@ servers_Frame(verb, e, ver, n) {
 		, "slot", e.slot), k
 
 	for _, k in servers_Keys()
-		m[k] := e.%k%
+		m[k] := servers_Get(e, k)
 	return fleet_Frame(verb, m)
 }
 
@@ -174,7 +190,7 @@ servers_Save(path, list, version := 1, by := 0, bench := 0) {
 	for _, s in keys {
 		out .= "[" s "]`r`n"
 		for _, k in servers_Keys()
-			out .= StrTitle(k) "=" list[s].%k% "`r`n"
+			out .= StrTitle(k) "=" servers_Get(list[s], k) "`r`n"
 		out .= "`r`n"
 	}
 	return fleet_WriteWhole(path, out)

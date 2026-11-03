@@ -44,8 +44,8 @@ source "$CONFIG"
 # changed file selects every entry/test whose list contains it. Update these
 # when an #Include changes - nm-check.py's own file list is the full set.
 
-COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk"
-COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk"
+COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk lib/FleetHop.ahk"
+COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk lib/FleetHop.ahk"
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
 COVER_background="submacros/background.ahk submacros/extensions/guidshots.ahk"
@@ -56,7 +56,7 @@ COVER_exttest="submacros/ExtensionSelfTest.ahk lib/FleetHop.ahk submacros/extens
 COVER_bench="submacros/FleetBench.ahk tools/bench-selfcheck.txt lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
 # validated only, never run here: it needs to be told which window to build,
 # and what it writes is read by a person, not checked against an answer
-COVER_uidump="submacros/FleetUiDump.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk"
+COVER_uidump="submacros/FleetUiDump.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk lib/FleetHop.ahk"
 
 # entry point -> coverage var
 ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump submacros/PassiveSelfTest.ahk:COVER_passivetest submacros/background.ahk:COVER_background"

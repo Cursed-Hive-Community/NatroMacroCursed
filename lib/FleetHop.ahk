@@ -24,6 +24,28 @@
 ;fleet_HopPlan is the whole of it, and it reads nothing but its arguments, so
 ;ExtensionSelfTest checks it against a table of situations.
 
+;The fields a guiding star can land on: Natro's fieldnamelist and its
+;guiding_star_<field> notice images, the same seventeen.
+fleet_HopFields() {
+	return ["Bamboo", "Blue Flower", "Cactus", "Clover", "Coconut", "Dandelion", "Mountain Top"
+		, "Mushroom", "Pepper", "Pine Tree", "Pineapple", "Pumpkin", "Rose", "Spider"
+		, "Strawberry", "Stump", "Sunflower"]
+}
+;A field's name compared without case or spaces: the notice images name them
+;PineTree, the windows Pine Tree.
+fleet_HopKey(name) {
+	return StrLower(StrReplace(name, " "))
+}
+;The blue fields as stored on the main server, Pine Tree|Rose, as a set.
+fleet_HopBlue(text) {
+	local m := Map(), f
+
+	for _, f in StrSplit(text, "|")
+		if (Trim(f) != "")
+			m[fleet_HopKey(Trim(f))] := 1
+	return m
+}
+
 ;From :57 to :14, UTC, the atk is wanted in the main: Mondo spawns on the hour,
 ;the Mondo interrupt leaves at :59 and catches up until :14, and moving server
 ;takes a minute or two.
@@ -44,7 +66,7 @@ fleet_HopWhere(p, state) {
 ;after a macro goes quiet - its Roblox may well still be in the server. charge
 ;is -1 when it has not been read.
 ;
-;opt: {now, capacity, threshold, blue (a Map of field names), mondo}.
+;opt: {now, capacity, threshold, blue (fleet_HopBlue), mondo}.
 ;
 ;state is kept by the caller between beats and updated here: pending, row ->
 ;{to, at}, the moves ordered and not yet seen done; yielded, the rows that gave
@@ -106,7 +128,7 @@ fleet_HopPlan(peers, opt, state) {
 	for _, r in rows {
 		p := peers[r]
 		if (p.role = "guid" && p.online && inMain(p) && p.guidingUntil > opt.now
-			&& !opt.blue.Has(p.guidingField))
+			&& !opt.blue.Has(fleet_HopKey(p.guidingField)))
 			move(p, "reserve", "its star landed on " p.guidingField ", not a blue field")
 	}
 	;the atk, around Mondo
