@@ -33,6 +33,7 @@
 
 #Include "%A_ScriptDir%\..\lib"
 #Include "nowUnix.ahk"
+#Include "FleetHop.ahk"
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
 #Include "%A_ScriptDir%\extensions\interrupts.ahk"
 #Include "%A_ScriptDir%\extensions\blender.ahk"
@@ -290,6 +291,80 @@ ExpectEq(shots[1], 1000, "star shots: the first at the landing")
 Expect(inside, 1, "star shots: the rest inside the cooldown")
 Expect(sorted, 1, "star shots: in order")
 Expect(same, 0, "star shots: drawn again for the next star")
+
+;--- the guid hop -------------------------------------------------------------
+;
+;Who sits in the main, as whole situations: six seats, a threshold of 200, Pine
+;Tree the one blue field, the time 1000. Each answer is the moves in the order
+;they are made, row>server.
+HopPeer(row, role, server, charge := 0, star := "", left := 0, since := 0) {
+	return {row: row, role: role, online: 1, present: 1, server: server, charge: charge
+		, guidingField: star, guidingUntil: left ? 1000 + left : 0, waitSince: since}
+}
+HopFleet(list*) {
+	m := Map()
+	for p in list
+		m[p.row] := p
+	return m
+}
+HopMoves(fleet, atMondo := 0, state := 0) {
+	if !state
+		state := {pending: Map(), yielded: Map()}
+	opt := {now: 1000, capacity: 6, threshold: 200, blue: Map("Pine Tree", 1), mondo: atMondo}
+	s := ""
+	for o in fleet_HopPlan(fleet, opt, state)
+		s .= (s = "" ? "" : " ") o.row ">" o.to
+	return s
+}
+;a full main: the main, a tad, a fuzzy and three guids still charging
+FullMain(extra*) {
+	f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "tad", "main"), HopPeer(3, "fuzzy", "main")
+		, HopPeer(4, "guid", "main", 50), HopPeer(5, "guid", "main", 80), HopPeer(6, "guid", "main", 10))
+	for p in extra
+		f[p.row] := p
+	return f
+}
+ExpectEq(HopMoves(FullMain(HopPeer(7, "guid", "reserve", 210))), "6>reserve 7>main"
+	, "hop: a guid ready to fire swaps with the seated guid that has least")
+ExpectEq(HopMoves(FullMain(HopPeer(7, "guid", "reserve", 150))), ""
+	, "hop: a guid still charging displaces nobody")
+f := FullMain(HopPeer(7, "guid", "reserve", 150)), f[4].charge := 0, f[4].guidingField := "Rose", f[4].guidingUntil := 1500
+ExpectEq(HopMoves(f), "4>reserve 7>main", "hop: a star on Rose is no use - out at once, and the seat refilled")
+f := FullMain(HopPeer(7, "guid", "reserve", 210))
+for r in [4, 5, 6]
+	f[r].guidingField := "Pine Tree", f[r].guidingUntil := 1500
+ExpectEq(HopMoves(f), "", "hop: three stars running on a blue field - nobody moves, even for a ready guid")
+f := FullMain(HopPeer(7, "guid", "reserve", 210, , , 50), HopPeer(8, "atk", "reserve"))
+ExpectEq(HopMoves(f, 1), "2>reserve 8>main 6>reserve 7>main", "hop: at Mondo the tad makes room for the atk, before the ready guid")
+f := FullMain(HopPeer(8, "atk", "reserve")), f[3].role := "tad"
+ExpectEq(HopMoves(f, 1), "2>reserve 8>main", "hop: of two tads, the first in the roster")
+f := FullMain(HopPeer(8, "atk", "reserve")), f[2].role := "fuzzy"
+ExpectEq(HopMoves(f, 1), "2>reserve 8>main", "hop: no tad, a fuzzy")
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "guid", "main", 0, "Pine Tree", 300), HopPeer(3, "guid", "main", 150)
+	, HopPeer(4, "guid", "main", 50), HopPeer(5, "guid", "main", 0, "Pine Tree", 300), HopPeer(6, "guid", "main", 220), HopPeer(8, "atk", "reserve"))
+ExpectEq(HopMoves(f, 1), "4>reserve 8>main", "hop: no resident, the guid with least and no star")
+st := {pending: Map(), yielded: Map(2, 1)}
+;the main full again: the atk in the tad's seat
+f := FullMain(HopPeer(7, "guid", "reserve", 210), HopPeer(8, "atk", "main")), f[2].server := "reserve"
+ExpectEq(HopMoves(f, 0, st), "8>reserve 2>main 6>reserve 7>main", "hop: after Mondo the atk goes and the tad is back before the guid")
+ExpectEq(st.yielded.Count, 0, "hop: and the tad's seat is no longer owed")
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "tad", "reserve"), HopPeer(4, "guid", "reserve", 210))
+ExpectEq(HopMoves(f), "2>main 4>main", "hop: a tad restarted into the reserve is let back in before a guid")
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "tad", "main"), HopPeer(4, "guid", "reserve", 120)
+	, HopPeer(5, "guid", "reserve", 205, , , 50), HopPeer(6, "guid", "reserve", 210, , , 40))
+ExpectEq(HopMoves(f), "6>main 5>main 4>main", "hop: free seats, the longest waiting ready guid first, then by tokens")
+f := FullMain(HopPeer(7, "guid", "reserve", 150)), f[6].online := 0
+f[5].server := "reserve", f[5].charge := 100
+ExpectEq(HopMoves(f), "7>main", "hop: a macro gone quiet still holds its seat, and is given no order")
+f := FullMain(HopPeer(7, "guid", "reserve", 210)), st := {pending: Map(), yielded: Map()}
+HopMoves(f, 0, st)
+ExpectEq(HopMoves(f, 0, st), "", "hop: a move ordered is not ordered again while it happens")
+f[1].server := "reserve"
+ExpectEq(HopMoves(f), "1>main 6>reserve 7>main", "hop: the main is always let back in")
+Expect(fleet_HopMondoAt(56), 0, "hop: :56, the atk is not wanted yet")
+Expect(fleet_HopMondoAt(57), 1, "hop: :57, it is")
+Expect(fleet_HopMondoAt(14), 1, "hop: :14, still")
+Expect(fleet_HopMondoAt(15), 0, "hop: :15, Mondo is over")
 
 Report()
 return

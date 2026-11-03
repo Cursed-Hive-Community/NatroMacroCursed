@@ -395,6 +395,26 @@ script replaying the search; what was never seen is the timing.
 - [ ] a dialog that never comes up leaves the slot alone and the status says
       `Retrying` - rests on the E prompt still showing at the planter `loads`
 
+### Guid hop
+
+Who sits in the main server, decided by `fleet_HopPlan` in
+`lib/FleetHop.ahk`. The rules are `wire`, as whole situations in the
+extension self-test; nothing acts on them yet.
+
+- [x] a guid ready to fire swaps with the seated guid that has least `wire`
+- [x] a star on any field but a blue one sends its guid back at once `wire`
+- [x] a guid whose star runs on a blue field is never moved `wire`
+- [x] at Mondo a tad makes room for the atk (the first of two), else a
+      fuzzy, else the guid with least and no star; the atk beats a ready
+      guid `wire`
+- [x] after Mondo the atk leaves and the resident is back before any guid
+      `wire`
+- [x] waiting guids: ready ones first, the longest waiting first, then by
+      tokens `wire`
+- [x] a macro gone quiet keeps its seat counted and gets no order; a move is
+      not ordered twice `wire`
+- [ ] the coordinator acting on it, and the macros moving server
+
 ### Passive row reader
 
 `submacros/extensions/passives.ahk`, for the guid hop: the Guiding Star's
