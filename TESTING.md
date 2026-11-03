@@ -411,6 +411,16 @@ extension self-test.
       then stops `loads`
 - [ ] a blender already crafting is left 5, 10, 20, then 30 minutes, not
       visited every round `loads`
+- [ ] a slot with a wait of 110 minutes is crafted, then not tried again
+      for 110 minutes, while the other slots take their turns `loads`
+- [ ] a slot short of ingredients is kept, the status says
+      `Blender: not enough for ...`, and the next due slot is crafted on the
+      same visit: rests on the recipe arrows still working with the
+      shortage shown `loads`
+- [ ] the Every row in the Collect tab's add panel sits where Add Item
+      was, without overlapping the picture or the Repeat column `loads`
+- [ ] the timers window's Add dialog has an Every row, and both windows
+      show the wait as `(20) [∞] 110m` `loads`
 
 ---
 

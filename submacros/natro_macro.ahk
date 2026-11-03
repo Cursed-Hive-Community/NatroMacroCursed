@@ -707,7 +707,13 @@ nm_importConfig()
 		, "BlenderCount1", 0
 		, "BlenderCount2", 0
 		, "BlenderCount3", 0
-		, "BlenderClaim", 0)
+		, "BlenderClaim", 0
+		, "BlenderWait1", 0
+		, "BlenderWait2", 0
+		, "BlenderWait3", 0
+		, "BlenderNext1", 0
+		, "BlenderNext2", 0
+		, "BlenderNext3", 0)
 
 	config["Boost"] := Map("FieldBoostStacks", 0
 		, "FieldBooster1", "None"
@@ -3238,7 +3244,7 @@ loop 3 {
 	MainGui.Add("Button", "x" xCoords " y124 w40 h15 vBlenderAdd" A_index " Disabled", (BlenderItem%A_index% = "None") ? "Add" : "Clear").OnEvent("Click", nm_setBlenderData)
 	MainGui.Add("Picture", "x" xCoords " y78 h40 w40 vBlenderItem" A_index "Picture +BackgroundTrans +0xE"
 		, (BlenderItem%A_index% = "None") ? "" : hBitmapsSB[BlenderItem%A_index%] ? ("HBITMAP:*" hBitmapsSB[BlenderItem%A_index%]) : "")
-	MainGui.Add("Text", "x" (247 + (62 * A_index)) " y58 w60 +Center vBlenderData" A_index, "(" BlenderAmount%A_Index% ") [" ((BlenderIndex%A_index% = "Infinite") ? "∞" : BlenderIndex%A_index%) "]")
+	MainGui.Add("Text", "x" (247 + (62 * A_index)) " y58 w60 +Center vBlenderData" A_index, ext_blenderLabel(BlenderAmount%A_Index%, BlenderIndex%A_index%, BlenderWait%A_index%))
 }
 BlenderAdd := 0 ;setup BlenderAdd for later use in the GUI
 
@@ -3246,9 +3252,12 @@ MainGui.Add("Text", "x431 y125 w41 h16 +Center +0x200 vBlenderAmountNum Hidden")
 MainGui.Add("UpDown", "vBlenderAmount Range1-999 Hidden", 1)
 MainGui.Add("Text", "x435 y106 vBlenderAmountText Hidden", "Amount")
 MainGui.Add("Text", "x435 y50 h13 vBlenderRepeatText Hidden", "Repeat")
-MainGui.SetFont("w700 underline")
-MainGui.Add("Text", "x332 y58 w80 vblendertitle1 Hidden", "Add Item")
-MainGui.SetFont("s8 cDefault Norm", "Tahoma")
+;where the "Add Item" title stood: minutes between two attempts of the slot,
+;0 for none
+MainGui.Add("Text", "x309 y58 vBlenderWaitText Hidden", "Every")
+MainGui.Add("Text", "x340 y55 w41 h16 +Center +0x200 vBlenderWaitNum Hidden")
+MainGui.Add("UpDown", "vBlenderWait Range0-999 Hidden", 0)
+MainGui.Add("Text", "x384 y58 vBlenderWaitUnit Hidden", "min")
 MainGui.Add("Text", "x307 y74 w103 h1 vblenderline1 Hidden 0x7")
 MainGui.Add("Text", "x409 y49 w1 h97 vblenderline2 Hidden 0x7")
 MainGui.Add("Text", "x410 y64 w83 h1 vblenderline3 Hidden 0x7")
@@ -4010,6 +4019,7 @@ nm_TabCollectLock(){
 	MainGui["BlenderIndexOption"].Enabled := 0
 	MainGui["BlenderLeft"].Enabled := 0
 	MainGui["BlenderRight"].Enabled := 0
+	MainGui["BlenderWait"].Enabled := 0
 	MainGui["ClockCheck"].Enabled := 0
 	MainGui["MondoBuffCheck"].Enabled := 0
 	MainGui["MondoSecs"].Enabled := 0
@@ -4100,6 +4110,7 @@ nm_TabCollectUnLock(){
 	MainGui["BlenderIndex"].Enabled := 1
 	MainGui["BlenderLeft"].Enabled := 1
 	MainGui["BlenderRight"].Enabled := 1
+	MainGui["BlenderWait"].Enabled := 1
 	MainGui["ClockCheck"].Enabled := 1
 	MainGui["MondoBuffCheck"].Enabled := 1
 	MainGui["MondoSecs"].Enabled := 1
@@ -5371,7 +5382,7 @@ nm_CollectKillButton(GuiCtrl, *){
 	, BlenderSide := ["BlenderAmount", "BlenderAmountNum", "BlenderAmountText"
 		, "BlenderRepeatText", "BlenderIndex", "BlenderIndexNum"
 		, "BlenderItem", "BlenderLeft", "BlenderRight", "BlenderAddSlot", "BlenderIndexOption"
-		, "blenderline1", "blenderline2", "blenderline3", "blenderline4", "blendertitle1"]
+		, "blenderline1", "blenderline2", "blenderline3", "blenderline4", "BlenderWaitText", "BlenderWaitNum", "BlenderWait", "BlenderWaitUnit"]
 	, MondoKillControls := ["MondoLootText", "MondoLootDirection", "MLDLeft", "MLDRight"]
 	, MondoBuffControls := ["MondoSecs", "MondoSecsText"]
 
@@ -5473,7 +5484,7 @@ nm_setBlenderData(GuiCtrl, *){
 	local i := SubStr(GuiCtrl.Name, -1)
 	static uiList := ["BlenderItem", "BlenderLeft", "BlenderRight", "BlenderAddSlot", "BlenderAmountText", "BlenderAmount"
 		, "BlenderAmountNum", "BlenderRepeatText", "BlenderIndexOption", "BlenderIndexNum", "BlenderIndex"
-		, "blenderline1", "blendertitle1", "blenderline2", "blenderline3", "blenderline4"]
+		, "blenderline1", "BlenderWaitText", "BlenderWaitNum", "BlenderWait", "BlenderWaitUnit", "blenderline2", "blenderline3", "blenderline4"]
 
 	if (BlenderItem%i% = "None") {
 		BlenderaddIndex := i, BlenderAdd := i
@@ -5485,6 +5496,7 @@ nm_setBlenderData(GuiCtrl, *){
 
 		MainGui["BlenderAmount"].Value := BlenderAmount%i%
 		MainGui["BlenderIndex"].Value := ((BlenderIndex%i% != "Infinite" && BlenderIndex%i% != "∞") ? BlenderIndex%i% : 1)
+		MainGui["BlenderWait"].Value := BlenderWait%i%
 		ba_AddBlenderItemButton()
 		MainGui["BlenderIndexOption"].Value := 0
 		MainGui["BlenderIndex"].Enabled := 1
@@ -5493,15 +5505,17 @@ nm_setBlenderData(GuiCtrl, *){
 		For ui in uiList
 			MainGui[ui].Visible := 1
 	} else {
-		BlenderItem%i% := "None", BlenderAmount%i% := 0, BlenderIndex%i% := 1, BlenderTime%i% := 0
+		BlenderItem%i% := "None", BlenderAmount%i% := 0, BlenderIndex%i% := 1, BlenderTime%i% := 0, BlenderWait%i% := 0, BlenderNext%i% := 0
 
 		IniWrite "None", "settings\nm_config.ini", "Blender", "BlenderItem" i
 		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderAmount" i
 		IniWrite 1, "settings\nm_config.ini", "Blender", "BlenderIndex" i
 		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderTime" i
+		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderWait" i
+		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderNext" i
 
 		MainGui["BlenderAdd" i].Text := ((BlenderItem%i% = "None" || BlenderItem%i% = "") ? "Add" : "Clear")
-		MainGui["BlenderData" i].Text := "(" BlenderAmount%i% ") [" ((BlenderIndex%i% = "Infinite") ? "∞" : BlenderIndex%i%) "]"
+		MainGui["BlenderData" i].Text := ext_blenderLabel(BlenderAmount%i%, BlenderIndex%i%, BlenderWait%i%)
 
 		MainGui["BlenderItem" i "Picture"].Value := ""
 	}
@@ -5522,7 +5536,7 @@ ba_AddBlenderItem(*){
 	local BlenderIndex, BlenderAmount, BlenderIndexOption, BlenderIndex
 	static uiList := ["BlenderItem", "BlenderLeft", "BlenderRight", "BlenderAddSlot", "BlenderAmountText", "BlenderAmount"
 		, "BlenderAmountNum", "BlenderRepeatText", "BlenderIndexOption", "BlenderIndex", "BlenderIndexNum"
-		, "blenderline1", "blenderline2", "blenderline3", "blenderline4", "blendertitle1"]
+		, "blenderline1", "blenderline2", "blenderline3", "blenderline4", "BlenderWaitText", "BlenderWaitNum", "BlenderWait", "BlenderWaitUnit"]
 
 	BlenderIndex := MainGui["BlenderIndex"].Value
 	BlenderAmount := MainGui["BlenderAmount"].Value
@@ -5532,9 +5546,12 @@ ba_AddBlenderItem(*){
 	IniWrite (BlenderItem%BlenderaddIndex% := AddBlenderItem), "settings\nm_config.ini", "Blender", "BlenderItem" BlenderaddIndex
 	IniWrite (BlenderIndex%BlenderaddIndex% := BlenderIndex), "settings\nm_config.ini", "Blender", "BlenderIndex" BlenderaddIndex
 	IniWrite (BlenderAmount%BlenderaddIndex% := BlenderAmount), "settings\nm_config.ini", "Blender", "BlenderAmount" BlenderaddIndex
+	IniWrite (BlenderWait%BlenderaddIndex% := MainGui["BlenderWait"].Value), "settings\nm_config.ini", "Blender", "BlenderWait" BlenderaddIndex
+	;a new item is due at once, whatever the slot's last one was waiting for
+	IniWrite (BlenderNext%BlenderaddIndex% := 0), "settings\nm_config.ini", "Blender", "BlenderNext" BlenderaddIndex
 
 	MainGui["BlenderItem" BlenderaddIndex "Picture"].Value := hBitmapsSB[BlenderItem%BlenderaddIndex%] ? ("HBITMAP:*" hBitmapsSB[BlenderItem%BlenderaddIndex%]) : ""
-	MainGui["BlenderData" BlenderaddIndex].Text := "(" BlenderAmount%BlenderaddIndex% ") [" ((BlenderIndex%BlenderaddIndex% = "Infinite") ? "∞" : BlenderIndex%BlenderaddIndex%) "]"
+	MainGui["BlenderData" BlenderaddIndex].Text := ext_blenderLabel(BlenderAmount%BlenderaddIndex%, BlenderIndex%BlenderaddIndex%, BlenderWait%BlenderaddIndex%)
 	MainGui["BlenderAdd" BlenderaddIndex].Text := ((AddBlenderItem = "None" || AddBlenderItem = "") ? "Add" : "Clear")
 
 	For ui in uiList
@@ -12226,15 +12243,23 @@ nm_Blender(){
 	, BlenderTime1, BlenderTime2, BlenderTime3
 	, BlenderAmount1, BlenderAmount2, BlenderAmount3
 	, BlenderCount1, BlenderCount2, BlenderCount3, BlenderClaim
+	, BlenderWait1, BlenderWait2, BlenderWait3
+	, BlenderNext1, BlenderNext2, BlenderNext3
 	static busyTries := 0
 
 	nm_BlenderRotation()
+	;a slot is due once its own wait since its last attempt is over
+	live := [], next := [], amount := []
+	loop 3
+		live.Push(ext_blenderSlotLive(BlenderItem%A_Index%, BlenderIndex%A_Index%)), next.Push(BlenderNext%A_Index%), amount.Push(BlenderAmount%A_Index%)
+	pick := ext_blenderPickAt(BlenderRot, live, next, nowUnix())
+	forced := BlenderEnd
 
 	;BlenderTime of the last slot to craft is when its batch is done. A trip is
 	;also due with nothing left to craft while that batch is still in the
 	;blender: the run used to end without ever going back for the last one.
 	;Ready in the timers window goes at once, whichever slot it was pressed on.
-	if ext_blenderVisitAt(nowUnix(), BlenderTime%LastBlenderRot%, BlenderCheck, BlenderClaim, BlenderEnd) {
+	if ext_blenderVisitAt(nowUnix(), BlenderTime%LastBlenderRot%, pick, BlenderClaim, forced) {
 		Loop 2 {
 			hwnd := GetRobloxHWND()
 			offsetY := GetYOffset(hwnd)
@@ -12295,7 +12320,10 @@ nm_Blender(){
 				;nothing is crafting any more, and whatever had finished is claimed
 				busyTries := 0
 				IniWrite (BlenderClaim := 0), "settings\nm_config.ini", "Blender", "BlenderClaim"
-				if !BlenderCheck {
+				;Ready crafts the slot it was pressed on, due or not
+				if (forced && live[BlenderRot])
+					pick := BlenderRot
+				if !pick {
 					nm_setStatus("Collected", "Blender")
 					gdip_disposeimage(BlenderSS)
 					MouseMove windowX+windowWidth//2 - 250, windowY+Floor(0.48*windowHeight) - 200 ;Close GUI
@@ -12303,6 +12331,7 @@ nm_Blender(){
 					Click
 					break
 				}
+				BlenderRot := pick
 				gdip_disposeimage(BlenderSS)
 				Sleep 800
 				loop
@@ -12318,22 +12347,23 @@ nm_Blender(){
 						Sleep 200
 						BlenderSS := Gdip_BitmapFromScreen(SearchX "|" SearchY "|553|400")
 						if (Gdip_ImageSearch(BlenderSS, bitmaps["NoItems"], , , , , , 2) > 0) {
-							BlenderItem%BlenderRot% := "None", BlenderAmount%BlenderRot% := 0, BlenderIndex%BlenderRot% := 1, BlenderTime%BlenderRot% := 0
-
-							IniWrite "None", "settings\nm_config.ini", "Blender", "BlenderItem" BlenderRot
-							IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderAmount" BlenderRot
-							IniWrite 1, "settings\nm_config.ini", "Blender", "BlenderIndex" BlenderRot
-							IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderTime" BlenderRot
-
-							MainGui["BlenderAdd" BlenderRot].Text := ((BlenderItem%BlenderRot% = "None" || BlenderItem%BlenderRot% = "") ? "Add" : "Clear")
-							MainGui["BlenderData" BlenderRot].Text := "(" BlenderAmount%BlenderRot% ") [" ((BlenderIndex%BlenderRot% = "Infinite") ? "∞" : BlenderIndex%BlenderRot%) "]"
-
-							MainGui["BlenderItem" BlenderRot "Picture"].Value := ""
+							;short of ingredients: the slot is kept and tried again later.
+							;Stock Natro cleared it, so the first short visit ended a run
+							;that was meant to keep pace with the ingredients coming in.
+							BlenderNext%BlenderRot% := ext_blenderNextAt(nowUnix(), BlenderWait%BlenderRot%, BlenderAmount%BlenderRot%, 0)
+							next[BlenderRot] := BlenderNext%BlenderRot%
+							IniWrite BlenderNext%BlenderRot%, "settings\nm_config.ini", "Blender", "BlenderNext" BlenderRot
+							nm_setStatus("Confirmed", "Blender: not enough for " BlenderItem%BlenderRot% ", next try in " (BlenderNext%BlenderRot% - nowUnix()) // 60 "m")
 							gdip_disposeimage(BlenderSS)
-							nm_BlenderRotation()
-							if !(BlenderCheck)
+							;another slot that is due is looked for on this same visit
+							if !(pick := ext_blenderPickAt(Mod(BlenderRot, 3) + 1, live, next, nowUnix())) {
+								MouseMove windowX+windowWidth//2 - 250, windowY+Floor(0.48*windowHeight) - 200 ;Close GUI
+								Sleep 150
+								Click
 								break 2
-							break
+							}
+							BlenderRot := pick
+							continue
 						}
 						gdip_disposeimage(BlenderSS)
 						MouseMove windowX+windowWidth//2, windowY+Floor(0.48*windowHeight) + 130 ;Open item menu
@@ -12351,23 +12381,18 @@ nm_Blender(){
 
 						nm_setStatus("Collected", "Blender")
 
-						BlenderTime%BlenderRot% := BlenderAmount%BlenderRot% * 300 ;calculate first time variable
-						BlenderTimeTemp := BlenderTime%BlenderRot% ;set up a temporary varible to hold time
-						TempBlenderRot := BlenderRot ; save a temporary rotation holder
-
-						BlenderTime%TempBlenderRot% := BlenderTime%TempBlenderRot% + nowUnix() ;add nowunix for time after temporoary varible has been created
-						IniWrite BlenderTime%TempBlenderRot%, "settings\nm_config.ini", "Blender", "BlenderTime" TempBlenderRot ; save timer to config
-
-						loop {
-							TempBlenderRot := Mod(TempBlenderRot, 3) + 1
-							if (TempBlenderRot = BlenderRot) ;makes sure it doesnt do the already calculated time again
-								break
-
-							if ((BlenderIndex%TempBlenderRot% = "Infinite" || BlenderIndex%TempBlenderRot% > 0) && (BlenderItem%TempBlenderRot% != "None" && BlenderItem%TempBlenderRot% != "")) { ;start time calculation process
-								BlenderTime%TempBlenderRot% := (BlenderAmount%TempBlenderRot% * 300) + BlenderTimeTemp ;add previous time to this one after to show time until its done
-								BlenderTimeTemp := BlenderTime%TempBlenderRot% ;create a new temp for next
-								BlenderTime%TempBlenderRot% := BlenderTime%TempBlenderRot% + nowUnix() ;add now unix to it for the counter
-								IniWrite BlenderTime%TempBlenderRot%, "settings\nm_config.ini", "Blender", "BlenderTime" TempBlenderRot ;save the value to the config for GUI use and Remote control
+						;this batch is done five minutes an item from now, and the other
+						;slots' countdowns follow on from it, each starting no earlier
+						;than its own wait allows
+						BlenderTime%BlenderRot% := nowUnix() + BlenderAmount%BlenderRot% * 300
+						BlenderNext%BlenderRot% := ext_blenderNextAt(nowUnix(), BlenderWait%BlenderRot%, BlenderAmount%BlenderRot%, 1)
+						next[BlenderRot] := BlenderNext%BlenderRot%
+						IniWrite BlenderNext%BlenderRot%, "settings\nm_config.ini", "Blender", "BlenderNext" BlenderRot
+						plan := ext_blenderPlanAfter(BlenderRot, BlenderTime%BlenderRot%, live, next, amount)
+						loop 3 {
+							if plan[A_Index] {
+								BlenderTime%A_Index% := plan[A_Index]
+								IniWrite BlenderTime%A_Index%, "settings\nm_config.ini", "Blender", "BlenderTime" A_Index
 							}
 						}
 						TimerInterval := BlenderAmount%BlenderRot% * 300 ;set up time
@@ -12377,7 +12402,7 @@ nm_Blender(){
 						;rotating, it was the next slot's, which then lost a turn it never had
 						if (BlenderIndex%BlenderRot% != "Infinite") {
 							BlenderIndex%BlenderRot%-- ;subtract from blenderindex for looping only if its a number
-							MainGui["BlenderData" BlenderRot].Text := "(" BlenderAmount%BlenderRot% ") [" ((BlenderIndex%BlenderRot% = "Infinite") ? "∞" : BlenderIndex%BlenderRot%) "]"
+							MainGui["BlenderData" BlenderRot].Text := ext_blenderLabel(BlenderAmount%BlenderRot%, BlenderIndex%BlenderRot%, BlenderWait%BlenderRot%)
 							IniWrite BlenderIndex%BlenderRot%, "settings\nm_config.ini", "Blender", "BlenderIndex" BlenderRot
 						}
 						BlenderRot := Mod(BlenderRot, 3) + 1
@@ -12405,25 +12430,10 @@ nm_Blender(){
 								Sleep 150
 								Click
 
-								BlenderTime%BlenderRot% := BlenderAmount%BlenderRot% * 300 ;calculate first time variable
-								BlenderTimeTemp := BlenderTime%BlenderRot% ;set up a temporary varible to hold time
-								TempBlenderRot := BlenderRot ; save a temporary rotation holder
-
-								BlenderTime%TempBlenderRot% := BlenderTime%TempBlenderRot% + nowUnix() ;add nowunix for time after temporoary varible has been created
-								IniWrite BlenderTime%TempBlenderRot%, "settings\nm_config.ini", "Blender", "BlenderTime" TempBlenderRot ; save timer to config
-
-								loop {
-									TempBlenderRot := Mod(TempBlenderRot, 3) + 1
-									if (TempBlenderRot = BlenderRot) ;makes sure it doesnt do the already calculated time again
-										break
-
-									if ((BlenderIndex%TempBlenderRot% = "Infinite" || BlenderIndex%TempBlenderRot% > 0) && (BlenderItem%TempBlenderRot% != "None" && BlenderItem%TempBlenderRot% != "")) { ;start time calculation process
-										BlenderTime%TempBlenderRot% := (BlenderAmount%TempBlenderRot% * 300) + BlenderTimeTemp ;add previous time to this one after to show time until its done
-										BlenderTimeTemp := BlenderTime%TempBlenderRot% ;create a new temp for next
-										BlenderTime%TempBlenderRot% := BlenderTime%TempBlenderRot% + nowUnix() ;add now unix to it for the counter
-										IniWrite BlenderTime%TempBlenderRot%, "settings\nm_config.ini", "Blender", "BlenderTime" TempBlenderRot ;save the value to the config for GUI use and Remote control
-									}
-								}
+								;the item was never found: tried again later, like a slot short
+								;of ingredients
+								BlenderNext%BlenderRot% := ext_blenderNextAt(nowUnix(), BlenderWait%BlenderRot%, BlenderAmount%BlenderRot%, 0)
+								IniWrite BlenderNext%BlenderRot%, "settings\nm_config.ini", "Blender", "BlenderNext" BlenderRot
 							}
 							break
 						}

@@ -199,7 +199,39 @@ Pause(1, 0, "errands: :01, back to normal")
 
 ;--- the blender ------------------------------------------------------------
 ;
-;How long a busy blender is left, and when a trip is worth it.
+;Three slots taken in turn, each tried again only once its own wait is over.
+;A slot with no wait is the stock behaviour: due at once after a craft, so the
+;blender being busy is all that holds it back.
+BlendLive(item, index, want, what) {
+	Expect(ext_blenderSlotLive(item, index), want, what)
+}
+BlendLive("TropicalDrink", 1, 1, "blender: one repeat left")
+BlendLive("TropicalDrink", 0, 0, "blender: no repeat left")
+BlendLive("TropicalDrink", "Infinite", 1, "blender: infinite")
+BlendLive("TropicalDrink", "∞", 1, "blender: infinite as the remote writes it")
+BlendLive("None", "Infinite", 0, "blender: an empty slot")
+BlendLive("", 5, 0, "blender: a slot never set")
+
+BlendTurn(rot, live, next, now, want, what) {
+	ExpectEq(ext_blenderPickAt(rot, live, next, now), want, what)
+}
+BlendTurn(1, [1, 1, 0], [0, 0, 0], 100, 1, "blender pick: the slot whose turn it is")
+BlendTurn(2, [1, 1, 0], [0, 0, 0], 100, 2, "blender pick: the turn has moved on")
+BlendTurn(3, [1, 1, 0], [0, 0, 0], 100, 1, "blender pick: an empty slot is passed over")
+BlendTurn(1, [1, 1, 0], [101, 0, 0], 100, 2, "blender pick: a slot still waiting lets the next go")
+BlendTurn(1, [1, 1, 0], [100, 0, 0], 100, 1, "blender pick: a wait that ends now is over")
+BlendTurn(1, [1, 0, 0], [101, 0, 0], 100, 0, "blender pick: nothing due, no trip")
+BlendTurn(1, [0, 0, 0], [0, 0, 0], 100, 0, "blender pick: nothing live")
+
+BlendNext(waitMin, amount, crafted, want, what) {
+	ExpectEq(ext_blenderNextAt(1000, waitMin, amount, crafted), want, what)
+}
+BlendNext(0, 20, 1, 1000, "blender: no wait, due again at once after a craft")
+BlendNext(110, 20, 1, 7600, "blender: a craft waits its 110 minutes")
+BlendNext(110, 20, 0, 7600, "blender: so does a skip")
+;without a wait, a skip waits as long as the batch would have taken, not one
+;collect round
+BlendNext(0, 20, 0, 7000, "blender: a skip with no wait, twenty items later")
 
 BlendBusy(tries, want, what) {
 	ExpectEq(ext_blenderBusyRetry(tries), want, what)
@@ -219,6 +251,19 @@ BlendVisit(999, 0, 0, 0, 0, "blender visit: free but nothing to do")
 ;the last batch of a run used to stay in the blender for good
 BlendVisit(999, 0, 1, 0, 1, "blender visit: free and a batch to claim")
 BlendVisit(5000, 0, 0, 1, 1, "blender visit: Ready forces it")
+
+;the timers window's countdowns: slot 1 crafting until 1000, slot 2 due at
+;once, slot 3 waiting until 5000
+plan := ext_blenderPlanAfter(1, 1000, [1, 1, 1], [0, 0, 5000], [2, 4, 1])
+ExpectEq(plan[1], 1000, "blender plan: the crafting slot keeps its end")
+ExpectEq(plan[2], 2200, "blender plan: the next starts when the blender frees")
+ExpectEq(plan[3], 5300, "blender plan: a slot still waiting starts when it ends")
+plan := ext_blenderPlanAfter(3, 1000, [1, 0, 1], [0, 0, 0], [2, 4, 1])
+ExpectEq(plan[1], 1600, "blender plan: it wraps round from the third slot")
+ExpectEq(plan[2], 0, "blender plan: an empty slot has none")
+
+ExpectEq(ext_blenderLabel(20, "Infinite", 0), "(20) [∞]", "blender label: as stock Natro writes it")
+ExpectEq(ext_blenderLabel(20, 3, 110), "(20) [3] 110m", "blender label: with a wait")
 
 Report()
 return

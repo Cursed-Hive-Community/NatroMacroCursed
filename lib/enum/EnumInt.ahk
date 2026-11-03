@@ -382,4 +382,10 @@
 	, "CoconutPaperFirstCheck"
 	, "CoconutPaperPredicted"
 	, "BlenderEnd"
+	, "BlenderWait1"
+	, "BlenderWait2"
+	, "BlenderWait3"
+	, "BlenderNext1"
+	, "BlenderNext2"
+	, "BlenderNext3"
 ]
