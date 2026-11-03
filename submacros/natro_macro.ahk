@@ -947,7 +947,8 @@ nm_importConfig()
 		, "BlueBoosterInterruptCheck", 0
 		, "PreGlitterCheck", 0
 		, "StickerStackInterruptCheck", 0
-		, "MondoInterruptCheck", 0)
+		, "MondoInterruptCheck", 0
+		, "GuidDataShots", 0)
 
 	config["Fleet"] := Map("FleetCheck", 0
 		, "FleetRow", 0
@@ -2993,6 +2994,7 @@ MainGui.SetFont("w700")
 MainGui.Add("GroupBox", "x10 y25 w235 h93", "Boost")
 MainGui.Add("GroupBox", "x255 y25 w235 h93", "Interrupts")
 MainGui.Add("GroupBox", "x10 y125 w480 h72", "Fleet")
+MainGui.Add("GroupBox", "x10 y200 w480 h33", "Testing")
 MainGui.SetFont("s8 cDefault Norm", "Tahoma")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y45 w150 h18 vPFieldBoosted Checked" PFieldBoosted
 	, "Glitter Extend")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
@@ -3020,6 +3022,9 @@ MainGui.Add("Text", "x20 y158 w350 vFleetStripNext +BackgroundTrans", "")
 	, "Talk to the other macros")).Section := "Fleet", GuiCtrl.OnEvent("Click", nm_saveConfig)
 MainGui.Add("Button", "x202 y177 w14 h16", "?").OnEvent("Click", ext_FleetHelp)
 MainGui.Add("Button", "x380 y174 w100 h22", "Fleet panel").OnEvent("Click", ext_FleetGUI)
+(GuiCtrl := MainGui.Add("CheckBox", "x20 y213 w330 h18 cRed vGuidDataShots Checked" GuidDataShots
+	, "Send Guiding Star screenshots to Discord (DataModelScreen)")).Section := "Extensions", GuiCtrl.OnEvent("Click", nm_saveConfig)
+MainGui.Add("Button", "x352 y213 w14 h16", "?").OnEvent("Click", ext_GuidDataShotsHelp)
 
 ; STATUS TAB
 ; ------------------------
@@ -4691,6 +4696,24 @@ ext_StickerStackHelp(*){
 	), "Sticker Stack Interrupt", 0x40040
 }
 ;What leaving at :59 buys.
+ext_GuidDataShotsHelp(*){
+	MsgBox
+	(
+	"Collects pictures for the Guiding Star reader, to be removed once there
+	are enough.
+
+	Ticked, when the 'Guiding Star on the ...' notice appears on this
+	account's screen, the Roblox window is sent to Discord at once and ten
+	more times during the star's five minute cooldown, at random moments.
+	Each message reads DataModelScreen, so they are easy to find.
+
+	Nothing is typed in the Roblox chat: this is not Announce Guiding Star.
+
+	Needs the Discord screenshots switched on in the Status tab. Takes
+	effect the next time the macro is started. The pictures are also kept
+	in settings\passive_debug_00.png to 49, overwritten in turn."
+	), "Guiding Star screenshots", 0x40000
+}
 ext_MondoInterruptHelp(*){
 	MsgBox
 	(
@@ -23999,7 +24022,7 @@ start(*){
 	try run
 	(
 	'"' exe_path32 '" /script "' A_WorkingDir '\submacros\background.ahk" "' 0 '" "' 0 '" "' StingerCheck '" "' 0 '" '
-	'"' AnnounceGuidingStar '" "' ReconnectInterval '" "' ReconnectHour '" "' ReconnectMin '" "' EmergencyBalloonPingCheck '" "' ConvertBalloon '" "' NightMemoryMatchCheck '" "' 0 '"'
+	'"' AnnounceGuidingStar '" "' ReconnectInterval '" "' ReconnectHour '" "' ReconnectMin '" "' EmergencyBalloonPingCheck '" "' ConvertBalloon '" "' NightMemoryMatchCheck '" "' 0 '" "' GuidDataShots '"'
 	)
 	;(re)start stat monitor
 	global SessionTotalHoney, HoneyAverage
@@ -24144,6 +24167,12 @@ nm_WM_COPYDATA(wParam, lParam, *){
 	global LastGuid, PMondoGuid, MondoAction, MondoBuffCheck, currentWalk, FwdKey, BackKey, LeftKey, RightKey, SC_Space
 	StringAddress := NumGet(lParam + 2*A_PtrSize, "Ptr")  ; Retrieves the CopyDataStruct's lpData member.
 	StringText := StrGet(StringAddress)  ; Copy the string out of the structure.
+	;a screenshot background.ahk took for the passive reader's data: reported
+	;with its file, and nothing else - wParam 1 types in the chat
+	if (wParam = 2) {
+		nm_setStatus("Detected", StringText)
+		return 0
+	}
 	if(wParam=1){ ;guiding star detected
 		nm_setStatus("Detected", "Guiding Star in " . StringText)
 		;pause

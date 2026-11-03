@@ -36,6 +36,7 @@
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
 #Include "%A_ScriptDir%\extensions\interrupts.ahk"
 #Include "%A_ScriptDir%\extensions\blender.ahk"
+#Include "%A_ScriptDir%\extensions\guidshots.ahk"
 
 ;The extensions call into Natro for the half of their work that moves the
 ;character about. None of that is reached from here, but AutoHotkey resolves
@@ -67,6 +68,15 @@ nm_autoFieldBoost(*) {
 }
 nm_NightInterrupt(*) {
 	return 0
+}
+Gdip_BitmapFromScreen(*) {
+	return 0
+}
+Gdip_SaveBitmapToFile(*) {
+}
+Gdip_DisposeImage(*) {
+}
+Send_WM_COPYDATA(*) {
 }
 
 lines := [], failed := 0
@@ -264,6 +274,22 @@ ExpectEq(plan[2], 0, "blender plan: an empty slot has none")
 
 ExpectEq(ext_blenderLabel(20, "Infinite", 0), "(20) [∞]", "blender label: as stock Natro writes it")
 ExpectEq(ext_blenderLabel(20, 3, 110), "(20) [3] 110m", "blender label: with a wait")
+
+;--- the guiding star screenshots --------------------------------------------
+;
+;The landing, then ten moments inside the five minute cooldown, in order, and
+;not the same ten for the next star: the point is timers not seen yet.
+shots := ext_guidShotTimes(1000), again := ext_guidShotTimes(1000), inside := 1, sorted := 1, same := 1
+loop 10 {
+	inside &= (shots[A_Index + 1] >= 1005 && shots[A_Index + 1] <= 1295)
+	sorted &= (shots[A_Index + 1] >= shots[A_Index])
+	same &= (shots[A_Index + 1] = again[A_Index + 1])
+}
+ExpectEq(shots.Length, 11, "star shots: eleven in all")
+ExpectEq(shots[1], 1000, "star shots: the first at the landing")
+Expect(inside, 1, "star shots: the rest inside the cooldown")
+Expect(sorted, 1, "star shots: in order")
+Expect(same, 0, "star shots: drawn again for the next star")
 
 Report()
 return

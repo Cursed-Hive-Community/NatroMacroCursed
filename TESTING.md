@@ -421,6 +421,23 @@ read a live screen.
 - [ ] the remembered place after the window is resized or the equipment
       changes: nothing refreshes it until the star is seen again
 
+### Guiding Star screenshots, for training data
+
+Temporary, until the timer reader has enough examples. The schedule is `wire`
+in the extension self-test; the rest needs the game.
+
+- [ ] ticked, the star's landing notice sends the window to Discord at once
+      as `Detected: DataModelScreen <field> +0s settings\passive_debug_NN.png`,
+      with the picture `loads`
+- [ ] ten more follow inside the five minutes, at different moments for
+      every star `wire` for the moments
+- [ ] nothing is typed in the chat unless Announce Guiding Star is also
+      ticked `loads`
+- [ ] the notice still on screen a few seconds later does not start a
+      second series `loads`
+- [ ] the Testing box in the Extensions tab, under Fleet, does not overlap
+      it `loads`
+
 ### Blender
 
 Stock Natro's blender, repaired. The times are worked out from five minutes

@@ -48,6 +48,7 @@ COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/
 COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk"
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
+COVER_background="submacros/background.ahk submacros/extensions/guidshots.ahk"
 COVER_passivetest="submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk"
 COVER_exttest="submacros/ExtensionSelfTest.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk"
 # the bench runs its own wiring check - tools/bench-selfcheck.txt, which the
@@ -58,7 +59,7 @@ COVER_bench="submacros/FleetBench.ahk tools/bench-selfcheck.txt lib/Socket.ahk l
 COVER_uidump="submacros/FleetUiDump.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk"
 
 # entry point -> coverage var
-ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump submacros/PassiveSelfTest.ahk:COVER_passivetest"
+ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump submacros/PassiveSelfTest.ahk:COVER_passivetest submacros/background.ahk:COVER_background"
 # self-test -> name:script:diagfile:coverage var[:argument]
 # the fifth field is an argument the script takes before /quiet - only the
 # bench has one, because only the bench is driven by a file of commands
@@ -73,6 +74,7 @@ ALL_FILES=(
   submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk
   submacros/extensions/fleetstate.ahk submacros/FleetUiDump.ahk submacros/extensions/blender.ahk
   submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk
+  submacros/background.ahk submacros/extensions/guidshots.ahk
 )
 
 # --- arguments --------------------------------------------------------------

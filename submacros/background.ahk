@@ -23,6 +23,7 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "DurationFromSeconds.ahk"
 #Include "nowUnix.ahk"
 #include "ErrorHandling.ahk"
+#Include "%A_ScriptDir%\extensions\guidshots.ahk"
 SetWorkingDir A_ScriptDir "\.."
 
 if (A_Args.Length = 0)
@@ -47,6 +48,7 @@ EmergencyBalloonPingCheck := A_Args[9]
 ConvertBalloon := A_Args[10]
 NightMemoryMatchCheck := A_Args[11]
 ;LastNightMemoryMatch := A_Args[12] not in use
+GuidDataShots := (A_Args.Length >= 13) ? A_Args[13] : 0
 
 pToken := Gdip_Startup()
 bitmaps := Map(), bitmaps.CaseSense := 0
@@ -72,6 +74,7 @@ loop {
 	nm_CheckNight()
 	nm_backpackPercentFilter()
 	nm_guidingStarDetect()
+	ext_guidShots()
 	nm_dailyReconnect()
 	nm_EmergencyBalloon()
 	sleep 1000
@@ -375,7 +378,7 @@ nm_backpackPercentFilter(){
 nm_guidingStarDetect(){
 	static LastGuidDetected:=0, fieldnames := ["PineTree", "Stump", "Bamboo", "BlueFlower", "MountainTop", "Cactus", "Coconut", "Pineapple", "Spider", "Pumpkin", "Dandelion", "Sunflower", "Clover", "Pepper", "Rose", "Strawberry", "Mushroom"]
 
-	if ((AnnounceGuidingStar=0) || (nowUnix()-LastGuidDetected<10))
+	if (((AnnounceGuidingStar=0) && (GuidDataShots=0)) || (nowUnix()-LastGuidDetected<10))
 		return
 
 	xi:=windowX+windowWidth//2
@@ -402,11 +405,16 @@ nm_guidingStarDetect(){
 			catch
 				return
 			if (result = 1) {
-				if WinExist("natro_macro ahk_class AutoHotkey") {
+				;the chat announcement only when it is the one asked for
+				if (AnnounceGuidingStar && WinExist("natro_macro ahk_class AutoHotkey")) {
 					Send_WM_COPYDATA(value, "natro_macro ahk_class AutoHotkey", 1)
 					LastGuidDetected := nowUnix()
-					break
 				}
+				if GuidDataShots {
+					ext_guidShots(value)
+					LastGuidDetected := nowUnix()
+				}
+				break
 			}
 		}
 	}
