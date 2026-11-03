@@ -55,6 +55,9 @@ ext_fleetServerDisk := { version: 0, by: 0 }
 ;the coordinator process this macro started, so it can be ended again. Nothing
 ;else would ever end it - see ext_fleetEndCoord.
 ext_fleetCoordPid := 0
+;this guid's guiding star charge as background.ahk last read it, -1 for
+;unknown - see ext_fleetSayCharge
+ext_fleetMyCharge := -1
 ;the server link the fleet has sent this account to, for the next reconnect -
 ;see ext_fleetOnMove
 ext_fleetJoinLink := ""

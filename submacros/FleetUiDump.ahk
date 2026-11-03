@@ -38,6 +38,12 @@ nm_saveConfig(*) {
 }
 nm_ForceReconnect(*) {
 }
+nm_Reset(*) {
+}
+DisconnectCheck(*) {
+}
+PostSubmacroMessage(*) {
+}
 global exe_path32 := A_AhkPath, MainGui := ""
 global FleetCheck := 0
 global FleetRow := 0

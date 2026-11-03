@@ -11048,11 +11048,15 @@ nm_Start(){
 			ba_readCoconutPaperProgress()
 			Sleep 5000
 		}
-	Loop 
+	Loop {
+		;a guid charged for its star waits at the hive for a seat in the main
+		if ext_fleetGuidWait()
+			continue
 		for i in priorityList
 			;a fleet follower gathers and does nothing else
 			if !ext_fleetSkipsTask(i)
 				(%"nm_" i%)()
+	}
 	nm_planter() => (mp_Planter(),ba_planter())
 }
 
@@ -17292,6 +17296,12 @@ nm_GoGather(){
 				;the main's field
 				if ext_fleetFollowMoved(FieldName) {
 					interruptReason := "Following the main"
+					break
+				}
+				;a guid that has reached its threshold stops here: every token
+				;more is a chance of the star going off in the reserve
+				if ext_fleetGuidHeld() {
+					interruptReason := "Guiding star charged"
 					break
 				}
 				;Mondo and the stack go straight from the field. Walking home and
@@ -24180,6 +24190,15 @@ nm_WM_COPYDATA(wParam, lParam, *){
 	;with its file, and nothing else - wParam 1 types in the chat
 	if (wParam = 2) {
 		nm_setStatus("Detected", StringText)
+		return 0
+	}
+	;a guid's charge and where its star landed, for the fleet
+	if (wParam = 3) {
+		ext_fleetSayCharge(StringText)
+		return 0
+	}
+	if (wParam = 4) {
+		ext_fleetSayGuiding(StringText)
 		return 0
 	}
 	if(wParam=1){ ;guiding star detected

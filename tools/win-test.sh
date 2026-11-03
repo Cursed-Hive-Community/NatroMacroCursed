@@ -48,7 +48,7 @@ COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/
 COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk lib/FleetHop.ahk"
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
-COVER_background="submacros/background.ahk submacros/extensions/guidshots.ahk"
+COVER_background="submacros/background.ahk submacros/extensions/guidshots.ahk submacros/extensions/passives.ahk submacros/extensions/guidread.ahk"
 COVER_passivetest="submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk"
 COVER_exttest="submacros/ExtensionSelfTest.ahk lib/FleetHop.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk"
 # the bench runs its own wiring check - tools/bench-selfcheck.txt, which the
@@ -74,7 +74,7 @@ ALL_FILES=(
   submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk
   submacros/extensions/fleetstate.ahk submacros/FleetUiDump.ahk submacros/extensions/blender.ahk
   submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk
-  submacros/background.ahk submacros/extensions/guidshots.ahk
+  submacros/background.ahk submacros/extensions/guidshots.ahk submacros/extensions/guidread.ahk
   lib/FleetHop.ahk
 )
 

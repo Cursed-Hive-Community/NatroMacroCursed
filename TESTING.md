@@ -433,6 +433,13 @@ extension self-test; nothing acts on them yet.
       and remembers it across a restart `loads`
 - [ ] a reconnect that lands in a fallback or public server reports none of
       the fleet's, and the coordinator leaves that account alone `loads`
+- [ ] on a guid, background.ahk reads the star every five seconds and the
+      coordinator sees CHARGE once two reads agree `loads`
+- [ ] the landing notice reaches the coordinator as GUIDING with the field,
+      and nothing is typed in the chat `loads`
+- [ ] a guid in the reserve at the threshold cuts its gather short and waits
+      at the hive, doing nothing, until it is moved `loads`
+- [ ] a guid that has lost the coordinator farms on its own `loads`
 
 ### Passive row reader
 

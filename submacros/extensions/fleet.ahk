@@ -687,6 +687,65 @@ ext_fleetOnMove(frame) {
 	nm_ForceReconnect(1)
 	return 1
 }
+;--- a guid's charge ----------------------------------------------------------
+
+;From background.ahk: "charge 123", "cooldown 257" or "unseen" - see
+;ext_guidRead. Told to the coordinator as tokens: the count, 0 during the
+;cooldown, when tokens do not count, and -1 when the star cannot be seen.
+ext_fleetSayCharge(text) {
+	global ext_fleetSock, ext_fleetMyCharge
+	local p := StrSplit(text, " ")
+
+	ext_fleetMyCharge := (p[1] = "charge" && p.Length >= 2) ? Integer(p[2])
+		: (p[1] = "cooldown") ? 0 : -1
+	if ext_fleetSock
+		sock_SendLine(ext_fleetSock, fleet_Frame("CHARGE", Map("tokens", ext_fleetMyCharge)))
+}
+;From background.ahk: the star's landing notice named this field. A star runs
+;for ten minutes.
+ext_fleetSayGuiding(field) {
+	global ext_fleetSock
+
+	ext_fleetNote("this account's guiding star landed on " field)
+	if ext_fleetSock
+		sock_SendLine(ext_fleetSock, fleet_Frame("GUIDING", Map("field", field, "left", 600)))
+}
+;Is this guid stopped at its threshold, waiting for a seat in the main? Only
+;in the reserve, only with the hop on, and only while the fleet is there: a
+;macro that has lost the coordinator farms on its own, as every fleet macro
+;does.
+ext_fleetGuidHeld() {
+	global ext_fleetSock, ext_fleetMyRole, ext_fleetMyCharge
+	local main
+
+	if (!ext_fleetSock || (ext_fleetMyRole != "guid"))
+		return 0
+	main := servers_Main(ext_fleetServerRows())
+	return main && main.hop && (ext_fleetMyCharge >= main.threshold)
+		&& (ext_fleetServerNow() = "reserve")
+}
+;For Natro's main loop: wait at the hive instead of doing anything, while the
+;guid is held. Nothing at all - the user's choice: any task that goes through a
+;field can bring in tokens. DisconnectCheck is called here because nothing else
+;is while the loop waits, and a MOVE closes Roblox and relies on it to join the
+;main.
+ext_fleetGuidWait() {
+	static waiting := 0
+
+	if !ext_fleetGuidHeld() {
+		waiting := 0
+		return 0
+	}
+	if !waiting {
+		waiting := 1
+		nm_setStatus("Waiting", "guiding star charged - for a seat in the main server")
+		nm_Reset()
+	}
+	DisconnectCheck()
+	Sleep 1000
+	return 1
+}
+
 ;For DisconnectCheck: the link to try first, in place of the private server, or
 ;"" to reconnect as Natro always has. Natro's PrivServer itself is never
 ;changed - a fallback that works is swapped into it and written to the settings,
@@ -1114,6 +1173,8 @@ ext_fleetSetRole(role) {
 	if ((role = "") || (role == ext_fleetMyRole))
 		return 0
 	ext_fleetMyRole := role
+	;background.ahk reads the guiding star's charge on a guid only
+	PostSubmacroMessage("background", 0x5554, 8, (role = "guid") ? 1 : 0)
 	if (roster_Follows(role) && !was)
 		ext_fleetNote("this account is " role ": it follows the main and does"
 			. " nothing else - no planters, quests, bugs, collecting or boosts")
