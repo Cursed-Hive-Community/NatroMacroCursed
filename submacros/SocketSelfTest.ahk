@@ -2,6 +2,11 @@
 #SingleInstance Force
 #NoTrayIcon
 
+;A runtime error fails the test rather than hanging it: over SSH there is no
+;desktop for AutoHotkey's error dialog, so the process waited for ever while
+;the runner timed out and left it behind - one did, for ten minutes.
+OnError(SelfTestError)
+
 ;A loopback check for lib\Socket.ahk, and a diagnosis when it fails.
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\SocketSelfTest.ahk
@@ -210,4 +215,12 @@ Join(arr) {
 	for _, v in arr
 		out .= v "`n"
 	return out
+}
+
+SelfTestError(e, *) {
+	try FileAppend "ERROR: " e.Message " - " e.What " (line " e.Line ")`r`n", A_ScriptDir "\..\settings\socket_diag.txt", "UTF-8"
+	for a in A_Args
+		if (a = "/quiet")
+			FileAppend "FAIL`n", "*"
+	ExitApp 1
 }

@@ -1,6 +1,11 @@
 ﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 #NoTrayIcon
+
+;A runtime error fails the test rather than hanging it: over SSH there is no
+;desktop for AutoHotkey's error dialog, so the process waited for ever while
+;the runner timed out and left it behind - one did, for ten minutes.
+OnError(SelfTestError)
 #Warn All, Off
 
 ;The decisions the extensions make, checked against a table of values.
@@ -424,4 +429,12 @@ ObjHasValue(arr, needle) {
 		if (v = needle)
 			return 1
 	return 0
+}
+
+SelfTestError(e, *) {
+	try FileAppend "ERROR: " e.Message " - " e.What " (line " e.Line ")`r`n", A_ScriptDir "\..\settings\extension_diag.txt", "UTF-8"
+	for a in A_Args
+		if (a = "/quiet")
+			FileAppend "FAIL`n", "*"
+	ExitApp 1
 }
