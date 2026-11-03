@@ -797,11 +797,7 @@ ext_fleetHandUp(what) {
 	}
 	rows := servers_Load(ext_fleetServersFile())
 	for row, e in rows
-		sock_SendLine(ext_fleetSock, fleet_Frame("SETSERVER"
-			, Map("v", mine.version, "by", mine.by
-			, "bench", fleet_IsBench(mine), "n", rows.Count
-			, "slot", e.slot, "name", e.name, "link", e.link
-			, "owner", e.owner, "kind", e.kind)))
+		sock_SendLine(ext_fleetSock, servers_Frame("SETSERVER", e, mine, rows.Count))
 	return rows.Count
 }
 
@@ -902,11 +898,7 @@ ext_fleetServerRows() {
 	local slot, f, out := Map()
 
 	for slot, f in ext_fleetServers
-		out[slot] := { slot: slot
-			, name: ext_FleetCell(f, "name")
-			, link: ext_FleetCell(f, "link")
-			, owner: ext_FleetNum(f, "owner")
-			, kind: (ext_FleetCell(f, "kind") = "main") ? "main" : "reserve" }
+		out[slot] := servers_FromFields(slot, f)
 	return out
 }
 
@@ -2445,10 +2437,9 @@ ext_fleetSeedServers() {
 	if ((FleetServerMain = "") && (FleetServerReserve = ""))
 		return 0
 	list := Map()
-	list[1] := { slot: 1, name: "Main", link: FleetServerMain, owner: 0, kind: "main" }
+	list[1] := servers_Blank(1, "main"), list[1].name := "Main", list[1].link := FleetServerMain
 	if (FleetServerReserve != "")
-		list[2] := { slot: 2, name: "Reserve", link: FleetServerReserve
-			, owner: 0, kind: "reserve" }
+		list[2] := servers_Blank(2), list[2].name := "Reserve", list[2].link := FleetServerReserve
 	return servers_Save(FleetServersPath, list, 1, FleetRow)
 }
 
@@ -2628,8 +2619,7 @@ ext_FleetServerAdd(*) {
 	local slot
 
 	slot := servers_NextSlot(FleetServers)
-	FleetServers[slot] := { slot: slot, name: "Reserve " servers_Reserves(FleetServers) + 1
-		, link: "", owner: 0, kind: "reserve" }
+	FleetServers[slot] := servers_Blank(slot), FleetServers[slot].name := "Reserve " servers_Reserves(FleetServers) + 1
 	ext_fleetSaveServers()
 	ext_FleetServerDraw()
 	ext_FleetServerSummary()

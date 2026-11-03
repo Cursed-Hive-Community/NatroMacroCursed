@@ -1632,9 +1632,7 @@ bench_serve(parts) {
 		rows := servers_Load(RegExReplace(BENCH_ROSTER, "i)\.ini$", "_servers.ini"))
 		n := rows.Count
 		for r, e in rows
-			bench_asCoord(fleet_Frame("SERVER", Map("v", v, "by", by, "bench", 1
-				, "n", n, "slot", e.slot, "name", e.name, "link", e.link
-				, "owner", e.owner, "kind", e.kind)))
+			bench_asCoord(servers_Frame("SERVER", e, { version: v, by: by, bench: 1 }, n))
 		bench_say("served " n " server(s) at v" v " by row " by)
 		return
 	}

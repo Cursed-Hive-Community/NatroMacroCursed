@@ -28,6 +28,49 @@
 ;so a control that points at one keeps pointing at the same server after
 ;another is deleted.
 
+;What a server is, said once.
+;
+;A server travels through the file, two kinds of frame each way and two windows,
+;and each of those used to list its fields by hand - seven lists, so a field
+;added to one was a field silently dropped by another. They are all built from
+;these now.
+servers_Keys() {
+	return ["name", "link", "owner", "kind"]
+}
+servers_Blank(slot, kind := "reserve") {
+	return { slot: slot, name: "server " slot, link: "", owner: 0, kind: kind }
+}
+;One field from text - a line of the file or a field of a frame.
+servers_Set(e, k, v) {
+	switch StrLower(k) {
+		case "name":  e.name := v
+		case "link":  e.link := v
+		case "owner": e.owner := fleet_Num(v)
+		case "kind":  e.kind := (StrLower(v) = "main") ? "main" : "reserve"
+	}
+	return e
+}
+;A server from a frame's fields. One an older build sent without some field
+;keeps that field's default.
+servers_FromFields(slot, fields) {
+	local e := servers_Blank(slot), k
+
+	for _, k in servers_Keys()
+		if fields.Has(k)
+			servers_Set(e, k, fields[k])
+	return e
+}
+;A server as a frame: verb SERVER from the coordinator, SETSERVER up to it, with
+;the version of the list it belongs to and how many entries that version has.
+servers_Frame(verb, e, ver, n) {
+	local m := Map("v", ver.version, "by", ver.by, "bench", fleet_IsBench(ver), "n", n
+		, "slot", e.slot), k
+
+	for _, k in servers_Keys()
+		m[k] := e.%k%
+	return fleet_Frame(verb, m)
+}
+
 ;Read the servers.
 ;
 ;A missing file is not an empty list - a fleet has a main server before anybody
@@ -35,7 +78,7 @@
 ;broadcast non-empty, which matters: the generation number that makes a
 ;deletion converge travels on the entries themselves.
 servers_Load(path) {
-	local list := Map(), slot, line, at, k, v, entry
+	local list := Map(), slot, line, at
 
 	slot := 0
 	if FileExist(path) {
@@ -48,25 +91,16 @@ servers_Load(path) {
 				;must not be able to stop the list from loading at all
 				slot := fleet_SectionNumber(line)
 				if (slot > 0)
-					list[slot] := { slot: slot, name: "server " slot, link: ""
-						, owner: 0, kind: "reserve" }
+					list[slot] := servers_Blank(slot)
 				continue
 			}
 			if (!slot || !list.Has(slot) || !(at := InStr(line, "=")))
 				continue
-			k := StrLower(Trim(SubStr(line, 1, at - 1)))
-			v := Trim(SubStr(line, at + 1))
-			entry := list[slot]
-			switch k {
-				case "name":  entry.name := v
-				case "link":  entry.link := v
-				case "owner": entry.owner := fleet_Num(v)
-				case "kind":  entry.kind := (StrLower(v) = "main") ? "main" : "reserve"
-			}
+			servers_Set(list[slot], Trim(SubStr(line, 1, at - 1)), Trim(SubStr(line, at + 1)))
 		}
 	}
 	if !list.Count
-		list[1] := { slot: 1, name: "Main", link: "", owner: 0, kind: "main" }
+		list[1] := servers_Blank(1, "main"), list[1].name := "Main"
 	servers_FixMain(list)
 	return list
 }
@@ -139,10 +173,9 @@ servers_Save(path, list, version := 1, by := 0, bench := 0) {
 	roster_Sort(keys)
 	for _, s in keys {
 		out .= "[" s "]`r`n"
-		out .= "Name=" list[s].name "`r`n"
-		out .= "Link=" list[s].link "`r`n"
-		out .= "Owner=" list[s].owner "`r`n"
-		out .= "Kind=" list[s].kind "`r`n`r`n"
+		for _, k in servers_Keys()
+			out .= StrTitle(k) "=" list[s].%k% "`r`n"
+		out .= "`r`n"
 	}
 	return fleet_WriteWhole(path, out)
 }

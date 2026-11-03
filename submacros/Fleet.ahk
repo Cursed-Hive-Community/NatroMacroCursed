@@ -656,10 +656,7 @@ fleet_BroadcastServers() {
 	local s, e
 
 	for s, e in servers
-		fleet_Send(fleet_Frame("SERVER", Map("v", serversVer.version, "by", serversVer.by
-			, "bench", fleet_IsBench(serversVer), "n", servers.Count
-			, "slot", e.slot, "name", e.name, "link", e.link
-			, "owner", e.owner, "kind", e.kind)))
+		fleet_Send(servers_Frame("SERVER", e, serversVer, servers.Count))
 }
 
 ;To every macro that is still connected.
@@ -778,11 +775,7 @@ fleet_OnSetServer(s, frame) {
 	if ((upServer.version != ver.version) || (upServer.by != ver.by))
 		upServer := { version: ver.version, by: ver.by, want: want, rows: Map() }
 	if (slot := fleet_Num(fleet_Field(frame, "slot")))
-		upServer.rows[slot] := { slot: slot
-			, name: fleet_Field(frame, "name")
-			, link: fleet_Field(frame, "link")
-			, owner: fleet_Num(fleet_Field(frame, "owner"))
-			, kind: (fleet_Field(frame, "kind") = "main") ? "main" : "reserve" }
+		upServer.rows[slot] := servers_FromFields(slot, frame.fields)
 	if (!upServer.want || (upServer.rows.Count != upServer.want))
 		return 0
 	if !fleet_ConfigBeats(ver, serversVer) {
