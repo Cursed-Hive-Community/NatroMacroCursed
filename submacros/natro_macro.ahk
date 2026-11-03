@@ -39,6 +39,7 @@ You should have received a copy of the license along with Natro Macro. If not, p
 ;their own files so they stay legible against an upstream diff
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
 #Include "%A_ScriptDir%\extensions\interrupts.ahk"
+#Include "%A_ScriptDir%\extensions\blender.ahk"
 #Include "%A_ScriptDir%\extensions\fleet.ahk"
 
 #Warn VarUnset, Off
@@ -705,7 +706,8 @@ nm_importConfig()
 		, "LastBlenderRot", 1
 		, "BlenderCount1", 0
 		, "BlenderCount2", 0
-		, "BlenderCount3", 0)
+		, "BlenderCount3", 0
+		, "BlenderClaim", 0)
 
 	config["Boost"] := Map("FieldBoostStacks", 0
 		, "FieldBooster1", "None"
@@ -12223,15 +12225,16 @@ nm_Blender(){
 	, BlenderItem1, BlenderItem2, BlenderItem3
 	, BlenderTime1, BlenderTime2, BlenderTime3
 	, BlenderAmount1, BlenderAmount2, BlenderAmount3
-	, BlenderCount1, BlenderCount2, BlenderCount3
+	, BlenderCount1, BlenderCount2, BlenderCount3, BlenderClaim
+	static busyTries := 0
 
 	nm_BlenderRotation()
-	TimeForBlender := BlenderTime%LastBlenderRot% - TimerInterval ; due to BlenderTime being calcuted with TimerInterval integrated to fix that we simply subtract it before
 
-	;Ready in the timers window goes at once, whichever slot it was pressed on:
-	;the time it clears is only the one the macro waits on when that slot was
-	;the last to craft
-	if (BlenderCheck && (BlenderEnd || (nowUnix() - TimeForBlender) > TimerInterval)) {
+	;BlenderTime of the last slot to craft is when its batch is done. A trip is
+	;also due with nothing left to craft while that batch is still in the
+	;blender: the run used to end without ever going back for the last one.
+	;Ready in the timers window goes at once, whichever slot it was pressed on.
+	if ext_blenderVisitAt(nowUnix(), BlenderTime%LastBlenderRot%, BlenderCheck, BlenderClaim, BlenderEnd) {
 		Loop 2 {
 			hwnd := GetRobloxHWND()
 			offsetY := GetYOffset(hwnd)
@@ -12260,6 +12263,10 @@ nm_Blender(){
 
 				if (!BlenderEnd && Gdip_ImageSearch(BlenderSS, bitmaps["EndCraftR"], , , , , , 3, , 6) > 0)
 				{
+					;how long is left cannot be read, so look again later rather than
+					;on every round as before
+					BlenderTime%LastBlenderRot% := nowUnix() + ext_blenderBusyRetry(busyTries++)
+					IniWrite BlenderTime%LastBlenderRot%, "settings\nm_config.ini", "Blender", "BlenderTime" LastBlenderRot
 					nm_setStatus("Confirmed", "Blender is already in use")
 					MouseMove windowX+windowwidth//2 - 250, windowY+Floor(0.48*windowHeight) - 200
 					Gdip_disposeimage(BlenderSS) ;Close GUI and dispose of bitmap
@@ -12284,6 +12291,17 @@ nm_Blender(){
 				if BlenderEnd {
 					IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderEnd"
 					BlenderEnd := 0
+				}
+				;nothing is crafting any more, and whatever had finished is claimed
+				busyTries := 0
+				IniWrite (BlenderClaim := 0), "settings\nm_config.ini", "Blender", "BlenderClaim"
+				if !BlenderCheck {
+					nm_setStatus("Collected", "Blender")
+					gdip_disposeimage(BlenderSS)
+					MouseMove windowX+windowWidth//2 - 250, windowY+Floor(0.48*windowHeight) - 200 ;Close GUI
+					Sleep 150
+					Click
+					break
 				}
 				gdip_disposeimage(BlenderSS)
 				Sleep 800
@@ -12368,6 +12386,7 @@ nm_Blender(){
 						MouseMove windowX+windowWidth//2 + 70, windowY+Floor(0.48*windowHeight) + 130 ;Click Confirm
 						Sleep 150
 						Click
+						IniWrite (BlenderClaim := 1), "settings\nm_config.ini", "Blender", "BlenderClaim"
 						Sleep 100
 						MouseMove windowX+windowWidth//2 - 250, windowY+Floor(0.48*windowHeight) - 200 ;Close GUI
 						Sleep 150

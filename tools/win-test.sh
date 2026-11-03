@@ -44,11 +44,11 @@ source "$CONFIG"
 # changed file selects every entry/test whose list contains it. Update these
 # when an #Include changes - nm-check.py's own file list is the full set.
 
-COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk"
+COVER_natro="submacros/natro_macro.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk"
 COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk"
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
-COVER_exttest="submacros/ExtensionSelfTest.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk"
+COVER_exttest="submacros/ExtensionSelfTest.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk"
 # the bench runs its own wiring check - tools/bench-selfcheck.txt, which the
 # bench loads and runs because it accepts a file of commands as an argument
 COVER_bench="submacros/FleetBench.ahk tools/bench-selfcheck.txt lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
@@ -70,7 +70,7 @@ ALL_FILES=(
   submacros/Fleet.ahk submacros/FleetSelfTest.ahk submacros/SocketSelfTest.ahk
   submacros/ExtensionSelfTest.ahk submacros/FleetBench.ahk tools/bench-selfcheck.txt
   submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/fleet.ahk
-  submacros/extensions/fleetstate.ahk submacros/FleetUiDump.ahk
+  submacros/extensions/fleetstate.ahk submacros/FleetUiDump.ahk submacros/extensions/blender.ahk
 )
 
 # --- arguments --------------------------------------------------------------

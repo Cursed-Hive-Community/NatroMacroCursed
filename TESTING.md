@@ -395,6 +395,23 @@ script replaying the search; what was never seen is the timing.
 - [ ] a dialog that never comes up leaves the slot alone and the status says
       `Retrying` - rests on the E prompt still showing at the planter `loads`
 
+### Blender
+
+Stock Natro's blender, repaired. The times are worked out from five minutes
+an item and never read from the screen; their arithmetic is `wire`, by the
+extension self-test.
+
+- [ ] two slots with Repeat 1 each craft once each, A then B; it used to be
+      A twice and B never `loads`
+- [ ] Ready in the timers window sends the running macro to the blender at
+      once, on any slot `loads`
+- [ ] Ready pressed while nothing is crafting forces one trip, not one per
+      round `loads`
+- [ ] after the last repeat, the macro goes back once to claim the batch and
+      then stops `loads`
+- [ ] a blender already crafting is left 5, 10, 20, then 30 minutes, not
+      visited every round `loads`
+
 ---
 
 ## The bench, and what it reaches

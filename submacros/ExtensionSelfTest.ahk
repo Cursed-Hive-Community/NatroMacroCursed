@@ -35,6 +35,7 @@
 #Include "nowUnix.ahk"
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
 #Include "%A_ScriptDir%\extensions\interrupts.ahk"
+#Include "%A_ScriptDir%\extensions\blender.ahk"
 
 ;The extensions call into Natro for the half of their work that moves the
 ;character about. None of that is reached from here, but AutoHotkey resolves
@@ -196,6 +197,29 @@ Pause(59, 1, "errands: :59, held for mondo")
 Pause(0, 1, "errands: :00, the spawn itself")
 Pause(1, 0, "errands: :01, back to normal")
 
+;--- the blender ------------------------------------------------------------
+;
+;How long a busy blender is left, and when a trip is worth it.
+
+BlendBusy(tries, want, what) {
+	ExpectEq(ext_blenderBusyRetry(tries), want, what)
+}
+BlendBusy(0, 300, "blender busy: five minutes the first time")
+BlendBusy(1, 600, "blender busy: ten the second")
+BlendBusy(2, 1200, "blender busy: twenty the third")
+BlendBusy(3, 1800, "blender busy: thirty from then on")
+BlendBusy(10, 1800, "blender busy: and never more")
+
+BlendVisit(busyUntil, pick, claim, forced, want, what) {
+	Expect(ext_blenderVisitAt(1000, busyUntil, pick, claim, forced), want, what)
+}
+BlendVisit(1000, 1, 0, 0, 0, "blender visit: the craft ends this second, not yet")
+BlendVisit(999, 1, 0, 0, 1, "blender visit: free and a slot due")
+BlendVisit(999, 0, 0, 0, 0, "blender visit: free but nothing to do")
+;the last batch of a run used to stay in the blender for good
+BlendVisit(999, 0, 1, 0, 1, "blender visit: free and a batch to claim")
+BlendVisit(5000, 0, 0, 1, 1, "blender visit: Ready forces it")
+
 Report()
 return
 
@@ -209,6 +233,17 @@ Expect(got, want, what) {
 	failed++
 	lines.Push("FAIL  " what " - wanted " (want ? "yes" : "no")
 		. ", got " (got ? "yes" : "no"))
+}
+;the blender's numbers are times and slots, not yes or no
+ExpectEq(got, want, what) {
+	global lines, failed
+
+	if (got == want) {
+		lines.Push("PASS  " what)
+		return
+	}
+	failed++
+	lines.Push("FAIL  " what " - wanted " want ", got " got)
 }
 
 Report() {
