@@ -435,9 +435,12 @@ extension self-test; nothing acts on them yet.
       settings `loads`
 - [ ] the macro says which server it is in when it connects and every beat,
       and remembers it across a restart `loads`
-- [ ] after a crash it reconnects to the server the fleet last sent it to,
-      while that is still one of the fleet's, else to its own Private Server
-      link `loads`
+- [ ] in a fleet the account's own Private Server link plays no part: a
+      reconnect goes to the server the fleet last sent it to while that is
+      still one of the fleet's, else to its role's - the main for the main,
+      tads and fuzzies, the first reserve for a guid or an atk `loads`
+- [ ] before its first reconnect an account says it is in none of the
+      fleet's servers, and the coordinator places it `loads`
 - [ ] a reconnect that lands in a fallback or public server reports none of
       the fleet's, and the coordinator leaves that account alone `loads`
 - [ ] on a guid, background.ahk reads the star every five seconds and the
@@ -735,6 +738,13 @@ runs two fleets at once. Checks 36 to 38 do now.
 ## Known holes, written down rather than forgotten
 
 Not bugs to find - bugs already known about, with no fix yet.
+
+- **The bench failed once, on 2026-11-04, and not in four reruns.** Every
+  connection was closed by the other end at the same second, then "row 2 is
+  not connected" twice. It runs on the fleet's real port, 47600, so a
+  coordinator left by an earlier run - they live five minutes alone - is
+  the likeliest cause. Not proven: the next failure should list the
+  AutoHotkey processes in the VM before anything else.
 
 - **Two accounts set as main would pull the followers back and forth.** A
   GOTO carries the field of whichever main reported last, and the roster is

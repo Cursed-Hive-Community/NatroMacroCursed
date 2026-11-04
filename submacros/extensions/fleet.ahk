@@ -649,11 +649,14 @@ ext_fleetOnLine(line) {
 ;in a server the fleet sent it to while the macro restarts. Before the first
 ;reconnect it is the account's own private server.
 
-;The server this account is in now.
+;The server this account is in now: the link of its last reconnect. In a fleet
+;the account's own Private Server link means nothing (the user's rule), so
+;before any reconnect it is in none of the fleet's servers, and the
+;coordinator places it.
 ext_fleetServerNow() {
-	global FleetServerNow, PrivServer
+	global FleetServerNow
 
-	return servers_KindOf(ext_fleetServerRows(), (FleetServerNow != "") ? FleetServerNow : PrivServer)
+	return servers_KindOf(ext_fleetServerRows(), FleetServerNow)
 }
 ;Tell the coordinator, every beat: a state rather than an event, so a
 ;coordinator that has just taken over learns it within ten seconds. An atk also
@@ -675,7 +678,7 @@ ext_fleetSayServer() {
 ;second delay, as the remote control's reconnect has, so it is not counted as
 ;a disconnect.
 ext_fleetOnMove(frame) {
-	global ext_fleetJoinLink, FleetServerNow, PrivServer, FleetServerAssigned
+	global ext_fleetJoinLink, FleetServerNow, FleetServerAssigned
 	local slot := fleet_Num(fleet_Field(frame, "slot")), rows := ext_fleetServerRows()
 	local where := fleet_Field(frame, "server"), why := fleet_Field(frame, "why")
 
@@ -683,7 +686,7 @@ ext_fleetOnMove(frame) {
 		ext_fleetNote("the fleet sent this macro to the " where " server, which has no usable link")
 		return 0
 	}
-	if servers_SameServer(rows[slot].link, (FleetServerNow != "") ? FleetServerNow : PrivServer) {
+	if servers_SameServer(rows[slot].link, FleetServerNow) {
 		ext_fleetSayServer()
 		return 0
 	}
@@ -753,24 +756,36 @@ ext_fleetGuidWait() {
 	return 1
 }
 
-;For DisconnectCheck: the link to try first, in place of the account's own
-;Private Server link, or "" to reconnect as Natro always has.
+;For DisconnectCheck: the link to join in place of the account's own Private
+;Server link, or "" to reconnect as Natro always has - which is only ever the
+;case outside a fleet. In a fleet the Private Server link plays no part (the
+;user's rule):
 ;
-;The server the fleet last sent this account to, as long as it is still one of
-;the fleet's: a guid in the main whose Roblox crashes goes back to its seat
-;rather than to wherever its own link points, and the servers can be changed
-;by hand at any time - a link no longer in the list is not gone back to. The
-;Private Server setting itself is never written: a fallback that works is
+;- the server the coordinator has just named;
+;- else the one it last sent this account to, while it is still one of the
+;  fleet's - a guid in the main whose Roblox crashes goes back to its seat, and
+;  the servers can be changed by hand at any time;
+;- else the server the role belongs in: the main for the main, tads and
+;  fuzzies, the first reserve for a guid or an atk.
+;
+;The Private Server setting itself is never written: a fallback that works is
 ;swapped into it and saved, and the fleet's link must not end up there.
 ext_fleetReconnectLink() {
-	global ext_fleetJoinLink, FleetCheck, FleetServerAssigned
+	global ext_fleetJoinLink, FleetCheck, FleetServerAssigned, ext_fleetMyRole
+	local rows, home
 
 	if (ext_fleetJoinLink != "")
 		return ext_fleetJoinLink
-	if (FleetCheck && (FleetServerAssigned != "")
-		&& (servers_KindOf(ext_fleetServerRows(), FleetServerAssigned) != ""))
+	if !FleetCheck
+		return ""
+	rows := ext_fleetServerRows()
+	if ((FleetServerAssigned != "") && (servers_KindOf(rows, FleetServerAssigned) != ""))
 		return FleetServerAssigned
-	return ""
+	home := ((ext_fleetMyRole = "guid") || (ext_fleetMyRole = "atk"))
+		? servers_FirstReserve(rows) : servers_Main(rows)
+	if (!home || (servers_LinkParts(home.link).type = ""))
+		home := servers_Main(rows)
+	return (home && (servers_LinkParts(home.link).type != "")) ? home.link : ""
 }
 ;For DisconnectCheck, once Roblox is back in a server: which link it joined,
 ;"" for a public server. Remembered across restarts and told to the fleet.
