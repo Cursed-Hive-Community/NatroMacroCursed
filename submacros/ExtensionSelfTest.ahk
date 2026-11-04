@@ -324,10 +324,11 @@ HopMoves(fleet, atMondo := 0, state := 0) {
 		s .= (s = "" ? "" : " ") o.row ">" o.to
 	return s
 }
-;a full main: the main, a tad, a fuzzy and three guids still charging
+;A full main: the main, a tad, a fuzzy, two guids ready to fire and one whose
+;star is running on Pine Tree. A guid is in the main for nothing else.
 FullMain(extra*) {
 	f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "tad", "main"), HopPeer(3, "fuzzy", "main")
-		, HopPeer(4, "guid", "main", 50), HopPeer(5, "guid", "main", 80), HopPeer(6, "guid", "main", 10))
+		, HopPeer(4, "guid", "main", 205), HopPeer(5, "guid", "main", 230), HopPeer(6, "guid", "main", 0, "Pine Tree", 300))
 	for p in extra
 		f[p.row] := p
 	return f
@@ -338,61 +339,59 @@ HopOut(f, rows*) {
 	for r in rows
 		f[r].server := ""
 }
-;The leave and the join go out together: Roblox queues a player joining a full
-;private server and lets them in as soon as somebody leaves.
-f := FullMain(HopPeer(7, "guid", "reserve", 210)), st := {pending: Map(), yielded: Map()}
-ExpectEq(HopMoves(f, 0, st), "6>reserve 7>main", "hop: a guid ready to fire swaps with the seated guid that has least, both at once")
-HopOut(f, 6)
-ExpectEq(HopMoves(f, 0, st), "", "hop: the one leaving says it is out, and is not asked back mid-move")
-ExpectEq(HopMoves(FullMain(HopPeer(7, "guid", "reserve", 150))), ""
-	, "hop: a guid still charging displaces nobody")
-f := FullMain(HopPeer(7, "guid", "reserve", 150)), f[4].charge := 0, f[4].guidingField := "Rose", f[4].guidingUntil := 1500
-st := {pending: Map(), yielded: Map()}
-ExpectEq(HopMoves(f, 0, st), "4>reserve 7>main", "hop: a star on Rose is no use - out at once, and the seat refilled")
-f[4].server := "reserve", st.pending.Delete(4), f.Delete(5)
-ExpectEq(HopMoves(f, 0, st), "", "hop: a seat free, and the guid whose star fell on Rose is not asked back while it counts down")
-f := FullMain(HopPeer(7, "guid", "reserve", 210))
-for r in [4, 5, 6]
-	f[r].guidingField := "Pine Tree", f[r].guidingUntil := 1500
-ExpectEq(HopMoves(f), "", "hop: three stars running on a blue field - nobody moves, even for a ready guid")
+ExpectEq(HopMoves(FullMain(HopPeer(7, "guid", "reserve", 210))), ""
+	, "hop: a ready guid waits for a free seat - nobody is pushed out for it")
+ExpectEq(HopMoves(HopFleet(HopPeer(1, "main", "main"), HopPeer(4, "guid", "reserve", 150))), ""
+	, "hop: a guid still charging never takes a free seat - the main holds as few as it can")
+ExpectEq(HopMoves(HopFleet(HopPeer(1, "main", "main"), HopPeer(4, "guid", "main", 50))), "4>reserve"
+	, "hop: a guid in the main that is not ready to fire goes back")
+;the leave and the join go out together: Roblox queues a player joining a full
+;private server and lets them in as soon as somebody leaves
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(4, "guid", "main", 0, "Rose", 300), HopPeer(7, "guid", "reserve", 210))
+ExpectEq(HopMoves(f), "4>reserve 7>main", "hop: a star on Rose is no use - out at once, and a ready guid in")
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(4, "guid", "reserve", 210, "Rose", 300))
+ExpectEq(HopMoves(f), "", "hop: and that guid is not asked back while its star counts down, even read as ready")
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(4, "guid", "main", 30, "Pine Tree", -100))
+ExpectEq(HopMoves(f), "4>reserve", "hop: a blue star over, the guid goes back")
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(4, "guid", "main", 220, "Pine Tree", -100))
+ExpectEq(HopMoves(f), "", "hop: unless it is ready to fire again")
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(4, "guid", "main", 0, "Pine Tree", 300))
+ExpectEq(HopMoves(f), "", "hop: a blue star running keeps its guid, whatever its charge")
 f := FullMain(HopPeer(7, "guid", "reserve", 210, , , 50), HopPeer(8, "atk", "reserve"))
-st := {pending: Map(), yielded: Map()}
-ExpectEq(HopMoves(f, 1, st), "2>reserve 8>main 6>reserve 7>main", "hop: at Mondo the tad makes room for the atk, before the ready guid")
+ExpectEq(HopMoves(f, 1), "2>reserve 8>main", "hop: at Mondo the tad makes room for the atk, before the ready guid")
 f := FullMain(HopPeer(8, "atk", "reserve")), f[3].role := "tad"
-st := {pending: Map(), yielded: Map()}
-ExpectEq(HopMoves(f, 1, st), "2>reserve 8>main", "hop: of two tads, the first in the roster")
+ExpectEq(HopMoves(f, 1), "2>reserve 8>main", "hop: of two tads, the first in the roster")
 f := FullMain(HopPeer(8, "atk", "reserve")), f[2].role := "fuzzy"
 ExpectEq(HopMoves(f, 1), "2>reserve 8>main", "hop: no tad, a fuzzy")
-f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "guid", "main", 0, "Pine Tree", 300), HopPeer(3, "guid", "main", 150)
-	, HopPeer(4, "guid", "main", 50), HopPeer(5, "guid", "main", 0, "Pine Tree", 300), HopPeer(6, "guid", "main", 220), HopPeer(8, "atk", "reserve"))
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "guid", "main", 0, "Pine Tree", 300), HopPeer(3, "guid", "main", 210)
+	, HopPeer(4, "guid", "main", 205), HopPeer(5, "guid", "main", 0, "Pine Tree", 300), HopPeer(6, "guid", "main", 230), HopPeer(8, "atk", "reserve"))
 ExpectEq(HopMoves(f, 1), "4>reserve 8>main", "hop: no resident, the guid with least and no star")
 st := {pending: Map(), yielded: Map(2, 1)}
 ;the main full again: the atk in the tad's seat
 f := FullMain(HopPeer(7, "guid", "reserve", 210), HopPeer(8, "atk", "main")), f[2].server := "reserve"
-ExpectEq(HopMoves(f, 0, st), "8>reserve 2>main 6>reserve 7>main", "hop: after Mondo the atk goes and the tad is back before the guid")
+ExpectEq(HopMoves(f, 0, st), "8>reserve 2>main", "hop: after Mondo the atk goes and the tad is back before the ready guid")
 ExpectEq(st.yielded.Count, 0, "hop: and the tad's seat is no longer owed")
 f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "tad", "reserve"), HopPeer(4, "guid", "reserve", 210))
 ExpectEq(HopMoves(f), "2>main 4>main", "hop: a tad restarted into the reserve is let back in before a guid")
 ExpectEq(HopMoves(f, 1), "2>main 4>main", "hop: at Mondo too - only a resident that gave its seat to the atk waits")
 f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "tad", "main"), HopPeer(4, "guid", "reserve", 120)
 	, HopPeer(5, "guid", "reserve", 205, , , 50), HopPeer(6, "guid", "reserve", 210, , , 40))
-ExpectEq(HopMoves(f), "6>main 5>main 4>main", "hop: free seats, the longest waiting ready guid first, then by tokens")
-f := FullMain(HopPeer(7, "guid", "reserve", 150)), f[6].online := 0
-f[5].server := "reserve", f[5].charge := 100
-ExpectEq(HopMoves(f), "7>main", "hop: a macro gone quiet still holds its seat, and is given no order")
+ExpectEq(HopMoves(f), "6>main 5>main", "hop: free seats go to ready guids, the longest waiting first, and to no other")
+f := FullMain(HopPeer(7, "guid", "reserve", 210)), f[6].online := 0, f[5].server := "reserve"
+ExpectEq(HopMoves(f), "5>main", "hop: a macro gone quiet still holds its seat, and is given no order")
 ;the main's link changed by hand: whoever is left in the old server is in none
 ;of the fleet's, and is brought over like one in the reserve
-f := HopFleet(HopPeer(1, "main", ""), HopPeer(2, "tad", ""), HopPeer(4, "guid", "", 210), HopPeer(5, "guid", "main", 50))
+f := HopFleet(HopPeer(1, "main", ""), HopPeer(2, "tad", ""), HopPeer(4, "guid", "", 210), HopPeer(5, "guid", "main", 220))
 ExpectEq(HopMoves(f), "1>main 2>main 4>main", "hop: accounts left in a server the fleet no longer has are brought over")
-f := FullMain(HopPeer(7, "guid", "reserve", 210)), st := {pending: Map(), yielded: Map()}
+f := HopFleet(HopPeer(1, "main", "main"), HopPeer(4, "guid", "main", 50)), st := {pending: Map(), yielded: Map()}
 HopMoves(f, 0, st)
 ExpectEq(HopMoves(f, 0, st), "", "hop: a move ordered is not ordered again while it happens")
-f[1].server := "reserve"
-ExpectEq(HopMoves(f), "1>main 6>reserve 7>main", "hop: the main is always let back in")
+HopOut(f, 4)
+ExpectEq(HopMoves(f, 0, st), "", "hop: nor contradicted - the one leaving is not asked back mid-move")
+f := HopFleet(HopPeer(1, "main", "reserve"), HopPeer(2, "tad", "main"), HopPeer(7, "guid", "reserve", 210))
+ExpectEq(HopMoves(f), "1>main 7>main", "hop: the main is always let back in")
 ;the notice images name a field PineTree, the windows Pine Tree
-f := FullMain(HopPeer(7, "guid", "reserve", 210))
-for r in [4, 5, 6]
-	f[r].guidingField := "PineTree", f[r].guidingUntil := 1500
+f := FullMain(), f[6].guidingField := "PineTree"
 ExpectEq(HopMoves(f), "", "hop: PineTree from the notice is the blue Pine Tree")
 ExpectEq(fleet_HopBlue(" Pine Tree|Rose||").Count, 2, "hop: blue fields read from Pine Tree|Rose")
 ;where an account is, from the link it joined: the coordinator seats only the

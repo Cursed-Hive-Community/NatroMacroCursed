@@ -401,7 +401,10 @@ Who sits in the main server, decided by `fleet_HopPlan` in
 `lib/FleetHop.ahk`. The rules are `wire`, as whole situations in the
 extension self-test; nothing acts on them yet.
 
-- [x] a guid ready to fire swaps with the seated guid that has least `wire`
+- [x] a guid is in the main only ready to fire or under a star running on a
+      blue field: one still charging never takes a free seat, and one whose
+      blue star is over goes back unless it is ready again `wire`
+- [x] a ready guid waits for a free seat; nobody is pushed out for it `wire`
 - [x] a star on any field but a blue one sends its guid back at once `wire`
 - [x] a guid whose star runs on a blue field is never moved `wire`
 - [x] at Mondo a tad makes room for the atk (the first of two), else a
@@ -413,13 +416,16 @@ extension self-test; nothing acts on them yet.
       by hand - are brought over like those in the reserve `wire`
 - [x] after Mondo the atk leaves and the resident is back before any guid
       `wire`
-- [x] waiting guids: ready ones first, the longest waiting first, then by
-      tokens `wire`
+- [x] ready guids take free seats, the longest waiting first `wire`
 - [x] a macro gone quiet keeps its seat counted and gets no order; a move is
       not ordered twice `wire`
 - [x] the leave and the join go out together - Roblox queues a player
-      joining a full private server - and an account on the move is not
-      asked back `wire`
+      joining a full private server - and an account whose server move is
+      under way is not given a contrary one `wire`
+- [ ] a MOVE is obeyed at once, whatever the macro is doing: walking,
+      gathering, converting `loads`
+- [ ] a charge that cannot be read says nothing, so a ready guid is not sent
+      back on a menu over the row `loads`
 - [x] a guid that left because its star fell on another field is not asked
       back while the star counts down `wire`
 - [ ] an account told to leave says it is out as soon as Roblox is closed,

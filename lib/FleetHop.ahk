@@ -8,6 +8,10 @@
 ;main only to fire. One that lands on a blue field stays for the star's ten
 ;minutes; one that lands anywhere else goes back at once to charge again.
 ;
+;A guid is in the main for nothing else (the user): ready to fire, or with its
+;star running on a blue field. It never charges there, so the main holds as
+;few players as it can - a free seat stays free.
+;
 ;The rules, all the user's:
 ;
 ;- never moved: the main; a tad or fuzzy, except to make room for the atk at
@@ -18,10 +22,9 @@
 ;  (the first in roster order), else a fuzzy's, else a guid's with no star
 ;  running. It beats a guid that is ready at the same time. After Mondo it
 ;  leaves, and whoever gave up a seat has it back before any waiting guid;
-;- a guid waiting for a seat: one stopped at the threshold first, the longest
-;  waiting of them first; then the others by most tokens;
-;- a stopped guid waiting takes the seat of a seated guid that is still
-;  charging - below the threshold, no star - which goes back to charge.
+;- a guid ready to fire waits for a free seat, the longest waiting first;
+;- a guid in the main that is neither ready nor under a star running on a blue
+;  field goes back to the reserve: its star is done, or it never was ready.
 ;
 ;fleet_HopPlan is the whole of it, and it reads nothing but its arguments, so
 ;ExtensionSelfTest checks it against a table of situations.
@@ -101,17 +104,15 @@ fleet_HopPlan(peers, opt, state) {
 	inMain(p) => fleet_HopWhere(p, state) = "main"
 	;an account already on the move is left to finish it
 	moving(p) => state.pending.Has(p.row)
-	;a guid that may give up its seat: in the main and no star running at all.
-	;Its own names are declared local: a nested function that assigns a name
-	;the outer one uses is assigning the outer one's, and r is the loop variable
-	;of every loop below.
-	free_guid(allowStopped) {
+	;a guid that may give up its seat: in the main and no star running at all -
+	;one ready to fire, the one with least first. Its own names are declared
+	;local: a nested function that assigns a name the outer one uses is assigning
+	;the outer one's, and r is the loop variable of every loop below.
+	free_guid() {
 		local best := 0, q, k, i
 		for k, i in rows {
 			q := peers[i]
 			if (q.role != "guid" || !q.online || !inMain(q) || moving(q) || q.guidingUntil > opt.now)
-				continue
-			if (!allowStopped && q.charge >= opt.threshold)
 				continue
 			if (!best || q.charge < best.charge)
 				best := q
@@ -137,6 +138,14 @@ fleet_HopPlan(peers, opt, state) {
 			&& !opt.blue.Has(fleet_HopKey(p.guidingField)))
 			move(p, "reserve", "its star landed on " p.guidingField ", not a blue field")
 	}
+	;nor is a guid that is neither ready to fire nor under a blue star: one
+	;whose star has ended, or one that never was ready
+	for _, r in rows {
+		p := peers[r]
+		if (p.role = "guid" && p.online && inMain(p) && !moving(p)
+			&& (p.guidingUntil <= opt.now) && (p.charge < opt.threshold))
+			move(p, "reserve", (p.guidingField != "") ? "its star is over" : "not ready to fire")
+	}
 	;the atk, at Mondo
 	if (atk && opt.mondo && !inMain(atk)) {
 		if (free <= 0) {
@@ -144,7 +153,7 @@ fleet_HopPlan(peers, opt, state) {
 			if !victim
 				victim := first("fuzzy")
 			if !victim
-				victim := free_guid(1)
+				victim := free_guid()
 			if victim {
 				move(victim, "reserve", "making room for the atk at Mondo")
 				state.yielded[victim.row] := 1
@@ -163,7 +172,7 @@ fleet_HopPlan(peers, opt, state) {
 			continue
 		if (opt.mondo && state.yielded.Has(r))
 			continue
-		if ((free <= 0) && (s := free_guid(1)))
+		if ((free <= 0) && (s := free_guid()))
 			move(s, "reserve", "a resident needs its seat back")
 		if (free > 0) {
 			move(p, "main", state.yielded.Has(r) ? "back after Mondo" : "residents sit in the main")
@@ -173,28 +182,28 @@ fleet_HopPlan(peers, opt, state) {
 				state.yielded.Delete(r)
 		}
 	}
-	;the guids waiting, best first. Not one on its way somewhere, and not one
-	;whose star is still counting down: it left the main because the star was
-	;of no use there, and the star ended when it left.
+	;the guids ready to fire, longest waiting first, into whatever seats are free.
+	;Not one on its way somewhere, and not one whose star is still counting
+	;down: it left the main because the star was of no use there.
 	waiting := []
 	for _, r in rows {
 		p := peers[r]
-		if (p.role = "guid" && p.online && !inMain(p) && !moving(p) && (p.guidingUntil <= opt.now))
+		if (p.role = "guid" && p.online && !inMain(p) && !moving(p)
+			&& (p.guidingUntil <= opt.now) && (p.charge >= opt.threshold))
 			waiting.Push(p)
 	}
-	waiting := fleet_HopQueue(waiting, opt.threshold)
-	for _, w in waiting {
-		if ((free <= 0) && w.charge >= opt.threshold && (s := free_guid(0)))
-			move(s, "reserve", "swapped for a guid ready to fire")
+	for _, w in fleet_HopQueue(waiting, opt.threshold) {
 		if (free <= 0)
 			break
-		move(w, "main", (w.charge >= opt.threshold) ? "ready to fire" : "a seat is free to charge in")
+		move(w, "main", "ready to fire")
 	}
 	return orders
 }
 ;Guids waiting for a seat, best first: stopped at the threshold, longest
 ;waiting first - without that, two guids at the same count would pass each
-;other for ever - then by most tokens, and unread charges last.
+;other for ever - then by most tokens, and unread charges last. Only ready
+;guids are queued now; the rest of the order is kept for the day another
+;caller needs it.
 fleet_HopQueue(list, threshold) {
 	local out := list.Clone(), i, t
 	better(a, b) {

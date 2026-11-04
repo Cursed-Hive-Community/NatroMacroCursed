@@ -705,14 +705,18 @@ ext_fleetOnMove(frame) {
 ;--- a guid's charge ----------------------------------------------------------
 
 ;From background.ahk: "charge 123", "cooldown 257" or "unseen" - see
-;ext_guidRead. Told to the coordinator as tokens: the count, 0 during the
-;cooldown, when tokens do not count, and -1 when the star cannot be seen.
+;ext_guidRead. Told to the coordinator as tokens: the count, or 0 during the
+;cooldown, when tokens do not count. A star that cannot be seen - a menu over
+;the row, a moment of loading - says nothing, and the last count stands: a
+;guid ready to fire in the main is sent back to the reserve the moment its
+;charge drops below the threshold.
 ext_fleetSayCharge(text) {
 	global ext_fleetSock, ext_fleetMyCharge
 	local p := StrSplit(text, " ")
 
-	ext_fleetMyCharge := (p[1] = "charge" && p.Length >= 2) ? Integer(p[2])
-		: (p[1] = "cooldown") ? 0 : -1
+	if ((p[1] != "charge") && (p[1] != "cooldown"))
+		return 0
+	ext_fleetMyCharge := (p[1] = "charge" && p.Length >= 2) ? Integer(p[2]) : 0
 	if ext_fleetSock
 		sock_SendLine(ext_fleetSock, fleet_Frame("CHARGE", Map("tokens", ext_fleetMyCharge)))
 }
