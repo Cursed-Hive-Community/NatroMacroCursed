@@ -332,7 +332,7 @@ fleet_OnHello(s, frame) {
 ;Every one of them also counts as a sign of life.
 fleet_OnReport(s, frame) {
 	global peers
-	local row := fleet_RowOf(s), p
+	local row := fleet_RowOf(s), p, moved := 0
 
 	if !row
 		return
@@ -358,10 +358,15 @@ fleet_OnReport(s, frame) {
 		case "MONDO_IN":
 			p.mondoIn := Integer(fleet_Field(frame, "secs", 0))
 		case "STATE":
+			;a server change is acted on now rather than on the next beat - a
+			;seat given up is a seat somebody is waiting for
+			moved := !p.stated || (p.server != fleet_Field(frame, "server"))
 			p.server := fleet_Field(frame, "server"), p.stated := 1
 			p.mondo := fleet_Num(fleet_Field(frame, "mondo"))
 	}
 	fleet_Broadcast()
+	if moved
+		fleet_Hop()
 }
 
 fleet_Touch(s) {

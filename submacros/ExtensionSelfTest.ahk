@@ -332,20 +332,35 @@ FullMain(extra*) {
 		f[p.row] := p
 	return f
 }
-ExpectEq(HopMoves(FullMain(HopPeer(7, "guid", "reserve", 210))), "6>reserve 7>main"
-	, "hop: a guid ready to fire swaps with the seated guid that has least")
+;An account told to leave says it is out the moment it has closed Roblox: in
+;none of the fleet's servers, until it lands in the reserve.
+HopOut(f, rows*) {
+	for r in rows
+		f[r].server := ""
+}
+;The leave and the join go out together: Roblox queues a player joining a full
+;private server and lets them in as soon as somebody leaves.
+f := FullMain(HopPeer(7, "guid", "reserve", 210)), st := {pending: Map(), yielded: Map()}
+ExpectEq(HopMoves(f, 0, st), "6>reserve 7>main", "hop: a guid ready to fire swaps with the seated guid that has least, both at once")
+HopOut(f, 6)
+ExpectEq(HopMoves(f, 0, st), "", "hop: the one leaving says it is out, and is not asked back mid-move")
 ExpectEq(HopMoves(FullMain(HopPeer(7, "guid", "reserve", 150))), ""
 	, "hop: a guid still charging displaces nobody")
 f := FullMain(HopPeer(7, "guid", "reserve", 150)), f[4].charge := 0, f[4].guidingField := "Rose", f[4].guidingUntil := 1500
-ExpectEq(HopMoves(f), "4>reserve 7>main", "hop: a star on Rose is no use - out at once, and the seat refilled")
+st := {pending: Map(), yielded: Map()}
+ExpectEq(HopMoves(f, 0, st), "4>reserve 7>main", "hop: a star on Rose is no use - out at once, and the seat refilled")
+f[4].server := "reserve", st.pending.Delete(4), f.Delete(5)
+ExpectEq(HopMoves(f, 0, st), "", "hop: a seat free, and the guid whose star fell on Rose is not asked back while it counts down")
 f := FullMain(HopPeer(7, "guid", "reserve", 210))
 for r in [4, 5, 6]
 	f[r].guidingField := "Pine Tree", f[r].guidingUntil := 1500
 ExpectEq(HopMoves(f), "", "hop: three stars running on a blue field - nobody moves, even for a ready guid")
 f := FullMain(HopPeer(7, "guid", "reserve", 210, , , 50), HopPeer(8, "atk", "reserve"))
-ExpectEq(HopMoves(f, 1), "2>reserve 8>main 6>reserve 7>main", "hop: at Mondo the tad makes room for the atk, before the ready guid")
+st := {pending: Map(), yielded: Map()}
+ExpectEq(HopMoves(f, 1, st), "2>reserve 8>main 6>reserve 7>main", "hop: at Mondo the tad makes room for the atk, before the ready guid")
 f := FullMain(HopPeer(8, "atk", "reserve")), f[3].role := "tad"
-ExpectEq(HopMoves(f, 1), "2>reserve 8>main", "hop: of two tads, the first in the roster")
+st := {pending: Map(), yielded: Map()}
+ExpectEq(HopMoves(f, 1, st), "2>reserve 8>main", "hop: of two tads, the first in the roster")
 f := FullMain(HopPeer(8, "atk", "reserve")), f[2].role := "fuzzy"
 ExpectEq(HopMoves(f, 1), "2>reserve 8>main", "hop: no tad, a fuzzy")
 f := HopFleet(HopPeer(1, "main", "main"), HopPeer(2, "guid", "main", 0, "Pine Tree", 300), HopPeer(3, "guid", "main", 150)

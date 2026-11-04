@@ -695,6 +695,11 @@ ext_fleetOnMove(frame) {
 	ext_fleetNote("the fleet sends this macro to the " where " server - " why)
 	nm_setStatus("Fleet", "moving to the " where " server - " why)
 	nm_ForceReconnect(1)
+	;Out of the old server the moment Roblox is closed, and said so now rather
+	;than once the reconnect has finished: the fleet's picture of who sits
+	;where should not lag behind by a whole reconnect.
+	IniWrite (FleetServerNow := ""), "settings\nm_config.ini", "Fleet", "FleetServerNow"
+	ext_fleetSayServer()
 	return 1
 }
 ;--- a guid's charge ----------------------------------------------------------

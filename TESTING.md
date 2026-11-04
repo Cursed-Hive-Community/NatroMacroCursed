@@ -417,6 +417,16 @@ extension self-test; nothing acts on them yet.
       tokens `wire`
 - [x] a macro gone quiet keeps its seat counted and gets no order; a move is
       not ordered twice `wire`
+- [x] the leave and the join go out together - Roblox queues a player
+      joining a full private server - and an account on the move is not
+      asked back `wire`
+- [x] a guid that left because its star fell on another field is not asked
+      back while the star counts down `wire`
+- [ ] an account told to leave says it is out as soon as Roblox is closed,
+      and the coordinator acts on a server change at once rather than on the
+      next beat `loads`
+- [ ] joining takes 5 to 10 seconds, as the user sees it in the game; the
+      coordinator's log will say `loads`
 - [x] its settings - on or off, the threshold, the seats, the blue fields -
       live on the main server and reach a macro intact, a field name with a
       space and the separator included `wire`

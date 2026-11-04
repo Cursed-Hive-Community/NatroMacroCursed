@@ -79,6 +79,11 @@ fleet_HopPlan(peers, opt, state) {
 	for row, pend in state.pending.Clone()
 		if (!peers.Has(row) || peers[row].server = pend.to || opt.now - pend.at > 180)
 			state.pending.Delete(row)
+	;A seat is counted where an account is going, not where it still is: the
+	;one leaving and the one taking its place are told at the same time. Roblox
+	;queues a player joining a full private server and lets them in the moment
+	;somebody leaves (the user), so waiting for the leaver to say it is out would
+	;only add a round trip.
 	for row, p in peers {
 		rows.Push(row)
 		if (p.present && fleet_HopWhere(p, state) = "main")
@@ -94,6 +99,8 @@ fleet_HopPlan(peers, opt, state) {
 		free += (to = "main") ? -1 : 1
 	}
 	inMain(p) => fleet_HopWhere(p, state) = "main"
+	;an account already on the move is left to finish it
+	moving(p) => state.pending.Has(p.row)
 	;a guid that may give up its seat: in the main and no star running at all.
 	;Its own names are declared local: a nested function that assigns a name
 	;the outer one uses is assigning the outer one's, and r is the loop variable
@@ -102,7 +109,7 @@ fleet_HopPlan(peers, opt, state) {
 		local best := 0, q, k, i
 		for k, i in rows {
 			q := peers[i]
-			if (q.role != "guid" || !q.online || !inMain(q) || q.guidingUntil > opt.now)
+			if (q.role != "guid" || !q.online || !inMain(q) || moving(q) || q.guidingUntil > opt.now)
 				continue
 			if (!allowStopped && q.charge >= opt.threshold)
 				continue
@@ -114,7 +121,7 @@ fleet_HopPlan(peers, opt, state) {
 	first(role) {
 		local k, i
 		for k, i in rows
-			if (peers[i].role = role && peers[i].online && inMain(peers[i]))
+			if (peers[i].role = role && peers[i].online && inMain(peers[i]) && !moving(peers[i]))
 				return peers[i]
 		return 0
 	}
@@ -130,7 +137,7 @@ fleet_HopPlan(peers, opt, state) {
 			&& !opt.blue.Has(fleet_HopKey(p.guidingField)))
 			move(p, "reserve", "its star landed on " p.guidingField ", not a blue field")
 	}
-	;the atk, around Mondo
+	;the atk, at Mondo
 	if (atk && opt.mondo && !inMain(atk)) {
 		if (free <= 0) {
 			victim := first("tad")
@@ -152,11 +159,11 @@ fleet_HopPlan(peers, opt, state) {
 	;the reserve
 	for _, r in rows {
 		p := peers[r]
-		if ((p.role != "tad" && p.role != "fuzzy") || !p.online || inMain(p))
+		if ((p.role != "tad" && p.role != "fuzzy") || !p.online || inMain(p) || moving(p))
 			continue
 		if (opt.mondo && state.yielded.Has(r))
 			continue
-		if (free <= 0 && (s := free_guid(1)))
+		if ((free <= 0) && (s := free_guid(1)))
 			move(s, "reserve", "a resident needs its seat back")
 		if (free > 0) {
 			move(p, "main", state.yielded.Has(r) ? "back after Mondo" : "residents sit in the main")
@@ -166,16 +173,18 @@ fleet_HopPlan(peers, opt, state) {
 				state.yielded.Delete(r)
 		}
 	}
-	;the guids waiting, best first
+	;the guids waiting, best first. Not one on its way somewhere, and not one
+	;whose star is still counting down: it left the main because the star was
+	;of no use there, and the star ended when it left.
 	waiting := []
 	for _, r in rows {
 		p := peers[r]
-		if (p.role = "guid" && p.online && !inMain(p))
+		if (p.role = "guid" && p.online && !inMain(p) && !moving(p) && (p.guidingUntil <= opt.now))
 			waiting.Push(p)
 	}
 	waiting := fleet_HopQueue(waiting, opt.threshold)
 	for _, w in waiting {
-		if (free <= 0 && w.charge >= opt.threshold && (s := free_guid(0)))
+		if ((free <= 0) && w.charge >= opt.threshold && (s := free_guid(0)))
 			move(s, "reserve", "swapped for a guid ready to fire")
 		if (free <= 0)
 			break
