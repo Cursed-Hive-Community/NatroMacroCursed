@@ -194,6 +194,7 @@ global PlanterField1, PlanterField2, PlanterField3
 	, BlenderIndex1, BlenderIndex2, BlenderIndex3
 	, BlenderTime1, BlenderTime2, BlenderTime3
 	, BlenderCount1, BlenderCount2, BlenderCount3
+	, BlenderWait1, BlenderWait2, BlenderWait3
 	, LastBlenderItem1, LastBlenderItem2, LastBlenderItem3
 	, b1timer, b2timer, b3timer
 	, ShrineIndex1, ShrineIndex2
@@ -233,7 +234,7 @@ Loop {
 	Loop 3 {
 		i := A_Index
 
-		for k, v in ["Item", "Index", "Amount", "Time", "Count"]
+		for k, v in ["Item", "Index", "Amount", "Time", "Count", "Wait"]
 			Blender%v%%i% := IniRead("settings\nm_config.ini", "Blender", "Blender" v i)
 
 		if (!IsSet(LastBlenderItem%i%) || (BlenderItem%i% != LastBlenderItem%i%))
@@ -264,7 +265,7 @@ Loop {
 		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderCount" LastBlenderRot
 
 	Loop 3
-		TimersGui["BlenderTextAmount" A_Index].Text := "(" BlenderCount%A_index% "/" BlenderAmount%A_Index% ") [" ((BlenderIndex%A_Index% = "Infinite") ? "∞" : BlenderIndex%A_Index%) "]" ; Update BlenderCount
+		TimersGui["BlenderTextAmount" A_Index].Text := "(" BlenderCount%A_index% "/" BlenderAmount%A_Index% ") [" ((BlenderIndex%A_Index% = "Infinite") ? "∞" : BlenderIndex%A_Index%) "]" ((BlenderWait%A_Index% > 0) ? " " BlenderWait%A_Index% "m" : "") ; Update BlenderCount
 	Loop 2 {
 		i := A_Index
 
@@ -470,7 +471,7 @@ ba_setBlenderAmount(GuiCtrl, *) {
 	i := SubStr(GuiCtrl.Name, -1), c := SubStr(GuiCtrl.Name, 1, 3)
 	if (BlenderItem%i% != "None") {
 		BlenderAmount%i% += (c = "Sub" && BlenderAmount%i% > 1) ? -1 : (c = "Add") ? 1 : 0
-		TimersGui["BlenderTextAmount" i].Text := "(" BlenderCount%i% "/" BlenderAmount%i% ") [" ((BlenderIndex%i% = "Infinite") ? "∞" : BlenderIndex%i%) "]"
+		TimersGui["BlenderTextAmount" i].Text := "(" BlenderCount%i% "/" BlenderAmount%i% ") [" ((BlenderIndex%i% = "Infinite") ? "∞" : BlenderIndex%i%) "]" ((BlenderWait%i% > 0) ? " " BlenderWait%i% "m" : "")
 		IniWrite BlenderAmount%i%, "settings\nm_config.ini", "Blender", "BlenderAmount" i
 		if WinExist("natro_macro ahk_class AutoHotkey")
 			PostMessage 0x5552, 232 + i, BlenderAmount%i% ; BlenderAmount
@@ -490,6 +491,13 @@ ba_resetBlenderTimer(GuiCtrl, *) {
 		Iniwrite 0, "settings\nm_config.ini", "Blender", "BlenderTime" i
 		IniWrite i, "settings\nm_config.ini", "Blender", "BlenderRot"
 		IniWrite 1, "settings\nm_config.ini", "Blender", "BlenderEnd"
+		;the running macro read these from the file only when it started, so
+		;Ready did nothing until a restart
+		if WinExist("natro_macro ahk_class AutoHotkey") {
+			PostMessage 0x5552, 238 + i, 0 ; BlenderTime
+			PostMessage 0x5552, 236, i ; BlenderRot
+			PostMessage 0x5552, 384, 1 ; BlenderEnd
+		}
 	}
 }
 ba_setBlenderData(GuiCtrl, *) {
@@ -505,10 +513,14 @@ ba_setBlenderData(GuiCtrl, *) {
 		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderCount" i
 		IniWrite 1, "settings\nm_config.ini", "Blender", "BlenderIndex" i
 		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderTime" i
+		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderWait" i
+		IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderNext" i
 		IniWrite i, "settings\nm_config.ini", "Blender", "BlenderRot"
 		if WinExist("natro_macro ahk_class AutoHotkey") {
 			PostMessage 0x5552, 232 + i, 0 ; BlenderAmount
 			PostMessage 0x5552, 238 + i, 0 ; BlenderTime
+			PostMessage 0x5552, 384 + i, 0 ; BlenderWait
+			PostMessage 0x5552, 387 + i, 0 ; BlenderNext
 			PostMessage 0x5553, 58 + i, 8 ; BlenderIndex
 			PostMessage 0x5553, 61 + i, 8 ; BlenderItem
 		}
@@ -537,8 +549,12 @@ ba_addBlenderData(GBlenderIndex) {
 	AddGui.Add("Text", "x72 y60", "Amount:")
 	AddGui.Add("Text", "x+0 yp-1 w41 h16 +Center +0x200")
 	AddGui.Add("UpDown", "vBAddamount Range1-999", 1)
+	;minutes between two attempts of the slot, 0 for none
+	AddGui.Add("Text", "x80 y80", "Every:")
+	AddGui.Add("Text", "x+0 yp-1 w41 h16 +Center +0x200")
+	AddGui.Add("UpDown", "vBAddwait Range0-999", 0)
 	AddGui.SetFont("w1000")
-	AddGui.Add("Button", "x40 y80 w80 h16 +Center", "Add to Slot " BlenderaddIndex).OnEvent("Click", ba_AddBlenderItem)
+	AddGui.Add("Button", "x40 y100 w80 h16 +Center", "Add to Slot " BlenderaddIndex).OnEvent("Click", ba_AddBlenderItem)
 
 	wp := Buffer(44), DllCall("GetWindowPlacement", "UInt", TimersGui.Hwnd, "Ptr", wp)
 	x := NumGet(wp, 28, "Int"), y := NumGet(wp, 32, "Int")
@@ -561,8 +577,12 @@ ba_AddBlenderItem(GuiCtrl?, *) {
 	IniWrite values.BAddamount, "settings\nm_config.ini", "Blender", "BlenderAmount" BlenderaddIndex
 	IniWrite AddBlenderItem, "settings\nm_config.ini", "Blender", "BlenderItem" BlenderaddIndex
 	IniWrite values.BAddindexOption ? "Infinite" : values.BAddindex, "settings\nm_config.ini", "Blender", "BlenderIndex" BlenderaddIndex
+	IniWrite values.BAddwait, "settings\nm_config.ini", "Blender", "BlenderWait" BlenderaddIndex
+	IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderNext" BlenderaddIndex
 	if WinExist("natro_macro ahk_class AutoHotkey") {
 		PostMessage 0x5552, 232 + BlenderaddIndex, values.BAddamount ; BlenderAmount
+		PostMessage 0x5552, 384 + BlenderaddIndex, values.BAddwait ; BlenderWait
+		PostMessage 0x5552, 387 + BlenderaddIndex, 0 ; BlenderNext
 		PostMessage 0x5553, 58 + BlenderaddIndex, 8 ; BlenderIndex
 		PostMessage 0x5553, 61 + BlenderaddIndex, 8 ; BlenderItem
 	}

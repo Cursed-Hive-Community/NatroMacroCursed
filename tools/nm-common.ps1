@@ -1,4 +1,4 @@
-<#
+﻿<#
   nm-common.ps1 - Shared helpers for the Natro Macro git tooling.
 
   Dot-source it from any nm-*.ps1 script:
@@ -222,6 +222,127 @@ function Get-NmMacroVersion {
 
   if (-not $match) { return '' }
   return $match.Matches[0].Groups[1].Value
+}
+
+function Test-NmCanWrite {
+  # Can we actually write in there? Asked by writing, because every other
+  # answer is a guess: an ACL can grant a right that a parent folder, a
+  # read-only attribute or OneDrive then refuses.
+  param([string] $Path)
+
+  $probe = Join-Path $Path ('.nm-write-test-' + [guid]::NewGuid().ToString('N'))
+  try {
+    [IO.File]::WriteAllText($probe, 'x')
+    Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+    return $true
+  }
+  catch { return $false }
+}
+
+function Test-NmIsAdmin {
+  # Is this session running with the Administrators group active? Windows gives
+  # objects created by such a session to BUILTIN\Administrators rather than to
+  # the person, which is why this question has to be asked before deciding that
+  # an owner is a stranger.
+  try {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    return (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole(
+      [Security.Principal.WindowsBuiltInRole]::Administrator)
+  }
+  catch { return $false }
+}
+
+function Assert-NmFolderUsable {
+  # Two things a folder made by somebody else does to git, and neither of them
+  # says so in words a person can act on.
+  #
+  # The plain one first, because it has no workaround: no write permission. Git
+  # cannot create .git and an update cannot replace a file. Said straight, with
+  # the commands that fix it, because "access denied" three screens into a
+  # checkout is where somebody gives up.
+  #
+  # The other is git refusing to work in a repository owned by another account
+  # - "detected dubious ownership" - because a repository you do not own can
+  # run its own code through hooks. On one machine with one person that is not
+  # the threat it guards against: the folder is theirs, it was simply created
+  # under another login, copied from another PC, or made by a program running
+  # as Administrator. So the exact path is marked safe, once, and only that
+  # path.
+  param([string] $Path)
+
+  if (-not (Test-NmCanWrite $Path)) {
+    Stop-NmWithError @"
+Windows will not let this account write in
+
+    $Path
+
+That folder belongs to another Windows user, so nothing can be installed or
+updated in it as you are now.
+
+Pick one:
+
+  1. Run this again as the user who owns the folder.
+
+  2. Copy the folder somewhere of your own, such as C:\Natro, and use the copy.
+     Your settings come with it.
+
+  3. Take ownership of it. Right-click Start, pick Terminal (Admin), then:
+
+         takeown /F "$Path" /R /D Y
+         icacls "$Path" /grant "$env:USERNAME":(OI)(CI)F /T
+"@
+  }
+
+  $owner = ''
+  try { $owner = (Get-Acl -LiteralPath $Path).Owner } catch { }
+  $me = ''
+  try { $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name } catch { }
+
+  if ((-not $owner) -or (-not $me) -or ($owner -eq $me)) { return }
+
+  # An elevated program gives what it creates to the Administrators group, so
+  # this is the ordinary state of any folder made from an admin terminal or by
+  # an installer - not a stranger's folder, and not worth alarming anybody
+  # about. Git still refuses it, so it still has to be marked safe; only the
+  # wording changes.
+  $elevated = (($owner -eq 'BUILTIN\Administrators') -or
+               ($owner -eq 'NT AUTHORITY\SYSTEM')) -and (Test-NmIsAdmin)
+
+  # Asked before anything is announced. Saying "marking it as safe" and then
+  # "this was not recorded" in that order is two true sentences that contradict
+  # each other, which is worse than either.
+  #
+  # Callable in any order: every caller asserts git first today, and a helper
+  # that blows up when git is missing would be a trap for the one that forgets.
+  if (-not $script:NmGitExe) {
+    Write-NmWarn "This folder is recorded as owned by $owner, and git is not"
+    Write-NmWarn 'available yet, so that was not recorded. If the next step'
+    Write-NmWarn 'fails on "dubious ownership", run it again once git is in.'
+    return
+  }
+
+  if ($elevated) {
+    Write-NmInfo "This folder is recorded as owned by $owner, which is what"
+    Write-NmInfo 'Windows does with anything an Administrator created. Marking'
+    Write-NmInfo 'it as safe for git.'
+  }
+  else {
+    Write-NmWarn "This folder belongs to $owner, not to you ($me)."
+    Write-NmWarn 'Telling git that it is safe anyway, for this path only.'
+  }
+
+  # Without -C: git is being asked about its own global configuration, and
+  # pointing it at the very folder whose ownership it is refusing would be
+  # asking it to discover a repository there first.
+  #
+  # --global and not --system: it needs no Administrator and it is this user's
+  # own decision to make. Repeated runs are harmless - git keeps one entry per
+  # distinct value - and the path is spelt the way git spells it.
+  $gitPath = $Path -replace '\\', '/'
+  $was = $script:NmRepoPath
+  Set-NmRepo ''
+  $null = Invoke-NmGitSafe config --global --add safe.directory $gitPath
+  Set-NmRepo $was
 }
 
 function Assert-NmGitInstalled {

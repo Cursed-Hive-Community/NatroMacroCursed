@@ -1,0 +1,50 @@
+# crop<TAB>group<TAB>slots left to right as Icon:value - a number, - for none,
+# cd for a cooldown, cd=<timer> when its timer is labelled. A group is one
+# moment of play: captures in it are never used to read each other.
+t1	t1	FocusPulser:15 ScorchingStarIcon:18 Coconuthaste:- XFlame:18 HastePulser:13 PassiveEmergencyCoconut:- Inspirecoconuts:0 StarSaw:1
+t2	t2	FocusPulser:26 ScorchingStarIcon:0 Coconuthaste:- XFlame:23 HastePulser:15 PassiveEmergencyCoconut:- Inspirecoconuts:4 StarSaw:1
+t3	t3	FocusPulser:12 XFlame:22 Ignite:3 HastePulser:15 GummyStarIcon:-
+t5	t5	FocusPulser:3 PopStarIcon:0 PassiveEmergencyCoconut:- Inspirecoconuts:0 Coconuthaste:- HastePulser:10 Bubblebomb:cd=1:16 DiamondDrain:0 Pstorm:0 StarShowerIcon:0
+t7	t7	HastePulser:29 XFlame:13 PassiveEmergencyCoconut:cd=4:46 Inspirecoconuts:1 ScorchingStarIcon:29 Coconuthaste:- Ignite:14 FocusPulser:6 Pstorm:9 StarSaw:1 Combococonuts:27
+t8	t8	FocusPulser:13 PopStarIcon:0 PassiveEmergencyCoconut:- Inspirecoconuts:3 HastePulser:18 Coconuthaste:- Pstorm:0 GuidingStarIcon:cd=58s DiamondDrain:4 Bubblebomb:cd=46s Combococonuts:39
+t9	t9	FocusPulser:8 PopStarIcon:21 PassiveEmergencyCoconut:- Inspirecoconuts:4 HastePulser:22 Coconuthaste:- Pstorm:5 GuidingStarIcon:148 DiamondDrain:19 Bubblebomb:cd=45s Combococonuts:29
+tss	tss	FocusPulser:2 ScorchingStarIcon:14 Coconuthaste:- XFlame:16 HastePulser:24 PassiveEmergencyCoconut:- Inspirecoconuts:2 StarSaw:1
+t4	t4	FocusPulser:12 XFlame:22 Ignite:3 HastePulser:15 GummyStarIcon:-
+t14	t14	FocusPulser:5 XFlame:2 Ignite:12 HastePulser:4 GummyStarIcon:-
+t6	t6	HastePulser:29 XFlame:14 PassiveEmergencyCoconut:cd=3:16 Inspirecoconuts:1 ScorchingStarIcon:29 Coconuthaste:- Ignite:0 FocusPulser:6 Pstorm:9 StarSaw:1 Combococonuts:27
+t10	t10	HastePulser:27 XFlame:12 PassiveEmergencyCoconut:cd=4:58 Inspirecoconuts:3 ScorchingStarIcon:4 Coconuthaste:- Ignite:0 FocusPulser:3 Pstorm:0 StarSaw:0 Combococonuts:9
+t11	t11	HastePulser:15 XFlame:2 PassiveEmergencyCoconut:- Inspirecoconuts:0 ScorchingStarIcon:28 Coconuthaste:- Ignite:5 FocusPulser:1 Pstorm:22 StarSaw:0 Combococonuts:38
+t12	t12	HastePulser:29 XFlame:23 PassiveEmergencyCoconut:- Inspirecoconuts:2 ScorchingStarIcon:4 Coconuthaste:- Ignite:12 FocusPulser:24 Pstorm:28 StarSaw:0 Combococonuts:23
+t13	t13	HastePulser:29 XFlame:3 PassiveEmergencyCoconut:cd=2:05 Inspirecoconuts:1 ScorchingStarIcon:12 Coconuthaste:- Ignite:13 FocusPulser:17 Pstorm:5 StarSaw:0 Combococonuts:8
+t15	t15	HastePulser:2 XFlame:14 PassiveEmergencyCoconut:cd=44s Inspirecoconuts:2 ScorchingStarIcon:7 Coconuthaste:- Ignite:0 FocusPulser:19 Pstorm:29 StarSaw:0 Combococonuts:16
+t16	t16	HastePulser:18 XFlame:16 PassiveEmergencyCoconut:cd=1:45 Inspirecoconuts:1 ScorchingStarIcon:cd=10s Coconuthaste:- Ignite:9 FocusPulser:1 Pstorm:23 StarSaw:0 Combococonuts:1
+t17	t17	FocusPulser:25 ScorchingStarIcon:13 Coconuthaste:- XFlame:19 HastePulser:10 PassiveEmergencyCoconut:- Inspirecoconuts:1 StarSaw:0
+t18	t18	FocusPulser:25 ScorchingStarIcon:13 Coconuthaste:- XFlame:18 HastePulser:9 PassiveEmergencyCoconut:cd=21s Inspirecoconuts:1 StarSaw:0
+t19	t19	FocusPulser:25 ScorchingStarIcon:13 Coconuthaste:- XFlame:18 HastePulser:9 PassiveEmergencyCoconut:cd=1:05 Inspirecoconuts:1 StarSaw:0
+t20	t20	FocusPulser:22 XFlame:16 PassiveEmergencyCoconut:cd=2:23 Inspirecoconuts:3 ScorchingStarIcon:1 Coconuthaste:- Ignite:4 HastePulser:9 Pstorm:6 StarSaw:0 Combococonuts:35
+t21	t21	HastePulser:11 XFlame:7 PassiveEmergencyCoconut:cd=2:06 Inspirecoconuts:0 ScorchingStarIcon:4 Coconuthaste:- Ignite:13 FocusPulser:2 Pstorm:9 StarSaw:0 Combococonuts:15
+t22	t22	FocusPulser:29 PopStarIcon:cd=49s PassiveEmergencyCoconut:- Inspirecoconuts:3 HastePulser:0 Coconuthaste:- Bubblebomb:cd=41s Pstorm:cd=0s DiamondDrain:0 StarShowerIcon:cd=19s Combococonuts:20
+t23	t23	FocusPulser:0 PopStarIcon:21 PassiveEmergencyCoconut:- Inspirecoconuts:1 HastePulser:23 Coconuthaste:- Bubblebomb:cd=1:44 Pstorm:19 DiamondDrain:cd=17s StarShowerIcon:0 Combococonuts:30
+t24	t24	FocusPulser:7 PopStarIcon:1 PassiveEmergencyCoconut:- Inspirecoconuts:1 HastePulser:17 Coconuthaste:- Bubblebomb:cd=1:27 Pstorm:29 DiamondDrain:15 StarShowerIcon:39 Combococonuts:30
+t25	t25	FocusPulser:7 PopStarIcon:1 PassiveEmergencyCoconut:- Inspirecoconuts:0 HastePulser:17 Coconuthaste:- Bubblebomb:cd=1:45 Pstorm:29 DiamondDrain:15 StarShowerIcon:39 Combococonuts:30
+t26	t26	FocusPulser:21 PopStarIcon:2 PassiveEmergencyCoconut:- Inspirecoconuts:4 HastePulser:15 Coconuthaste:- Bubblebomb:cd=1:25 Pstorm:cd=15s DiamondDrain:4 StarShowerIcon:27 Combococonuts:5
+t28	t28	HastePulser:21 XFlame:21 PassiveEmergencyCoconut:cd=1:33 Inspirecoconuts:3 ScorchingStarIcon:0 Coconuthaste:- Ignite:3 FocusPulser:3 Pstorm:26 StarSaw:0 Combococonuts:3
+t13noPassifAbility	t13noPassifAbility	
+t31	t31	FocusPulser:13 PopStarIcon:5 PassiveEmergencyCoconut:cd=3:30 Inspirecoconuts:2 Coconuthaste:- HastePulser:17 Bubblebomb:0 DiamondDrain:cd=5s Pstorm:8 StarShowerIcon:20
+cap152159	cap0715	FocusPulser:20 XFlame:20 Ignite:8 GuidingStarIcon:226 HastePulser:24
+cap152221	cap0715	FocusPulser:20 XFlame:20 Ignite:8 GuidingStarIcon:228 HastePulser:24
+cap152309	cap0715	FocusPulser:20 XFlame:20 Ignite:8 GuidingStarIcon:235 HastePulser:24
+cap152334	cap0715	FocusPulser:20 XFlame:20 Ignite:8 GuidingStarIcon:239 HastePulser:24
+cap152337	cap0715	FocusPulser:20 XFlame:21 Ignite:8 GuidingStarIcon:240 HastePulser:25
+cap152341	cap0715	FocusPulser:20 XFlame:21 Ignite:8 GuidingStarIcon:241 HastePulser:25
+guid2token	guid2token	FocusPulser:0 XFlame:16 Ignite:6 GuidingStarIcon:2 HastePulser:17
+guid3token	guid3token	FocusPulser:0 XFlame:16 Ignite:6 GuidingStarIcon:3 HastePulser:17
+guidtimerother	gto	FocusPulser:0 XFlame:8 Ignite:6 GuidingStarIcon:cd=4:17 HastePulser:7
+guidtimerother1	gto	FocusPulser:0 XFlame:8 Ignite:6 GuidingStarIcon:cd=4:17 HastePulser:7
+guidtimerreset	guidtimerreset	FocusPulser:0 XFlame:8 Ignite:6 GuidingStarIcon:cd=4:58 HastePulser:7
+image	image	FocusPulser:0 XFlame:4 Ignite:6 GuidingStarIcon:0 HastePulser:7
+image1	image1	FocusPulser:26 GummyStarIcon:- XFlame:4 Ignite:13 HastePulser:27
+image2	image2	FocusPulser:26 GummyStarIcon:- XFlame:6 Ignite:14 HastePulser:29
+image3	image3	FocusPulser:26 GummyStarIcon:- XFlame:13 Ignite:5 HastePulser:0
+image4	image4	FocusPulser:29 GummyStarIcon:- XFlame:cd=11s Ignite:13 HastePulser:4
+imageWithAlotOfCapa	imageWithAlotOfCapa	FocusPulser:9 PopStarIcon:1 PassiveEmergencyCoconut:- Inspirecoconuts:2 HastePulser:11 Coconuthaste:- Pstorm:12 GuidingStarIcon:229 DiamondDrain:6 Bubblebomb:0 Combococonuts:14
