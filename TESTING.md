@@ -413,6 +413,10 @@ game here.
 - [ ] the hive camera turn waits for the camera to stop, and accepts the
       default direction after two turns instead of resetting again `loads`
 - [ ] `tools\OCR_Test.ahk` reports what OCR sees on a running game `loads`
+- [ ] the Auto-Jelly rewrite (@definetlynotray), taken whole from the same
+      zip: it runs as its own generated script, which /Validate of
+      natro_macro checks only as a string - nothing has parsed or run the
+      script itself `loads`
 
 ### Guid hop
 
