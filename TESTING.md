@@ -403,13 +403,18 @@ that text with Windows OCR instead. It needs an OCR language pack on each
 PC, English preferably. Everything below is `loads`: nothing has run in the
 game here.
 
-- [ ] the GUI offset found by reading "Pollen" in the top bar;
-      `tools\Set_GUI_Offset.ahk` sets it by hand if needed `loads`
+- [x] the GUI offset found by reading "Pollen" in the top bar: 22 px in
+      46 ms, the line on the label `game` - OCR_Test on the user's PC,
+      2026-11-09, Windows OCR en-GB. `tools\Set_GUI_Offset.ahk` sets it by
+      hand if needed `loads`
 - [ ] the movespeed correction reads the Haste stack `loads`
 - [ ] Stat Monitor reads buffs and honey; the report keeps its official look
       and credit `loads`
-- [ ] the Yes, No and Feed buttons, "Make Honey", the inventory and quest
-      objectives are found by OCR `loads`
+- [x] "Make Honey" at the hive, by image and by OCR; the inventory read in
+      109 ms and Gumdrops matched, the one item of the test's list on
+      screen (Whirligig read "whirliaia", within the 2 letters allowed)
+      `game` - the same OCR_Test
+- [ ] the Yes, No and Feed buttons and quest objectives found by OCR `loads`
 - [ ] the hive camera turn waits for the camera to stop, and accepts the
       default direction after two turns instead of resetting again `loads`
 - [ ] `tools\OCR_Test.ahk` reports what OCR sees on a running game `loads`
