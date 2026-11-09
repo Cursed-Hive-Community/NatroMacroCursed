@@ -739,7 +739,7 @@ nm_status(status)
 			|| ((ViciousSSCheck = 1) && InStr(stateString, "Completed: Vicious Bee"))
 			|| ((DeathSSCheck = 1) && (state = "You Died"))
 			|| ((state = "Detected") && InStr(stateString, "Night"))
-			|| InStr(stateString, "settings\proshop_debug_") || InStr(stateString, "settings\passive_debug_")
+			|| RegExMatch(stateString, "i)settings\\(proshop|passive|hive)_debug_")
 			|| ((PlanterSSCheck = 1) && (((state = "Detected") || (state = "Screenshot") || (state = "Holding")) && InStr(stateString, "Planter")))
 			|| ((HoneySSCheck = 1) && InStr(stateString, "Reporting: Daily Honey LB") && ((discordMode = 0) || (channel := (StrLen(ReportChannelID) < 17) ? MainChannelID : ReportChannelID)))
 			|| ((ssDebugging = 1) && ((state = "Placing") || (state = "Collecting") || (state = "Failed") || InStr(stateString, "Next Quest Step")))
@@ -750,7 +750,7 @@ nm_status(status)
 			;This runs from a queue, so by the time it gets here the macro has moved
 			;on - the camera swung back, the menu closed - and a fresh screenshot
 			;would show none of what the message is about. Send the file instead.
-			if (!IsSet(pBM) && RegExMatch(stateString, "i)settings\\(proshop|passive)_debug_[\w]+\.png", &dbgFile)
+			if (!IsSet(pBM) && RegExMatch(stateString, "i)settings\\(proshop|passive|hive)_debug_[\w]+\.png", &dbgFile)
 				&& FileExist(A_WorkingDir "\" dbgFile[0]))
 				pBM := Gdip_CreateBitmapFromFile(A_WorkingDir "\" dbgFile[0])
 			if !IsSet(pBM)

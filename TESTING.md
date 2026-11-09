@@ -429,6 +429,12 @@ game here.
       Exceeded and Paper Planter
 - [ ] the hive camera turn waits for the camera to stop, and accepts the
       default direction after two turns instead of resetting again `loads`
+- [ ] the honeycomb recognised by its colour on the user's hive: it is not -
+      `Hive not recognised by camera` on every return to the hive. Each
+      warning now carries the colour seen (h, s, v; the check wants h 20 to
+      55, s at least 50, v 20 to 85), and the first one of a run saves and
+      sends `settings\hive_debug_view.png`, the frame the honeycomb should
+      have been in `loads`
 - [ ] `tools\OCR_Test.ahk` reports what OCR sees on a running game `loads`
 - [ ] the Auto-Jelly rewrite (@definetlynotray), taken whole from the same
       zip: it runs as its own generated script, which /Validate of

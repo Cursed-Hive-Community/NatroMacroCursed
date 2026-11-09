@@ -13234,6 +13234,7 @@ nm_spawnMoveTo(moves) {
 }
 nm_SetHiveCameraDirection(){
     global HiveConfirmed
+	static saved := 0
 
 	; Turns the camera until the honeycomb is in front of it, then turns it to the walking direction.
 	; Every check and the final turn wait for the camera to stop moving first: Roblox animates each turn, so
@@ -13263,7 +13264,21 @@ nm_SetHiveCameraDirection(){
 	; Honeycomb never recognised (hive skins, night lighting...). We are at the hive (the prompt was found),
 	; and after 20 single turns the camera faces the hive again, so the usual final turn restores the standard
 	; post-reset camera direction. Accept that instead of resetting again and again.
-	nm_setStatus("Warning", "Hive not recognised by camera, using default direction")
+	;The camera faces where the first check looked, so this is the frame the
+	;honeycomb should have been in. Its colour goes in every warning, the picture
+	;with the first only: it is sent to Discord, and a hive never recognised
+	;would send one on every return to the hive.
+	viewBM := Gdip_BitmapFromScreen((windowX + (windowWidth - windowHeight//4)//2) "|" (windowY + windowHeight*5//8) "|" (windowHeight//4) "|" (windowHeight//4))
+	seen := ARGBToHSV(AverageColorFromImage(viewBM))
+	Gdip_DisposeImage(viewBM)
+	shot := ""
+	if !saved++ {
+		viewBM := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
+		Gdip_SaveBitmapToFile(viewBM, A_WorkingDir "\settings\hive_debug_view.png")
+		Gdip_DisposeImage(viewBM)
+		shot := " - saved settings\hive_debug_view.png"
+	}
+	nm_setStatus("Warning", "Hive not recognised by camera, using default direction - seen h" Round(seen.h) " s" Round(seen.s) " v" Round(seen.v) shot)
 	ResetCampos()
 	HiveConfirmed := 1
 	return 1
