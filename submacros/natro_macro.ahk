@@ -41,6 +41,7 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "%A_ScriptDir%\extensions\boostlease.ahk"
 #Include "%A_ScriptDir%\extensions\interrupts.ahk"
 #Include "%A_ScriptDir%\extensions\blender.ahk"
+#Include "%A_ScriptDir%\extensions\notices.ahk"
 #Include "%A_ScriptDir%\extensions\fleet.ahk"
 
 #Warn VarUnset, Off
@@ -23952,11 +23953,13 @@ ba_placeCoconutPaper(atSpot := 0){
 		}
 		Loop 10 {
 			Sleep 100
-			if (nm_imgSearch("planteralready.png", 30, "lowright")[1] = 0) {
+			;the game's notice, by picture or, since Roblox's new font, by OCR
+			notice := ext_planterNotice()
+			if (notice = "already") {
 				nm_setStatus("Placed", "Paper Planter (Coconut)")
 				return 1
 			}
-			if (nm_imgSearch("3Planters.png", 30, "lowright")[1] = 0) {
+			if (notice = "3planters") {
 				nm_setStatus("Error", "3 Planters already placed!")
 				return 0
 			}
@@ -24343,8 +24346,9 @@ ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 	Loop 10
 	{
 		Sleep 100
-		imgPos := nm_imgSearch("3Planters.png",30,"lowright")
-		If (imgPos[1] = 0){
+		;the game's notice, by picture or, since Roblox's new font, by OCR
+		notice := ext_planterNotice()
+		If (notice = "3planters"){
 			MaxAllowedPlanters:=max(0, MaxAllowedPlanters-1)
 			MainGui["MaxAllowedPlanters"].Value := MaxAllowedPlanters
 			nm_setStatus("Error", "3 Planters already placed!`nMaxAllowedPlanters has been reduced.")
@@ -24352,12 +24356,10 @@ ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 			Sleep 500
 			return 3
 		}
-		imgPos := nm_imgSearch("planteralready.png",30,"lowright")
-		If (imgPos[1] = 0){
+		If (notice = "already"){
 			return 2
 		}
-		imgPos := nm_imgSearch("standing.png",30,"lowright")
-		If (imgPos[1] = 0){
+		If (notice = "standing"){
 			return 4
 		}
 	}
@@ -24928,18 +24930,17 @@ mp_PlantPlanter(PlanterIndex) {
 	Loop 10
 	{
 		Sleep 100
-		imgPos := nm_imgSearch("3Planters.png",30,"lowright")
-		If (imgPos[1] = 0){
+		;the game's notice, by picture or, since Roblox's new font, by OCR
+		notice := ext_planterNotice()
+		If (notice = "3planters"){
 			nm_setStatus("Error", "3 Planters already placed!")
 			Sleep 500
 			return 3
 		}
-		imgPos := nm_imgSearch("planteralready.png",30,"lowright")
-		If (imgPos[1] = 0){
+		If (notice = "already"){
 			return 2
 		}
-		imgPos := nm_imgSearch("standing.png",30,"lowright")
-		If (imgPos[1] = 0){
+		If (notice = "standing"){
 			return 4
 		}
 	}

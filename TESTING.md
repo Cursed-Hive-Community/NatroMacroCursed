@@ -415,6 +415,18 @@ game here.
       screen (Whirligig read "whirliaia", within the 2 letters allowed)
       `game` - the same OCR_Test
 - [ ] the Yes, No and Feed buttons and quest objectives found by OCR `loads`
+- [x] a planter's notices read by OCR - "already in the", "3 Planters",
+      "standing" - from the user's capture of a paper planter thrown again
+      and again, its notice not seen: read as "already", and a screen
+      quarter without a notice as nothing `wire` (NoticeSelfTest, Windows
+      OCR in the VM)
+- [ ] the paper planter placed once and reported Placed, in the game
+      `loads`
+- [ ] 16 more pictures of text Natro searches for, probably broken the same
+      way and not yet looked at: the kill notices (King, Tunnel, Mondo,
+      Werewolf, Rhino, Mantis, Spider, Scorpion, Ladybug, Crab, Chick dead
+      and fled), Honey Hunt, and the Pro Shop's Craft Item, Capacity
+      Exceeded and Paper Planter
 - [ ] the hive camera turn waits for the camera to stop, and accepts the
       default direction after two turns instead of resetting again `loads`
 - [ ] `tools\OCR_Test.ahk` reports what OCR sees on a running game `loads`

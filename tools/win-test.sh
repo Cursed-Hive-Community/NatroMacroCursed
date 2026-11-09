@@ -49,6 +49,7 @@ COVER_fleet="submacros/Fleet.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetR
 COVER_sockettest="submacros/SocketSelfTest.ahk lib/Socket.ahk"
 COVER_fleettest="submacros/FleetSelfTest.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/Fleet.ahk"
 COVER_background="submacros/background.ahk submacros/extensions/guidshots.ahk submacros/extensions/passives.ahk submacros/extensions/guidread.ahk"
+COVER_noticetest="submacros/NoticeSelfTest.ahk submacros/extensions/notices.ahk"
 COVER_passivetest="submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk"
 COVER_exttest="submacros/ExtensionSelfTest.ahk lib/FleetHop.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/boostlease.ahk submacros/extensions/interrupts.ahk submacros/extensions/blender.ahk"
 # the bench runs its own wiring check - tools/bench-selfcheck.txt, which the
@@ -59,11 +60,11 @@ COVER_bench="submacros/FleetBench.ahk tools/bench-selfcheck.txt lib/Socket.ahk l
 COVER_uidump="submacros/FleetUiDump.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk lib/FleetHop.ahk"
 
 # entry point -> coverage var
-ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump submacros/PassiveSelfTest.ahk:COVER_passivetest submacros/background.ahk:COVER_background"
+ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump submacros/PassiveSelfTest.ahk:COVER_passivetest submacros/background.ahk:COVER_background submacros/NoticeSelfTest.ahk:COVER_noticetest"
 # self-test -> name:script:diagfile:coverage var[:argument]
 # the fifth field is an argument the script takes before /quiet - only the
 # bench has one, because only the bench is driven by a file of commands
-TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest bench:submacros/FleetBench.ahk:fleet_bench.txt:COVER_bench:tools/bench-selfcheck.txt passives:submacros/PassiveSelfTest.ahk:passive_diag.txt:COVER_passivetest"
+TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest bench:submacros/FleetBench.ahk:fleet_bench.txt:COVER_bench:tools/bench-selfcheck.txt passives:submacros/PassiveSelfTest.ahk:passive_diag.txt:COVER_passivetest notices:submacros/NoticeSelfTest.ahk:notice_diag.txt:COVER_noticetest"
 
 # every owned file, for the full-run default
 ALL_FILES=(
@@ -76,6 +77,7 @@ ALL_FILES=(
   submacros/PassiveSelfTest.ahk submacros/extensions/passives.ahk
   submacros/background.ahk submacros/extensions/guidshots.ahk submacros/extensions/guidread.ahk
   lib/FleetHop.ahk
+  submacros/NoticeSelfTest.ahk submacros/extensions/notices.ahk
 )
 
 # --- arguments --------------------------------------------------------------
@@ -163,6 +165,10 @@ if [ "$SYNC" -eq 1 ]; then
     scp -q -r -o LogLevel=ERROR tools/passive-rows "${VM_USER}@${VM_HOST}:${VM_REPO}/tools/"
     scp -q -r -o LogLevel=ERROR nm_image_assets/passives/. "${VM_USER}@${VM_HOST}:${VM_REPO}/nm_image_assets/passives/"
     echo "   passive rows and assets copied"
+  fi
+  if intersects "$COVER_noticetest"; then
+    scp -q -r -o LogLevel=ERROR tools/notice-shots "${VM_USER}@${VM_HOST}:${VM_REPO}/tools/"
+    echo "   notice shots copied"
   fi
 fi
 
