@@ -711,7 +711,10 @@ nm_status(status)
 		}
 
 		; ping
-		content := ((criticalCheck = 1) && discordUID
+		autoJellyPing := discordUID
+			&& (InStr(stateString, "Auto-Jelly") || InStr(stateString, "Bitterberry Auto-Feeder"))
+			&& ((state = "Error") || (state = "Failed") || (state = "Warning") || (state = "Detected"))
+		content := ((((criticalCheck = 1) && discordUID
 			&& (((CriticalErrorPingCheck = 1) && (state = "Error"))
 			|| ((DisconnectPingCheck = 1) && InStr(stateString, "Disconnected"))
 			|| ((GameFrozenPingCheck = 1) && (InStr(stateString, "Resetting: Character") && (Mod(SubStr(objective, InStr(objective, " ")+1), 10) = 5)))
@@ -719,7 +722,8 @@ nm_status(status)
 			|| ((UnexpectedDeathPingCheck = 1) && (state = "You Died"))
 			|| ((EmergencyBalloonPingCheck = 1) && InStr(stateString, "No Balloon Convert"))
 			|| ((PlanterSSCheck = 1) && ((state = "Holding") && InStr(stateString, "Planter")))
-			|| ((state = "Obtained") && InStr(stateString, "Amulet"))))
+			|| ((state = "Obtained") && InStr(stateString, "Amulet")))))
+			|| autoJellyPing)
 			? ("<@" discordUID ">") : ""
 
 		; status update (embed)
@@ -731,6 +735,7 @@ nm_status(status)
 			|| ((AmuletSSCheck = 1) && InStr(stateString, "Amulet"))
 			|| ((MachineSSCheck = 1) && (state = "Collected"))
 			|| ((BalloonSSCheck = 1) && (stateString = "Converting: Balloon"))
+			|| (((state = "Detected") || (state = "Keeping")) && (InStr(stateString, "Auto-Jelly") || InStr(stateString, "Bitterberry Auto-Feeder")))
 			|| ((ViciousSSCheck = 1) && InStr(stateString, "Completed: Vicious Bee"))
 			|| ((DeathSSCheck = 1) && (state = "You Died"))
 			|| ((state = "Detected") && InStr(stateString, "Night"))
@@ -1102,6 +1107,21 @@ nm_command(command)
 						"name": "' commandPrefix 'prefix [prefix]",
 						"value": "Sets the command prefix, e.g. ``' commandPrefix 'prefix +``",
 						"inline": true
+					},
+					{
+						"name": "' commandPrefix 'hr",
+						"value": "Sends an Hourly Report now",
+						"inline": true
+					},
+					{
+						"name": "' commandPrefix 'yes",
+						"value": "Clicks Yes on the active Auto-Jelly prompt",
+						"inline": true
+					},
+					{
+						"name": "' commandPrefix 'no",
+						"value": "Clicks No on the active Auto-Jelly prompt",
+						"inline": true
 					}]
 				}],
 				"allowed_mentions": {
@@ -1192,6 +1212,48 @@ nm_command(command)
 		}
 		else
 			discord.SendEmbed("Macro has already been started!", 16711731, , , , id)
+
+
+		case "hourlyreport", "hr":
+		{
+			SetTitleMatchMode 2
+			DetectHiddenWindows 1
+			if (hwnd := WinExist("StatMonitor.ahk ahk_class AutoHotkey"))
+			{
+				PostMessage 0x5563, 1, 0,, "ahk_id " hwnd
+				discord.SendEmbed("Requested Hourly Report generation. It will arrive within a few seconds.", 5066239, , , , id)
+			}
+			else
+				discord.SendEmbed("Error: StatMonitor is not running! It only starts while the macro is running with Discord reports enabled.", 16711731, , , , id)
+		}
+
+
+		case "yes":
+		{
+			DetectHiddenWindows 1
+			SetTitleMatchMode 3
+			if (hwnd := WinExist("Auto-Jelly! ahk_class #32770"))
+			{
+				ControlClick "Button1", "ahk_id " hwnd
+				discord.SendEmbed("Clicked Yes on the active Auto-Jelly prompt.", 5066239, , , , id)
+			}
+			else
+				discord.SendEmbed("Error: No active Auto-Jelly prompt found.", 16711731, , , , id)
+		}
+
+
+		case "no":
+		{
+			DetectHiddenWindows 1
+			SetTitleMatchMode 3
+			if (hwnd := WinExist("Auto-Jelly! ahk_class #32770"))
+			{
+				ControlClick "Button2", "ahk_id " hwnd
+				discord.SendEmbed("Clicked No on the active Auto-Jelly prompt.", 5066239, , , , id)
+			}
+			else
+				discord.SendEmbed("Error: No active Auto-Jelly prompt found.", 16711731, , , , id)
+		}
 
 
 		case "close":
@@ -2444,7 +2506,7 @@ nm_command(command)
 		}
 		
 		case "FindItem":
-		static items := ["Cog", "Ticket", "SprinklerBuilder", "BeequipCase", "Gumdrops", "Coconut", "Stinger", "Snowflake", "MicroConverter", "Honeysuckle", "Whirligig", "FieldDice", "SmoothDice", "LoadedDice", "JellyBeans", "RedExtract", "BlueExtract", "Glitter", "Glue", "Oil", "Enzymes", "TropicalDrink", "PurplePotion", "SuperSmoothie", "MarshmallowBee", "Sprout", "MagicBean", "FestiveBean", "CloudVial", "NightBell", "BoxOFrogs", "AntPass", "BrokenDrive", "7ProngedCog", "RoboPass", "Translator", "SpiritPetal", "Present", "Treat", "StarTreat", "AtomicTreat", "SunflowerSeed", "Strawberry", "Pineapple", "Blueberry", "Bitterberry", "Neonberry", "MoonCharm", "GingerbreadBear", "AgedGingerbreadBear", "WhiteDrive", "RedDrive", "BlueDrive", "GlitchedDrive", "ComfortingVial", "InvigoratingVial", "MotivatingVial", "RefreshingVial", "SatisfyingVial", "PinkBalloon", "RedBalloon", "WhiteBalloon", "BlackBalloon", "SoftWax", "HardWax", "CausticWax", "SwirledWax", "Turpentine", "PaperPlanter", "TicketPlanter", "FestivePlanter", "PlasticPlanter", "CandyPlanter", "RedClayPlanter", "BlueClayPlanter", "TackyPlanter", "PesticidePlanter", "HeatTreatedPlanter", "HydroponicPlanter", "PetalPlanter", "ThePlanterOfPlenty", "BasicEgg", "SilverEgg", "GoldEgg", "DiamondEgg", "MythicEgg", "StarEgg", "GiftedSilverEgg", "GiftedGoldEgg", "GiftedDiamondEgg", "GiftedMythicEgg", "RoyalJelly", "StarJelly", "BumbleBeeEgg", "BumbleBeeJelly", "RageBeeJelly", "ShockedBeeJelly"]
+		#Include "%A_ScriptDir%\..\lib\data\ItemArray.ahk"
 		UI := SubStr(command.content, StrLen(commandPrefix)+10) ; user input
 		if !(UI) {
 			command_buffer.RemoveAt(1)

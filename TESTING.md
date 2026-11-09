@@ -395,6 +395,25 @@ script replaying the search; what was never seen is the timing.
 - [ ] a dialog that never comes up leaves the slot alone and the status says
       `Retrying` - rests on the E prompt still showing at the planter `loads`
 
+### Roblox's new font - the community OCR fix
+
+Roblox changed its interface font in November 2026 and every image of text
+Natro searched for stopped matching. The fix, by @TheFallenYeeter, reads
+that text with Windows OCR instead. It needs an OCR language pack on each
+PC, English preferably. Everything below is `loads`: nothing has run in the
+game here.
+
+- [ ] the GUI offset found by reading "Pollen" in the top bar;
+      `tools\Set_GUI_Offset.ahk` sets it by hand if needed `loads`
+- [ ] the movespeed correction reads the Haste stack `loads`
+- [ ] Stat Monitor reads buffs and honey; the report keeps its official look
+      and credit `loads`
+- [ ] the Yes, No and Feed buttons, "Make Honey", the inventory and quest
+      objectives are found by OCR `loads`
+- [ ] the hive camera turn waits for the camera to stop, and accepts the
+      default direction after two turns instead of resetting again `loads`
+- [ ] `tools\OCR_Test.ahk` reports what OCR sees on a running game `loads`
+
 ### Guid hop
 
 Who sits in the main server, decided by `fleet_HopPlan` in

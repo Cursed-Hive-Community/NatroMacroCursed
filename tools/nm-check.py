@@ -29,7 +29,10 @@ import re
 import sys
 
 # braces inside upstream string literals, which are not ours to balance
-BASELINE = {"submacros/natro_macro.ahk": 4}
+# natro_macro.ahk is short of closing braces because some sit in strings and
+# comments: 4 upstream, 3 since the community OCR fix added a regex with
+# "down\}" in it to nm_createWalk
+BASELINE = {"submacros/natro_macro.ahk": 3}
 
 OWNED = (["submacros/natro_macro.ahk",
           "lib/Socket.ahk", "lib/FleetProtocol.ahk", "lib/FleetRoster.ahk",

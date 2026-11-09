@@ -193,7 +193,7 @@ nm_importPatterns()
 	if FileExist("settings\imported\patterns.ahk")
 		file := FileOpen("settings\imported\patterns.ahk", "r"), imported := file.Read(), file.Close()
 	else
-		imported := "", hashDefaults()
+		imported := ""
 
 	if FileExist("settings\imported\patternHashes.ahk")
 		getHashes()
@@ -8765,7 +8765,7 @@ nm_BitterberryFeeder(*)
 		{
 			Sleep 100
 			pBMScreen := Gdip_BitmapFromScreen(windowX+(54*windowWidth)//100-300 "|" windowY+offsetY+(46*windowHeight)//100-59 "|250|100")
-			if (Gdip_ImageSearch(pBMScreen, bitmaps["feed"], &pos, , , , , 2, , 2) = 1)
+			if (nm_OCRFindWord(pBMScreen, "Feed", &pos) = 1)
 			{
 				Gdip_DisposeImage(pBMScreen)
 				SendEvent "{Click " windowX+(54*windowWidth)//100-300+SubStr(pos, 1, InStr(pos, ",")-1)+140 " " windowY+offsetY+(46*windowHeight)//100-59+SubStr(pos, InStr(pos, ",")+1)+5 "}" ; Click Number
@@ -8847,7 +8847,7 @@ nm_BasicEggHatcher(*)
 	bitmaps["basicegg"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAAGIAAAAaCAMAAAB7CnmQAAABuVBMVEUbKjUdLDceLDceLTgfLjkgLzohMDoiMDsjMTwkMj0lND4nNUAoNkApOEIqOEMrOUMsOkQtO0UuPEYvPEYvPUcwPkgxP0kyQEkzQUo0QUs1Qkw2RE03RU44RU85Rk86SFE7SVI8SVNATVZEUVlGUltGU1xKVl9LV19MWWFPW2NQXGRRXWVVYWhWYWlXYmpXY2tdaXBeanFga3JhbHNibXRibnVjbnVkb3ZmcXhncnhoc3ppdHtqdXtsdn1td35ueX9veoBweoFzfYN0foR1f4V2gIZ3gYd4god6hIp+h42Ci5GFjpSGj5SIkZaJkpePl5yQmJ2VnaGWnqKZoaWaoqabo6ecpKidpamfp6qjq66mrbCnr7Kor7Ots7avtrmwt7m1vL63vcC+xMa/xcfAxsjBx8nCyMnDyMrEyszFy8zGzM3HzM7Izc/Jzs/Jz9DN0tPQ1dbR1tfS19jT2NjU2NnV2drV2tvW29zY3N3Z3d7a39/c4OHe4uLg5OTg5eXi5ubj5+fl6ejm6enm6uro7Ovp7ezq7e3r7u7r7+7s8O/t8fDu8fHv8vHw8/Lx9PPx9fTy9fTz9vX09/Y9aLFlAAACKklEQVR42u3Ta1MSUQDG8cfiVmZBUoqmBhVkRtj9JkmoSRGmlbZadiG6mXnpSmG6QWlqCDyfuNlYTu3sMsNM6zufV/9X5zc7Zw+46cMWUTvhg7KdoenNJgDbU1bZa9fxEvXzQt2zWgn4WGVTzs7/JSIkc+eBNGubIKJq1UZwHkiRfHm5xdI8mOW/yySTeTOIWeANmd4GZQdzJJOd9Q1d4wVyBJBJyv0t1v3nZoyJwu1DDncEkDStIZaCsK6QHDgQH+sGhsgndVAWrhDf2qHM8cKQCKM8SbSGUDdIkqt5stiGIHkS/uzHIW+6QtxA3f21lNOaoPa6ZaWfA+GFhR5AEm1A7HhLkp/ONmxvqkeAjMDzuMgSK8Q+nCY5vUQjIgbnL/IrIIk2IOCWyczecvvJd7sAT2K5QqwAd6pf9wl0Uz1WbS0RJbkcA0bIa2ifXf/QoRD8fNEKtM6pRBp4UJ3wo1c9VrSOYN6BAfIwxkge+UOQi3EbAjV9RRdOqceK1hPrdsSVw28JYoPkKPBTcxevFg2JCJqK6rFq64nvUWCK7IcrlbtrU4gJz/gPuQeODe0fZUkYEY+A69nMBUASbXTdvSS/iOuWG8t1U7yLNt27UBciS0G1JdE6wuIdLlAxrrjtR6+GYqQc99ldxyb593X3NVvdZ2ZoRHA13mFtvARIogVh6uaBh5o2nxgG5jRtOvF+N1oLmjabmNwDjGradOIe0Kdp84m1wERJ378B3+p4iisaatgAAAAASUVORK5CYII=")
 	bitmaps["royaljelly"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAAGwAAAAcCAMAAACzmqo+AAAB+FBMVEUbKjUcKzYdLDceLDceLTgfLjkgLzohMDoiMDsjMTwkMj0kMz0lND4mND8nNUAoNkApN0EpOEIqOEMrOUMsOkQtO0UuPEYvPEYvPUcwPkgyQEkzQUo0QUs1Qkw1Q0w3RU44RU85Rk86SFE7SVI8SVM+S1Q/TFVDUFlEUVlFUVpGUltGU1xIVV1KVl9LV19MWWFPW2NWYWlXYmpXY2tbZm5cZ29daG9daXBga3JibXRibnVlcHdpdHttd35weoFxe4FyfIJzfYN0foR1f4V2gIZ3gYd4god5goh6hIp7hYt8hot+h41/iI6Aio+BipCCi5GFjpSFjpOGj5SHkJWIkZaJkpeKk5iKk5eLlJmMlZqNlpqPl5yQmJ2QmZ2Rmp6Sm5+UnKCVnaGaoqabo6ecpKigp6ujq66kq6+lrLCor7Ots7avtrmwt7mxt7qyuLu1vL62vL+3vcC5wMK6wMO8wsS9w8W/xcfAxsjDyMrDycvEyszGzM3HzM7Jzs/K0NHL0NLN0tPO09TP1NXQ1dbR1tfS19jT2NjV2drV2tvW29zX3NzY3N3a39/b4ODc4OHd4eLe4uLf4+Pg5OTg5eXi5ubj5+fk6Ojm6enm6urn6+vo7Ovp7ezq7e3r7u7r7+7s8O/t8fDu8fHv8vHw8/Lx9fTy9fTz9vX09/a7z3nGAAACf0lEQVR42u3W+VOMcQDH8Y9KVkUUkXQqJEqH0OWokHLlzplyRSgJFZWjnEmOtqhWx77/TbNPzHeenbZtZk3GjPcPO7O73/m8dvZ5fnjEPKb/2L+IpcqTI+sBc6s9d2RuR8xBb0wKaWEuXZe+Y69Beul9ZPrVJ6Z1bvBf7eyYOVI7M7YHGMiROucLo0tqwmdtRfEL4/YN/insmfQC+FyW4EiqGIRT1nvr81LeBk//0c5ZMFd1UujaiiEbZlsx2NBOpQMD8fKU8pX3QaoEqJSeQlni0frt0knf2FSOPKW7bJhtReYGWfwEKFdks6txsY5AtmImYDJWGcDYBEwlKds3Vqfo5pGWKF2yYbYVgwV1A1NLdBo4qFVwU7oF96Q64HXB8pA1S5XpG9ugGqBamXbMrJhr1ig1Ax+kx1jfDeNapm1QqLBh6IuR1Raf2NgCTRdhx8yKwcajVAR0Sr1Ah/QK9iq43+lQMVCu5K4fvSm+sZ4B/W7ChpkVg7Fb4SPwUWoDmqxz7VJNvfQI2KR6IMMbw9kHcE3qH5XOznjrmxWDtUo3wB3965rFA6xXSqbSsJhzM2CTu8K2TgIlWuEmWXnAuB2zrRjMHa9s4LAi7rpuO6Z/5UVJugxQqpUPnVcWeWHsl3b0OOtCVAXHteDqWGtsXpsXZlYMxiEF9YMzTZ7SRwA+hUihXwDezXyDuApktXkURjfKU+Rzb8ysGKxbugAMVyU7Uo+NYpUvFYKlFa92ZJXkHrBjuBuyYxelnrCOD1cmhMYVv8EbMytits5L9wkks+IfS1eimwAyK/6xDukMgWRW/GMlCu4ngMyKf+xbuPIJJLPiH6uT7hBAZuVvPMr9BDBOM9MqS26gAAAAAElFTkSuQmCC")
 	bitmaps["giftedstar"] := Gdip_CreateBitmap(8,8), G := Gdip_GraphicsFromImage(bitmaps["giftedstar"]), Gdip_GraphicsClear(G,0xffffac33), Gdip_DeleteGraphics(G)
-	bitmaps["yes"] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAAB0AAAAPAQMAAAAiQ1bcAAAABlBMVEUAAAD3//lCqWtQAAAAAXRSTlMAQObYZgAAAFZJREFUeAEBSwC0/wDDAAfAAEIACGAAfgAQMAA8ABAQABgAIAgAGAAgCAAYACAYABgAP/gAGAAgAAAYAAAAABgAIAAAGAAwAAAYADAAABgAGDAAGAAP4FGfB+0KKAbEAAAAAElFTkSuQmCC")
+	bitmaps["yes"] := Gdip_CreateBitmapFromFile(A_ScriptDir ".\..\nm_image_assets\general\yes.png")
 	#Include "%A_ScriptDir%\nm_image_assets\offset\bitmaps.ahk"
 	common := Gdip_CreateBitmap(1,4), G := Gdip_GraphicsFromImage(common), Gdip_GraphicsClear(G,0xffae792f), Gdip_DeleteGraphics(G)
 	mythic := Gdip_CreateBitmap(2,2), G := Gdip_GraphicsFromImage(mythic), Gdip_GraphicsClear(G,0xffbda4ff), Gdip_DeleteGraphics(G)
@@ -8947,7 +8947,7 @@ nm_BasicEggHatcher(*)
 	}
 	YesButton(){
 		pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-		if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1)
+		if (nm_OCRFindWord(pBMScreen, "Yes", &pos) = 1)
 		{
 			Gdip_DisposeImage(pBMScreen)
 			SendEvent "{Click " windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1) " " windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1) "}"
@@ -10591,6 +10591,7 @@ nm_testButton(*){
 		nm_CameraRotation(Dir, count) {
 			Static LR := 0, UD := 0, init := OnExit((*) => send("{" Rot%(LR > 0 ? "Left" : "Right")% " " Mod(Abs(LR), 8) "}{" Rot%(UD > 0 ? "Up" : "Down")% " " Abs(UD) "}"), -1)
 			send "{" Rot%Dir% " " count "}"
+			nm_WaitCameraStill()
 			Switch Dir,0 {
 				Case "Left": LR -= count
 				Case "Right": LR += count
@@ -11544,8 +11545,15 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 {
 	global resetTime, youDied, KeyDelay, SC_E, SC_Esc, SC_R, SC_Enter, RotRight, RotLeft, RotUp, RotDown, ZoomOut, objective, AFBrollingDice, AFBuseGlitter, AFBuseBooster, currentField, HiveConfirmed, GameFrozenCounter, bitmaps
 	static hivedown := 0
+	static UIElements := Map("YesNoPrompt", {pBM: "yes",  ToClose: "no", SpamClick: False}
+		, "FeedWindow", {pBM: "feed", ToClose: "CancelFeed", SpamClick: False}
+		, "BlenderGUI", {pBM: "CloseGUI", ToClose: "CloseGUI", SpamClick: False}
+		, "ShopWindow", {pBM: "ShopArrowR", ToClose: "e_button", SpamClick: False}
+		, "QuestDialog", {pBM: "dialog", ToClose: "dialog", SpamClick: True}
+		, "Blender", {pBM: "CloseGUI", ToClose: "CloseGUI", SpamClick: False}
+		, "Close", {pBM: "close", ToClose: "close", SpamClick: False})
 
-	; Game frozen conditions - 3 strikes	
+	; Game frozen conditions - 3 strikes
 	if GameFrozenCounter >= 3
 	{
 		nm_setStatus("Detected", "Roblox Game Frozen, Restarting")
@@ -11567,7 +11575,6 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 	youDied := 0
 	nm_AutoFieldBoost(currentField)
 
-	; Will interrupt any reset not marked with the checkAll flag. Added to avoid infinite recursion
 	if CheckAll = 1
 	{
 		nm_fieldBoostBooster()
@@ -11608,8 +11615,38 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		offsetY := GetYOffset(hwnd)
 		GetRobloxClientPos(hwnd)
 
-		ClearResidualPrompts()
 
+		; Here we check for all UI elements which can still be here from other tasks/lag.
+
+		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
+
+		; Yes/No prompt and Feed window: their bitmaps are text from the old Roblox font, so read the middle of the screen with OCR
+		mx := Max(0, windowWidth//2 - 350), my := Max(0, windowHeight//2 - 250)
+		pBMMid := Gdip_CloneBitmapArea(pBMScreen, mx, my, Min(700, windowWidth - mx), Min(500, windowHeight - my))
+
+		for k, v in UIElements
+		{
+			if (k = "YesNoPrompt")
+				found := nm_OCRFindWord(pBMMid, "Yes") && nm_OCRFindWord(pBMMid, "No", &Pos) && (Pos := (StrSplit(Pos, ",")[1] + mx) "," (StrSplit(Pos, ",")[2] + my))
+			else if (k = "FeedWindow")
+				found := nm_OCRFindWord(pBMMid, "Feed") && Gdip_ImageSearch(pBMScreen, bitmaps[v.ToClose], &Pos)
+			else
+				found := Gdip_ImageSearch(pBMScreen, bitmaps[v.pBM]) && Gdip_ImageSearch(pBMScreen, bitmaps[v.ToClose], &Pos)
+			if found
+			{
+				pos := StrSplit(Pos, ",")
+				MouseMove(windowX + pos[1], windowY + pos[2])
+				Sleep(30)
+
+				if v.SpamClick
+					Loop 50
+						Click()
+				else
+					Click()
+			}
+		}
+
+		Gdip_DisposeImage(pBMMid), Gdip_DisposeImage(pBMScreen)
 		nm_SolveMemoryMatch() ; if theres a mem match open solve it before continuing
 
 		nm_setStatus("Resetting", "Character " A_Index)
@@ -11635,11 +11672,16 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 		; 		break
 		; }
 		
-		if nm_ConfirmAtHive() && nm_SetHiveCameraDirection() > 0
+		if nm_ConfirmAtHive()
 		{
-			HiveConfirmed := 1
-			break
+			if (nm_SetHiveCameraDirection() > 0)
+			{
+				HiveConfirmed := 1
+				break
+			}
 		}
+		else
+			nm_setStatus("Warning", "Hive prompt not found after reset " A_Index " (see tools\OCR_debug\hive_fail.png)")
 
 		; Dully's Hivecheck for if we spawn at baseplate
 
@@ -11663,6 +11705,7 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 	if ((convert = 1) && !ext_stickerStackInterrupt(1, 0))
 		nm_convert()
 
+	; add back wait here my fault
 	if ((nowUnix() - resetTime) < wait)
 	{
 		remaining := Floor((wait-(nowUnix()-resetTime))/1000) ;seconds
@@ -11679,43 +11722,6 @@ nm_Reset(checkAll := 1, wait:=2000, convert := 1, force := 0)
 
 	return hiveconfirmed
 }
-
-ClearResidualPrompts()
-{
-	; Function to check for all UI elements which can still be here from other tasks/lag 
-	; when they can impede the regular macro operations.
-	static UIElements := [
-		{checkBitmap: bitmaps["yes"], closeBitmap: bitmaps["no"], spamClick: false},
-		{checkBitmap: bitmaps["feed"], closeBitmap: bitmaps["CancelFeed"], spamClick: false},
-		{checkBitmap: bitmaps["CloseGUI"], closeBitmap: bitmaps["CloseGUI"], spamClick: false},
-		{checkBitmap: bitmaps["ShopArrowR"], closeBitmap: bitmaps["e_button"], spamClick: false},
-		{checkBitmap: bitmaps["dialog"], closeBitmap: bitmaps["dialog"], spamClick: true},
-		{checkBitmap: bitmaps["CloseGUI"], closeBitmap: bitmaps["CloseGUI"], spamClick: false},
-		{checkBitmap: bitmaps["close"], closeBitmap: bitmaps["close"], spamClick: false}
-	]
-
-	pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY "|" windowWidth "|" windowHeight)
-	for k in UIElements
-	{
-		if !Gdip_ImageSearch(pBMScreen, k.checkBitmap)
-			continue
-
-		if Gdip_ImageSearch(pBMScreen, k.closeBitmap, &Pos)
-		{
-			pos := StrSplit(Pos, ",")
-			MouseMove(windowX + pos[1], windowY + pos[2])
-			Sleep(30)
-
-			if k.spamClick
-				Loop 50
-					Click()
-			else
-				Click()
-		}
-	}
-	Gdip_DisposeImage(pBMScreen)
-}
-
 isHoneycomb(h, s, v)
 {
     ; h = 0-360
@@ -11758,11 +11764,21 @@ nm_HealthBar()
     return grey > 20
 }
 nm_ConfirmAtHive(){
+	; offsetY was never set in this function (an unset variable, silenced by #Warn VarUnset Off and the
+	; error handler), so the check area ignored the GUI offset and the window's position: it only lined up
+	; for fullscreen Roblox with offset 0, and missed the prompt for everyone else -> endless resets
+	GetRobloxClientPos(), offsetY := GetYOffset()
 	pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY "|400|125")
-	if ((Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , , , 2, , 2) = 1) || (Gdip_ImageSearch(pBMScreen, bitmaps["colhey"], , , , , , 2, , 2) = 1)){
+	; the prompt bitmaps are text from the old Roblox font, so OCR the prompt too ("Make Honey", "Collect Honey"...)
+	if ((Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , , , 2, , 2) = 1) || (Gdip_ImageSearch(pBMScreen, bitmaps["colhey"], , , , , , 2, , 2) = 1)
+		|| nm_OCRFindPhrase(pBMScreen, ["makehoney", "collecthoney", "makinghoney", "collectpollen"], 2)){
 		Gdip_DisposeImage(pBMScreen)
 		return 1
 	}
+	; keep a snapshot of what was checked (at most once a minute) for diagnosing reset loops
+	static lastDump := 0
+	if (A_TickCount - lastDump > 60000)
+		lastDump := A_TickCount, nm_OCR_SaveDebug(pBMScreen, 0, "hive_fail")
 	Gdip_DisposeImage(pBMScreen)
 	return 0
 }
@@ -11836,43 +11852,100 @@ nm_spawnMoveTo(moves) {
     }
     return script
 }
-nm_SetHiveCameraDirection() {
-    global HiveConfirmed, RotRight, ZoomOut
+nm_SetHiveCameraDirection(){
+    global HiveConfirmed
 
-    ; Check current direction, expected direction, then 16 rotations.
-    loop 18
+	; Turns the camera until the honeycomb is in front of it, then turns it to the walking direction.
+	; Every check and the final turn wait for the camera to stop moving first: Roblox animates each turn, so
+	; checking or walking straight after a key press reads/uses a camera that is still part-way through turning.
+
+	GetRobloxClientPos()
+
+	Send "{" RotRight " 4}"
+	WaitCameraStill(250, 2500)
+	if HoneycombInView()
 	{
-        if A_Index = 2
-		{
-            Send "{" RotRight " 4}"
-            Sleep 150
-        }
-		else if A_Index > 2
-		{
-            Send "{" RotRight "}"
-            Sleep 125
-        }
+		ResetCampos()
+		return 1
+	}
 
-        if CheckHoneycomb() > 0
+    loop 16 ; allow 2 full rots before exit
+    {
+		Send "{" RotRight "}"
+		WaitCameraStill(120, 1200)
+		if HoneycombInView()
 		{
-            HiveConfirmed := 1
-            break
-        }
+			ResetCampos()
+			HiveConfirmed := 1
+			return 1
+		}
     }
+	; Honeycomb never recognised (hive skins, night lighting...). We are at the hive (the prompt was found),
+	; and after 20 single turns the camera faces the hive again, so the usual final turn restores the standard
+	; post-reset camera direction. Accept that instead of resetting again and again.
+	nm_setStatus("Warning", "Hive not recognised by camera, using default direction")
+	ResetCampos()
+	HiveConfirmed := 1
+	return 1
 
-    SendInput "{" RotRight " 4}"
-    SendInput "{" ZoomOut " 5}"
+	ResetCampos()
+	{
+		Send "{" RotRight " 4}" ; Send (not SendInput) so the key delay applies and every press registers
+		Send "{" ZoomOut " 5}"
+		WaitCameraStill(300, 3000) ; don't hand back to walking until the turn has finished
+	}
 
-    return HiveConfirmed
+	; checked only after WaitCameraStill, so a frame caught mid-turn can't confirm it
+	HoneycombInView()
+	{
+		GetRobloxClientPos()
+		return (CheckHoneycomb() > 0)
+	}
+
+    CheckHoneycomb()
+	{
+		pBM := Gdip_BitmapFromScreen((windowX + (windowWidth - windowHeight//4)//2) "|" (windowY + windowHeight*5//8) "|" (windowHeight//4) "|" (windowHeight//4))
+
+		Avg := AverageColorFromImage(pBM)
+		Gdip_DisposeImage(pBM)
+		HSV := ARGBToHSV(Avg)
+		return isHoneycomb(HSV.h, HSV.s, HSV.v)
+	}
+
+	; waits until two frames in a row look the same (camera stopped turning), or until timeout ms
+	WaitCameraStill(minWait := 150, timeout := 2000)
+	{
+		Sleep minWait
+		start := A_TickCount, prev := 0, still := 0
+		while (A_TickCount - start < timeout)
+		{
+			GetRobloxClientPos()
+			if (windowWidth < 100 || windowHeight < 100)
+				return
+			pBM := Gdip_BitmapFromScreen(windowX + windowWidth//4 "|" windowY + windowHeight//4 "|" windowWidth//2 "|" windowHeight//2)
+			pSmall := Gdip_ResizeBitmap(pBM, 8, 8, 6)
+			Gdip_DisposeImage(pBM)
+			if !pSmall
+				return
+			cur := []
+			Loop 64
+				cur.Push(Gdip_GetPixel(pSmall, Mod(A_Index - 1, 8), (A_Index - 1)//8))
+			Gdip_DisposeImage(pSmall)
+			if prev {
+				diff := 0
+				for i, c in cur
+					diff += Abs(((c >> 16) & 255) - ((prev[i] >> 16) & 255)) + Abs(((c >> 8) & 255) - ((prev[i] >> 8) & 255)) + Abs((c & 255) - (prev[i] & 255))
+				; bees flying around barely move an 8x8 average; a turning camera moves it a lot
+				still := (diff / 64 < 12) ? still + 1 : 0
+				if (still >= 2)
+					return
+			}
+			prev := cur
+			Sleep 60
+		}
+	}
 }
-CheckHoneycomb()
-{
-	pBM := Gdip_BitmapFromScreen((windowX + (windowWidth - windowHeight//4)//2) "|" (windowY + windowHeight*5//8) "|" (windowHeight//4) "|" (windowHeight//4))
-	Avg := AverageColorFromImage(pBM)
-	Gdip_DisposeImage(pBM)
-	HSV := ARGBToHSV(Avg)
-	return isHoneycomb(HSV.h, HSV.s, HSV.v)
-}
+
 nm_setShiftLock(state, *){
 	global bitmaps, SC_LShift, ShiftLockEnabled
 
@@ -11917,7 +11990,7 @@ nm_AmuletPrompt(decision:=0, type:=0, *){
 	Prev_ShiftLock := ShiftLockEnabled
 	nm_setShiftLock(0)
 
-	GetRobloxClientPos()
+	GetRobloxClientPos(), offsetY := GetYOffset()
 	if (windowWidth = 0)
 		return 2
 	else
@@ -11955,7 +12028,7 @@ nm_AmuletPrompt(decision:=0, type:=0, *){
 			Loop 25
 			{
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY "|500|" windowHeight)
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1)
+				if (nm_OCRFindWord(pBMScreen, "Yes", &pos) = 1)
 				{
 					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+SubStr(pos, InStr(pos, ",")+1), 5
 					Click
@@ -11989,7 +12062,7 @@ nm_AmuletPrompt(decision:=0, type:=0, *){
 }
 nm_FindItem(chosenItem, *) {
 	global shiftLockEnabled, bitmaps
-	static items := ["Cog", "Ticket", "SprinklerBuilder", "BeequipCase", "Gumdrops", "Coconut", "Stinger", "Snowflake", "MicroConverter", "Honeysuckle", "Whirligig", "FieldDice", "SmoothDice", "LoadedDice", "JellyBeans", "RedExtract", "BlueExtract", "Glitter", "Glue", "Oil", "Enzymes", "TropicalDrink", "PurplePotion", "SuperSmoothie", "MarshmallowBee", "Sprout", "MagicBean", "FestiveBean", "CloudVial", "NightBell", "BoxOFrogs", "AntPass", "BrokenDrive", "7ProngedCog", "RoboPass", "Translator", "SpiritPetal", "Present", "Treat", "StarTreat", "AtomicTreat", "SunflowerSeed", "Strawberry", "Pineapple", "Blueberry", "Bitterberry", "Neonberry", "MoonCharm", "GingerbreadBear", "AgedGingerbreadBear", "WhiteDrive", "RedDrive", "BlueDrive", "GlitchedDrive", "ComfortingVial", "InvigoratingVial", "MotivatingVial", "RefreshingVial", "SatisfyingVial", "PinkBalloon", "RedBalloon", "WhiteBalloon", "BlackBalloon", "SoftWax", "HardWax", "CausticWax", "SwirledWax", "Turpentine", "PaperPlanter", "TicketPlanter", "FestivePlanter", "PlasticPlanter", "CandyPlanter", "RedClayPlanter", "BlueClayPlanter", "TackyPlanter", "PesticidePlanter", "HeatTreatedPlanter", "HydroponicPlanter", "PetalPlanter", "ThePlanterOfPlenty", "BasicEgg", "SilverEgg", "GoldEgg", "DiamondEgg", "MythicEgg", "StarEgg", "GiftedSilverEgg", "GiftedGoldEgg", "GiftedDiamondEgg", "GiftedMythicEgg", "RoyalJelly", "StarJelly", "BumbleBeeEgg", "BumbleBeeJelly", "RageBeeJelly", "ShockedBeeJelly"]
+	#Include "%A_ScriptDir%\..\lib\data\ItemArray.ahk"
 	GetRobloxClientPos()
 	DetectHiddenWindows 1
 	if windowWidth == 0 {
@@ -12008,6 +12081,35 @@ nm_FindItem(chosenItem, *) {
 		DetectHiddenWindows 0
 		nm_setShiftLock(Prev_ShiftLock)
 		return 0
+	}
+	; find the item by its name with OCR (nm_InventorySearch); the old icon search below is the fallback
+	if (pos := nm_InventorySearch(items[chosenItem])) {
+		; pos[2] is the top of the item's name + 190, measured from windowY+yOffset+150; the picture starts
+		; just above the row and is 97 px tall. If the row is cut off at the bottom of the window (the amount
+		; is shown at the bottom of the row), scroll down a notch at a time until the whole row is visible
+		hwnd := GetRobloxHWND(), nameY := pos[2] - 190
+		Loop 6
+		{
+			GetRobloxClientPos(hwnd)
+			if (windowY + yOffset + 150 + nameY - 12 + 97 <= windowY + windowHeight - 50)
+				break
+			SendEvent "{Click " windowX+30 " " windowY+yOffset+200 " 0}"
+			SendInput "{WheelDown}"
+			Sleep 500 ; let the list finish scrolling
+			if ((y := nm_InventoryLocate(items[chosenItem], hwnd, yOffset)) = "")
+				break
+			nameY := y
+		}
+		GetRobloxClientPos(hwnd)
+		nm_InventoryMouseAway()
+		Sleep 300 ; make sure the row has finished drawing (name and amount) before the picture is taken
+		if WinExist("Status.ahk ahk_class AutoHotkey")
+			SendMessage(0x5559, windowY + yOffset + 150 + nameY - 12, , , , , , , 2000)
+		sleep 1000
+		DetectHiddenWindows 0
+		nm_OpenMenu()
+		nm_setShiftLock(Prev_ShiftLock)
+		return
 	}
 	MouseMove windowX+46, windowY+yOffset+219
 	Loop 60 {
@@ -13771,7 +13873,7 @@ nm_StickerPrinter(){
 				loop 16 {
 					sleep 250
 					pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-					if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1) {
+					if (nm_OCRFindWord(pBMScreen, "Yes", &pos) = 1) {
 						MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1)-50, windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
 						sleep 150
 						Click
@@ -13835,32 +13937,22 @@ nm_StickerStack(resetBeforeTravel := 1){
 				sendinput "{" SC_E " up}"
 				sleep 500 ;//todo: wait for GUI with timeout instead of fixed time
 
-				; detect stack boost time
+				; detect stack boost time (OCR reads the mm:ss in the "Your Stack Boost" panel; retried in case the menu is still opening)
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-275 "|" windowY+4*windowHeight//10 "|550|220")
-				Loop 1 {
-					if (Gdip_ImageSearch(pBMScreen, bitmaps["stickerstackdigits"][")"], &pos, 275, , , 45, 20) = 1) {
-						x := SubStr(pos, 1, InStr(pos, ",")-1)
-						(digits := Map()).Default := ""
-						Loop 10 {
-							n := 10-A_Index
-							Gdip_ImageSearch(pBMScreen, bitmaps["stickerstackdigits"][n], &pos, x, , , 45, 20, , , 4, , "`n")
-							Loop Parse pos, "`n"
-								if (A_Index & 1)
-									digits[Integer(A_LoopField)] := n
-						}
-
-						num := ""
-						for x,y in digits
-							num .= y
-
-						if ((StrLen(num) = 4) && (SubStr(num, 4) = "0")) { ; check valid time before updating
-							nm_setStatus("Detected", "Stack Boost Time: " hmsFromSeconds(time := 60 * SubStr(num, 1, 2) + SubStr(num, 3)))
-							if (StickerStackMode = 0)
-								StickerStackTimer := time
-							break
-						}
+				Loop 3 {
+					if ((time := nm_OCRReadTime(pBMScreen, 275, "stickerstack_fail")) != "") {
+						nm_setStatus("Detected", "Stack Boost Time: " hmsFromSeconds(time))
+						if (StickerStackMode = 0)
+							StickerStackTimer := time
+						break
 					}
-					nm_setStatus("Error", "Unable to detect Stack Boost time!")
+					if (A_Index = 3) {
+						nm_setStatus("Error", "Unable to detect Stack Boost time!")
+						break
+					}
+					Sleep 400
+					Gdip_DisposeImage(pBMScreen)
+					pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-275 "|" windowY+4*windowHeight//10 "|550|220")
 				}
 
 				; check if sticker is available to donate
@@ -13893,7 +13985,7 @@ nm_StickerStack(resetBeforeTravel := 1){
 				loop 16 {
 					sleep 250
 					pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-					if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1) {
+					if (nm_OCRFindWord(pBMScreen, "Yes", &pos) = 1) {
 						MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1)-50, windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
 						sleep 150
 						Click
@@ -17554,6 +17646,7 @@ nm_gather(pattern, index, patternsize:="M", reps:=1, facingcorner:=0){
 			nm_CameraRotation(Dir, count) {
 				Static LR := 0, UD := 0, init := OnExit((*) => send("{" Rot%(LR > 0 ? "Left" : "Right")% " " Mod(Abs(LR), 8) "}{" Rot%(UD > 0 ? "Up" : "Down")% " " Abs(UD) "}"), -1)
 				send "{" Rot%Dir% " " count "}"
+			nm_WaitCameraStill()
 				Switch Dir,0 {
 					Case "Left": LR -= count
 					Case "Right": LR += count
@@ -17618,6 +17711,11 @@ nm_createWalk(movement, name:="", vars:="") ; this function generates the 'walk'
 
 	if WinExist("ahk_pid " currentWalk.pid " ahk_class AutoHotkey")
 		nm_endWalk()
+
+	; Roblox animates camera turns, so walking straight after a turn key goes in the wrong direction until the
+	; turn finishes. After every line that turns the camera, wait until the camera has stopped moving
+	; (a line that also holds a movement key down, e.g. "{RotRight 3}{w down}", moves on purpose and is left alone)
+	movement := RegExReplace(movement, 'im)^(?![^\r\n]*Key " down\})([ \t]*send[ \t]*\(?[ \t]*"[^\r\n]*\bRot(?:Left|Right|Up|Down)\b[^\r\n]*?)[ \t]*\r?$', "$1`r`nnm_WaitCameraStill()")
 
 	script :=
 	(
@@ -17803,7 +17901,7 @@ nm_convert(forceBalloonConvert := 0){
 		Gdip_DisposeImage(pBMScreen)
 		return
 	}
-	if (Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , , , 2, , 2) = 1) {
+	if ((Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , , , 2, , 2) = 1) || nm_OCRMakeHoney(pBMScreen)) {
 		SendInput "{" SC_E " down}"
 		Sleep 100
 		SendInput "{" SC_E " up}"
@@ -17839,7 +17937,7 @@ nm_convert(forceBalloonConvert := 0){
 			}
 			GetRobloxClientPos(hwnd)
 			pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY+36 "|" windowWidth//2+200 "|" windowHeight-offsetY-36)
-			if (Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , 400, 120, 2, , 2) = 1) {
+			if ((Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , 400, 120, 2, , 2) = 1) || nm_OCRMakeHoney(pBMScreen)) {
 				SendInput "{" SC_E " down}"
 				Sleep 100
 				SendInput "{" SC_E " up}"
@@ -17925,7 +18023,7 @@ nm_convert(forceBalloonConvert := 0){
 					click
 				}
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-200 "|" windowY+offsetY+36 "|" windowWidth//2+200 "|" windowHeight-offsetY-36)
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , 400, 120, 2, , 2) = 1) {
+				if ((Gdip_ImageSearch(pBMScreen, bitmaps["makehoney"], , , , 400, 120, 2, , 2) = 1) || nm_OCRMakeHoney(pBMScreen)) {
 					SendInput "{" SC_E " down}"
 					Sleep 100
 					SendInput "{" SC_E " up}"
@@ -19572,9 +19670,22 @@ nm_PolarQuestProg(){
 
 	hwnd := GetRobloxHWND()
 	offsetY := GetYOffset(hwnd)
+	; the quest log images are text from the old Roblox font, so also look for the quest with OCR:
+	; "Polar Bear" or any Polar Bear quest title
+	polarNames := ["Polar Bear"]
+	for k in PolarBear
+		polarNames.Push(k)
 	;search for polar quest
 	Loop 70
 	{
+		GetRobloxClientPos(hwnd)
+		if (ocrFound := nm_OCRMatchNames(polarNames, 0, 150, 310, Max(560, windowHeight-100) - 150, windowX, windowY)) {
+			Qfound := [0, ocrFound[2], ocrFound[3]]
+			if (A_Index > 1)
+				Gdip_DisposeImage(pBMLog)
+			break
+		}
+
 		Qfound:=nm_imgSearch("polar_bear.png",50,"quest")
 		if (Qfound[1]=0) {
 			if (A_Index > 1)
@@ -19649,17 +19760,24 @@ nm_PolarQuestProg(){
 			MsgBox "Folder location cannot be found:`n" A_WorkingDir "\nm_image_assets\"
 		}
 		PolarStart:=(result = 1) ? [0, FoundX-windowX, FoundY-windowY] : [1, 0, 0]
-		;determine Quest name
+		;determine Quest name (OCR first, quest name images as a fallback)
+		ocrName := nm_OCRMatchNames(polarNames, 0, PolarStart[3]-30, 306, 30, windowX, windowY)
+		ocrKey := (ocrName && ocrName[1] > 1) ? polarNames[ocrName[1]] : ""
 		xi := windowX
 		yi := windowY+PolarStart[3]-30
 		ww := windowX+306
 		wh := windowY+PolarStart[3]
 		for key, value in PolarBear {
 			filename:=(key . ".png")
-			try
-				result := ImageSearch(&FoundX, &FoundY, xi, yi, ww, wh, "*10 nm_image_assets\" fileName)
-			catch
-				result := 0
+			if (ocrKey != "")
+				result := (key = ocrKey)
+			else
+			{
+				try
+					result := ImageSearch(&FoundX, &FoundY, xi, yi, ww, wh, "*10 nm_image_assets\" fileName)
+				catch
+					result := 0
+			}
 			if(result = 1) {
 				PolarQuest:=key
 				questSteps:=PolarBear[key].Length
@@ -19800,9 +19918,22 @@ nm_RileyQuestProg(){
 
 	hwnd := GetRobloxHWND()
 	offsetY := GetYOffset(hwnd)
+	; the quest log images are text from the old Roblox font, so also look for the quest with OCR:
+	; "Riley Bee" or any of its quest titles
+	ocrNames := ["Riley Bee"]
+	for k in RileyBee
+		ocrNames.Push(k)
 	;search for riley quest
 	Loop 70
 	{
+		GetRobloxClientPos(hwnd)
+		if (ocrFound := nm_OCRMatchNames(ocrNames, 0, 150, 310, Max(560, windowHeight-100) - 150, windowX, windowY)) {
+			Qfound := [0, ocrFound[2], ocrFound[3]]
+			if (A_Index > 1)
+				Gdip_DisposeImage(pBMLog)
+			break
+		}
+
 		Qfound:=nm_imgSearch("riley.png",50,"quest")
 		if (Qfound[1]=0) {
 			if (A_Index > 1)
@@ -19870,17 +20001,24 @@ nm_RileyQuestProg(){
 			MsgBox "Folder location cannot be found:`n" A_WorkingDir "\nm_image_assets\"
 		}
 		RileyStart:=(result = 1) ? [0, FoundX-windowX, FoundY-windowY] : [1, 0, 0]
-		;determine Quest name
+		;determine Quest name (OCR first, quest name images as a fallback)
+		ocrName := nm_OCRMatchNames(ocrNames, 0, RileyStart[3]-30, 306, 30, windowX, windowY)
+		ocrKey := (ocrName && ocrName[1] > 1) ? ocrNames[ocrName[1]] : ""
 		xi := windowX
 		yi := windowY+RileyStart[3]-30
 		ww := windowX+306
 		wh := windowY+RileyStart[3]
 		for key, value in RileyBee {
 			filename:=(key . ".png")
-			try
-				result := ImageSearch(&FoundX, &FoundY, xi, yi, ww, wh, "*100 nm_image_assets\" fileName)
-			catch
-				result := 0
+			if (ocrKey != "")
+				result := (key = ocrKey)
+			else
+			{
+				try
+					result := ImageSearch(&FoundX, &FoundY, xi, yi, ww, wh, "*100 nm_image_assets\" fileName)
+				catch
+					result := 0
+			}
 			if(result = 1) {
 				RileyQuest:=key
 				questSteps:=RileyBee[key].Length
@@ -20076,9 +20214,22 @@ nm_BuckoQuestProg(){
 
 	hwnd := GetRobloxHWND()
 	offsetY := GetYOffset(hwnd)
+	; the quest log images are text from the old Roblox font, so also look for the quest with OCR:
+	; "Bucko Bee" or any of its quest titles
+	ocrNames := ["Bucko Bee"]
+	for k in BuckoBee
+		ocrNames.Push(k)
 	;search for bucko quest
 	Loop 70
 	{
+		GetRobloxClientPos(hwnd)
+		if (ocrFound := nm_OCRMatchNames(ocrNames, 0, 150, 310, Max(560, windowHeight-100) - 150, windowX, windowY)) {
+			Qfound := [0, ocrFound[2], ocrFound[3]]
+			if (A_Index > 1)
+				Gdip_DisposeImage(pBMLog)
+			break
+		}
+
 		Qfound:=nm_imgSearch("bucko.png",50,"quest")
 		if (Qfound[1]=0) {
 			if (A_Index > 1)
@@ -20146,17 +20297,24 @@ nm_BuckoQuestProg(){
 			MsgBox "Folder location cannot be found:`n" A_WorkingDir "\nm_image_assets\"
 		}
 		BuckoStart:=(result = 1) ? [0, FoundX-windowX, FoundY-windowY] : [1, 0, 0]
-		;determine Quest name
+		;determine Quest name (OCR first, quest name images as a fallback)
+		ocrName := nm_OCRMatchNames(ocrNames, 0, BuckoStart[3]-30, 306, 30, windowX, windowY)
+		ocrKey := (ocrName && ocrName[1] > 1) ? ocrNames[ocrName[1]] : ""
 		xi := windowX
 		yi := windowY+BuckoStart[3]-30
 		ww := windowX+306
 		wh := windowY+BuckoStart[3]
 		for key, value in BuckoBee {
 			filename:=(key . ".png")
-			try
-				result := ImageSearch(&FoundX, &FoundY, xi, yi, ww, wh, "*100 nm_image_assets\" fileName)
-			catch
-				result := 0
+			if (ocrKey != "")
+				result := (key = ocrKey)
+			else
+			{
+				try
+					result := ImageSearch(&FoundX, &FoundY, xi, yi, ww, wh, "*100 nm_image_assets\" fileName)
+				catch
+					result := 0
+			}
 			if(result = 1) {
 				BuckoQuest:=key
 				questSteps:=BuckoBee[key].Length
@@ -20348,9 +20506,22 @@ nm_BlackQuestProg(){
 
 	hwnd := GetRobloxHWND()
 	offsetY := GetYOffset(hwnd)
+	; the quest log images are text from the old Roblox font, so also look for the quest with OCR:
+	; "Black Bear" or any of its quest titles
+	ocrNames := ["Black Bear"]
+	for k in BlackBear
+		ocrNames.Push(k)
 	;search for black quest
 	Loop 70
 	{
+		GetRobloxClientPos(hwnd)
+		if (ocrFound := nm_OCRMatchNames(ocrNames, 0, 150, 310, Max(560, windowHeight-100) - 150, windowX, windowY)) {
+			Qfound := [0, ocrFound[2], ocrFound[3]]
+			if (A_Index > 1)
+				Gdip_DisposeImage(pBMLog)
+			break
+		}
+
 		Qfound:=nm_imgSearch("black_bear.png",50,"quest")
 		if (Qfound[1]=0) {
 			if (A_Index > 1)
@@ -20446,17 +20617,24 @@ nm_BlackQuestProg(){
 			MsgBox "Folder location cannot be found:`n" A_WorkingDir "\nm_image_assets\"
 		}
 		BlackStart:=(result = 1) ? [0, FoundX-windowX, FoundY-windowY] : [1, 0, 0]
-		;determine Quest name
+		;determine Quest name (OCR first, quest name images as a fallback)
+		ocrName := nm_OCRMatchNames(ocrNames, 0, BlackStart[3]-30, 306, 30, windowX, windowY)
+		ocrKey := (ocrName && ocrName[1] > 1) ? ocrNames[ocrName[1]] : ""
 		xi := windowX
 		yi := windowY+BlackStart[3]-30
 		ww := windowX+306
 		wh := windowY+BlackStart[3]
 		for key, value in BlackBear {
 			filename:=(key . ".png")
-			try
-				result := ImageSearch(&FoundX, &FoundY, xi, yi, ww, wh, "*100 nm_image_assets\" fileName)
-			catch
-				result := 0
+			if (ocrKey != "")
+				result := (key = ocrKey)
+			else
+			{
+				try
+					result := ImageSearch(&FoundX, &FoundY, xi, yi, ww, wh, "*100 nm_image_assets\" fileName)
+				catch
+					result := 0
+			}
 			if(result = 1) {
 				BlackQuest:=key
 				questSteps:=BlackBear[key].Length
@@ -20612,7 +20790,15 @@ nm_BrownQuestProg(){
 			i := A_Index
 			Loop 70
 			{
-				n := A_Index				
+				n := A_Index
+				; OCR first ("Brown Bear"); the title images are text from the old Roblox font
+				GetRobloxClientPos(hwnd)
+				if (ocrFound := nm_OCRMatchNames(["Brown Bear"], 0, (aim[i] = "quest") ? 150 : 0, 310, (aim[i] = "quest") ? Max(560, windowHeight-100) - 150 : windowHeight//2, windowX, windowY)) {
+					Qfound := [0, ocrFound[2], ocrFound[3]]
+					if (n > 1)
+						Gdip_DisposeImage(pBMLog)
+					break 2
+				}
 				loop 5 
 				{
 					Qfound:=nm_imgSearch("brown_bear" A_Index ".png",50,aim[i])
@@ -20694,6 +20880,13 @@ nm_BrownQuestProg(){
 				pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+BrownStart[3]+QuestBarGapSize+objectivePos "|304|" QuestBarSize-QuestBarGapSize)
 
 				if (Gdip_ImageSearch(pBMScreen, bitmaps["questbarinset"], , , , 6, , 5) = 1) {
+					; objective read with OCR (the objective images are text from the old Roblox font); the images
+					; below are only used if OCR reads nothing at all
+					if ((ocrObj := nm_OCRQuestObjective(pBMScreen, objectiveList, objectives)) != "") {
+						objectives.Push(ocrObj)
+						Gdip_DisposeImage(pBMScreen)
+						continue
+					}
 					for size in [16,15,14,18,17] { ; in approximate order of probability
 						if (Gdip_ImageSearch(pBMScreen, bitmaps["s" size "collect"], , 6, , , , 30) = 1) {
 							objectiveSize := size
@@ -20855,46 +21048,32 @@ nm_Feed(food){
 	Loop 10
 	{
 		GetRobloxClientPos(hwnd)
-		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" (54*windowWidth)//100-50 "|" Max(480, windowHeight-offsetY-150))
-
 		if (A_Index = 1)
 		{
-			; wait for red vignette effect to disappear
-			Loop 40
+			; wait for the item menu to draw (OCR, replaces the old bitmaps["item"] check)
+			if !nm_InventoryWaitReady(hwnd, offsetY)
 			{
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["item"], , , , 6, , 2) = 1)
-					break
-				else
-				{
-					if (A_Index = 40)
-					{
-						Gdip_DisposeImage(pBMScreen)
-						nm_setStatus("Missing", food)
-						return 0
-					}
-					else
-					{
-						Sleep 50
-						Gdip_DisposeImage(pBMScreen)
-						pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" (54*windowWidth)//100-50 "|" Max(480, windowHeight-offsetY-150))
-					}
-				}
+				nm_setStatus("Missing", food)
+				return 0
 			}
 		}
+		nm_InventoryMouseAway() ; a hovered item shows its description instead of its name
+		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" (54*windowWidth)//100-50 "|" Max(480, windowHeight-offsetY-150))
 
-		if ((Gdip_ImageSearch(pBMScreen, bitmaps[food], &pos, , , 306, , 10, , 5) != 1) || (Gdip_ImageSearch(pBMScreen, bitmaps["feed"], , (54*windowWidth)//100-300, , , , 2, , 2) = 1)) {
+		pos := nm_OCRFindItem(pBMScreen, food) ; OCR item name search
+		if ((pos = "") || (nm_OCRFindWord(pBMScreen, "Feed", , (54*windowWidth)//100-300) = 1)) {
 			Gdip_DisposeImage(pBMScreen)
 			break
 		}
 		Gdip_DisposeImage(pBMScreen)
 
-		MouseClickDrag "Left", windowX+30, windowY+SubStr(pos, InStr(pos, ",")+1)+190, windowX+windowWidth//2, windowY+41*windowHeight//100-10*(A_Index-1), 5
+		MouseClickDrag "Left", windowX+30, windowY+pos+190, windowX+windowWidth//2, windowY+41*windowHeight//100-10*(A_Index-1), 5
 		Sleep 500
 	}
 	Loop 20 {
 		Sleep 100
 		pBMScreen := Gdip_BitmapFromScreen(windowX+(54*windowWidth)//100-300 "|" windowY+offsetY+(46*windowHeight)//100-59 "|250|100")
-		if (Gdip_ImageSearch(pBMScreen, bitmaps["feed"], &pos, , , , , 2, , 2) = 1) {
+		if (nm_OCRFindWord(pBMScreen, "Feed", &pos) = 1) {
 			Gdip_DisposeImage(pBMScreen)
 			MouseMove windowX+(54*windowWidth)//100-300+SubStr(pos, 1, InStr(pos, ",")-1)+140, windowY+offsetY+(46*windowHeight)//100-59+SubStr(pos, InStr(pos, ",")+1)+5 ; Number
 			Sleep 100
@@ -22730,42 +22909,28 @@ ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 	Loop 10
 	{
 		GetRobloxClientPos(hwnd)
-		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" windowWidth//2 "|" Max(480, windowHeight-offsetY-150))
-
 		if (A_Index = 1)
 		{
-			; wait for red vignette effect to disappear
-			Loop 40
+			; wait for the item menu to draw (OCR, replaces the old bitmaps["item"] check)
+			if !nm_InventoryWaitReady(hwnd, offsetY)
 			{
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["item"], , , , 6, , 2) = 1)
-					break
-				else
-				{
-					if (A_Index = 40)
-					{
-						Gdip_DisposeImage(pBMScreen)
-						nm_setStatus("Missing", planterName)
-						LostPlanters.=planterName
-						ba_saveConfig_()
-						return 0
-					}
-					else
-					{
-						Sleep 50
-						Gdip_DisposeImage(pBMScreen)
-						pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" windowWidth//2 "|" Max(480, windowHeight-offsetY-150))
-					}
-				}
+				nm_setStatus("Missing", planterName)
+				LostPlanters.=planterName
+				ba_saveConfig_()
+				return 0
 			}
 		}
+		nm_InventoryMouseAway() ; a hovered item shows its description instead of its name
+		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" windowWidth//2 "|" Max(480, windowHeight-offsetY-150))
 
-		if ((Gdip_ImageSearch(pBMScreen, bitmaps[planterName], &planterPos, , , 306, , 10, , 5) != 1) || (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], , windowWidth//2-250, , , , 2, , 2) = 1)) {
+		planterPos := nm_OCRFindItem(pBMScreen, planterName) ; OCR item name search
+		if ((planterPos = "") || (nm_OCRFindWord(pBMScreen, "Yes", , windowWidth//2-250) = 1)) {
 			Gdip_DisposeImage(pBMScreen)
 			break
 		}
 		Gdip_DisposeImage(pBMScreen)
 
-		MouseClickDrag "Left", windowX+30, windowY+SubStr(planterPos, InStr(planterPos, ",")+1)+190, windowX+windowWidth//2, windowY+windowHeight//2, 5
+		MouseClickDrag "Left", windowX+30, windowY+planterPos+190, windowX+windowWidth//2, windowY+windowHeight//2, 5
 		Sleep 200
 	}
 	Loop 50
@@ -22773,7 +22938,7 @@ ba_placePlanter(fieldName, planter, planterNum, atField:=0){
 		GetRobloxClientPos(hwnd)
 		loop 3 {
 			pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-			if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1) {
+			if (nm_OCRFindWord(pBMScreen, "Yes", &pos) = 1) {
 				MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
 				Sleep 150
 				Click
@@ -22928,7 +23093,7 @@ ba_harvestPlanter(planterNum){
 			;screenshots taken back to back can all land before it does. Give it time.
 			loop 6 {
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["no"], &pos, , , , , 2, , 3) = 1) {
+				if (nm_OCRFindWord(pBMScreen, "No", &pos) = 1) {
 					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
 					Sleep 150
 					Click
@@ -22967,7 +23132,7 @@ ba_harvestPlanter(planterNum){
 			confirmed := 0
 			loop 6 {
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1) {
+				if (nm_OCRFindWord(pBMScreen, "Yes", &pos) = 1) {
 					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
 					Sleep 150
 					Click
@@ -23333,40 +23498,26 @@ mp_PlantPlanter(PlanterIndex) {
 	Loop 10
 	{
 		GetRobloxClientPos(hwnd)
-		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" windowWidth//2 "|" Max(480, windowHeight-offsetY-150))
-
 		if (A_Index = 1)
 		{
-			; wait for red vignette effect to disappear
-			Loop 40
+			; wait for the item menu to draw (OCR, replaces the old bitmaps["item"] check)
+			if !nm_InventoryWaitReady(hwnd, offsetY)
 			{
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["item"], , , , 6, , 2) = 1)
-					break
-				else
-				{
-					if (A_Index = 40)
-					{
-						Gdip_DisposeImage(pBMScreen)
-						nm_setStatus("Missing", MPlanterName)
-						return 0
-					}
-					else
-					{
-						Sleep 50
-						Gdip_DisposeImage(pBMScreen)
-						pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" windowWidth//2 "|" Max(480, windowHeight-offsetY-150))
-					}
-				}
+				nm_setStatus("Missing", MPlanterName)
+				return 0
 			}
 		}
+		nm_InventoryMouseAway() ; a hovered item shows its description instead of its name
+		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" windowWidth//2 "|" Max(480, windowHeight-offsetY-150))
 
-		if ((Gdip_ImageSearch(pBMScreen, bitmaps[MPlanterName], &planterPos, , , 306, , 10, , 5) != 1) || (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], , windowWidth//2-250, , , , 2, , 2) = 1)) {
+		planterPos := nm_OCRFindItem(pBMScreen, MPlanterName) ; OCR item name search
+		if ((planterPos = "") || (nm_OCRFindWord(pBMScreen, "Yes", , windowWidth//2-250) = 1)) {
 			Gdip_DisposeImage(pBMScreen)
 			break
 		}
 		Gdip_DisposeImage(pBMScreen)
 
-		MouseClickDrag "Left", windowX+30, windowY+SubStr(planterPos, InStr(planterPos, ",")+1)+190, windowX+windowWidth//2, windowY+windowHeight//2, 5
+		MouseClickDrag "Left", windowX+30, windowY+planterPos+190, windowX+windowWidth//2, windowY+windowHeight//2, 5
 		Sleep 200
 	}
 	Loop 50
@@ -23374,7 +23525,7 @@ mp_PlantPlanter(PlanterIndex) {
 		GetRobloxClientPos(hwnd)
 		loop 3 {
 			pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-			if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1) {
+			if (nm_OCRFindWord(pBMScreen, "Yes", &pos) = 1) {
 				MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
 				Sleep 150
 				Click
@@ -23482,40 +23633,26 @@ mp_UseGlitter(PlanterIndex, atField:=0) {
 	Loop 10
 	{
 		GetRobloxClientPos(hwnd)
-		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" windowWidth//2 "|" Max(480, windowHeight-offsetY-150))
-
 		if (A_Index = 1)
 		{
-			; wait for red vignette effect to disappear
-			Loop 40
+			; wait for the item menu to draw (OCR, replaces the old bitmaps["item"] check)
+			if !nm_InventoryWaitReady(hwnd, offsetY)
 			{
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["item"], , , , 6, , 2) = 1)
-					break
-				else
-				{
-					if (A_Index = 40)
-					{
-						Gdip_DisposeImage(pBMScreen)
-						nm_setStatus("Missing", "Glitter")
-						return 0
-					}
-					else
-					{
-						Sleep 50
-						Gdip_DisposeImage(pBMScreen)
-						pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|306|" Max(480, windowHeight-offsetY-150))
-					}
-				}
+				nm_setStatus("Missing", "Glitter")
+				return 0
 			}
 		}
+		nm_InventoryMouseAway() ; a hovered item shows its description instead of its name
+		pBMScreen := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+150 "|" windowWidth//2 "|" Max(480, windowHeight-offsetY-150))
 
-		if ((Gdip_ImageSearch(pBMScreen, bitmaps["glitter"], &glitterPos, , , 306, , 10, , 5) != 1)) {
+		glitterPos := nm_OCRFindItem(pBMScreen, "glitter") ; OCR item name search
+		if ((glitterPos = "")) {
 			Gdip_DisposeImage(pBMScreen)
 			break
 		}
 		Gdip_DisposeImage(pBMScreen)
 
-		MouseClickDrag "Left", windowX+30, windowY+SubStr(glitterPos, InStr(glitterPos, ",")+1)+190, windowX+windowWidth//2, windowY+windowHeight//2, 5
+		MouseClickDrag "Left", windowX+30, windowY+glitterPos+190, windowX+windowWidth//2, windowY+windowHeight//2, 5
 		Sleep 200
 	}
 
@@ -23634,7 +23771,7 @@ mp_HarvestPlanter(PlanterIndex) {
 		if ((PlanterHarvestFull%PlanterIndex% == "Full") && !PlanterHarvestNow%PlanterIndex%) {
 			loop 3 {
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["no"], &pos, , , , , 2, , 3) = 1) {
+				if (nm_OCRFindWord(pBMScreen, "No", &pos) = 1) {
 					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
 					Sleep 150
 					Click
@@ -23653,7 +23790,7 @@ mp_HarvestPlanter(PlanterIndex) {
 		else {
 			loop 3 {
 				pBMScreen := Gdip_BitmapFromScreen(windowX+windowWidth//2-250 "|" windowY+windowHeight//2-52 "|500|150")
-				if (Gdip_ImageSearch(pBMScreen, bitmaps["yes"], &pos, , , , , 2, , 2) = 1) {
+				if (nm_OCRFindWord(pBMScreen, "Yes", &pos) = 1) {
 					MouseMove windowX+windowWidth//2-250+SubStr(pos, 1, InStr(pos, ",")-1), windowY+windowHeight//2-52+SubStr(pos, InStr(pos, ",")+1)
 					Sleep 150
 					Click
