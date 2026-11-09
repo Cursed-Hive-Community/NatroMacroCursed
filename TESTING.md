@@ -572,6 +572,19 @@ extension self-test.
       `Blender: not enough for ...`, and the next due slot is crafted on the
       same visit: rests on the recipe arrows still working with the
       shortage shown `loads`
+- [x] the window read by OCR since Roblox's new font, where Natro's
+      pictures of "End" and "Cancel" no longer match: the user's capture of
+      a finished batch left open reads as done, the same painted red as
+      busy, and the top of that screen as no window `wire`
+      (NoticeSelfTest, Windows OCR in the VM)
+- [ ] a running craft really shows the red End Crafting button in the same
+      place: the red capture is made up `loads`
+- [ ] a finished batch is claimed and the window closed, in the game; a
+      window still open at the end of a visit is closed, with the warning
+      `Blender window left open` `loads`
+- [ ] "not enough" for an item: `NoItems` is a picture of a letter in the
+      old font and is not replaced yet, for want of a capture; until then a
+      short slot may be taken for crafted `loads`
 - [ ] the Every row in the Collect tab's add panel sits where Add Item
       was, without overlapping the picture or the Repeat column `loads`
 - [ ] the timers window's Add dialog has an Every row, and both windows

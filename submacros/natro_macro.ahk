@@ -13793,14 +13793,17 @@ nm_Blender(){
 				Sleep 500
 
 				SearchX := windowX+windowWidth//2 - 275, SearchY := windowY+Floor(0.48*windowHeight) - 220, BlenderSS := Gdip_BitmapFromScreen(SearchX "|" SearchY "|550|400")
+				;the pictures are of the old font; since the new one, OCR
+				seen := ext_blenderRead(BlenderSS)
 
-				if (Gdip_ImageSearch(BlenderSS, bitmaps["CancelCraft"], , , , , , 2, , 7) > 0) {
+				if ((Gdip_ImageSearch(BlenderSS, bitmaps["CancelCraft"], , , , , , 2, , 7) > 0) || seen.cancel) {
 					MouseMove windowX+windowWidth//2 + 230, windowY+Floor(0.48*windowHeight) + 130 ; click cancel button
 					Sleep 150
 					Click
 				}
 
-				if (!BlenderEnd && Gdip_ImageSearch(BlenderSS, bitmaps["EndCraftR"], , , , , , 3, , 6) > 0)
+				busy := (Gdip_ImageSearch(BlenderSS, bitmaps["EndCraftR"], , , , , , 3, , 6) > 0) || (seen.button = "busy")
+				if (!BlenderEnd && busy)
 				{
 					;how long is left cannot be read, so look again later rather than
 					;on every round as before
@@ -13812,7 +13815,7 @@ nm_Blender(){
 					Sleep 150
 					Click
 					break
-				} else if (BlenderEnd && Gdip_ImageSearch(BlenderSS, bitmaps["EndCraftR"], , , , , , 3, , 6) > 0) {
+				} else if (BlenderEnd && busy) {
 					IniWrite 0, "settings\nm_config.ini", "Blender", "BlenderEnd"
 					BlenderEnd := 0
 					MouseMove windowX+windowWidth//2 - 120, windowY+Floor(0.48*windowHeight) + 120 ; close red craft button
@@ -13820,7 +13823,7 @@ nm_Blender(){
 					Click
 				}
 
-				if (Gdip_ImageSearch(BlenderSS, bitmaps["EndCraftG"], , , , , , 4, , 6) > 0) {
+				if ((Gdip_ImageSearch(BlenderSS, bitmaps["EndCraftG"], , , , , , 4, , 6) > 0) || (seen.button = "done")) {
 					MouseMove windowX+WindowWidth//2 - 120, windowY+Floor(0.48*windowHeight) + 120 ; close green craft button
 					Sleep 150
 					Click
@@ -13938,12 +13941,14 @@ nm_Blender(){
 						Click
 						Sleep 100
 						if (A_Index = 60) {
+							;closed on the first attempt too: left open, it hid the E
+							;prompt from the second, and everything after that from
+							;the rest of the macro
+							MouseMove windowX+windowWidth//2 - 250, windowY+Floor(0.48*windowHeight) - 200 ;Close GUI
+							Sleep 150
+							Click
 							if (z = 2) {
 								nm_setStatus("Failed", "Blender")
-								MouseMove windowX+windowWidth//2 - 250, windowY+Floor(0.48*windowHeight) - 200 ;Close GUI
-								Sleep 150
-								Click
-
 								;the item was never found: tried again later, like a slot short
 								;of ingredients
 								BlenderNext%BlenderRot% := ext_blenderNextAt(nowUnix(), BlenderWait%BlenderRot%, BlenderAmount%BlenderRot%, 0)
@@ -13955,6 +13960,18 @@ nm_Blender(){
 				}
 			}
 		}
+		;whatever happened above, the window is not left over the screen. Looked
+		;for once it has had time to close, or a closing one would be clicked again
+		Sleep 500
+		GetRobloxClientPos()
+		BlenderSS := Gdip_BitmapFromScreen(windowX+windowWidth//2 - 275 "|" windowY+Floor(0.48*windowHeight) - 220 "|550|400")
+		if ext_blenderRead(BlenderSS).open {
+			nm_setStatus("Warning", "Blender window left open, closing it")
+			MouseMove windowX+windowWidth//2 - 250, windowY+Floor(0.48*windowHeight) - 200 ;Close GUI
+			Sleep 150
+			Click
+		}
+		Gdip_DisposeImage(BlenderSS)
 		IniWrite TimerInterval, "settings\nm_config.ini", "Blender", "TimerInterval"
 		IniWrite BlenderRot, "settings\nm_config.ini", "Blender", "BlenderRot"
 		IniWrite BlenderIndex%BlenderRot%, "settings\nm_config.ini", "Blender", "BlenderIndex" BlenderRot

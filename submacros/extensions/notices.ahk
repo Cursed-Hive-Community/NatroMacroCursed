@@ -1,4 +1,4 @@
-﻿;Notices - the game's messages in the lower right, after Roblox's new font
+﻿;Notices - the game's text the macro reads, after Roblox's new font
 ;
 ;Placing a planter is confirmed by the message the game shows: "already in
 ;the ..." when one is there, "3 Planters" when no more can go out, "standing"
@@ -70,5 +70,69 @@ ext_planterNoticeKind(lines) {
 	for n in lines
 		if (nm_OCR_PhraseDistance("standing", n) <= 1)
 			return "standing"
+	return ""
+}
+
+;The Blender's window, read the same way. Natro told its states apart by
+;pictures of the word "End" on the green and on the red button and of
+;"Cancel"; the new font broke all three. A batch that was done went unclaimed,
+;the macro went on to look for the next item in a window still showing the
+;old craft, and gave up with the window open, in front of everything the macro
+;looked for afterwards.
+;
+;Returns {button, cancel, open}: button is "done" (the green End Crafting, a
+;batch to claim), "busy" (the red one, still crafting) or ""; cancel, whether
+;the amount picker's Cancel is up; open, whether the window is there at all.
+ext_blenderRead(pBM) {
+	local invert, result, lines, line, word, text, seen, r, argb
+
+	for invert in [0, 1] {
+		if !(result := nm_OCR_FromBitmap(pBM, 2, invert))
+			return {button: "", cancel: 0, open: 0}
+		lines := []
+		for line in result.Lines {
+			text := ""
+			for word in line.Words
+				text .= word.Text
+			r := nm_OCR_WordsRect(line.Words)
+			lines.Push({text: nm_OCR_Norm(text), x: r.x, y: r.y, w: r.w, h: r.h})
+		}
+		seen := ext_blenderReadLines(lines)
+		if seen.open
+			break
+	}
+	if IsObject(seen.endAt) {
+		;the button is told by its colour, just left of its words: the bar above
+		;it is the same green, so a fixed point could land on either
+		r := seen.endAt
+		argb := Gdip_GetPixel(pBM, Max(0, r.x - 6), r.y + r.h // 2)
+		seen.button := ext_blenderButtonColour(argb)
+	}
+	return seen
+}
+;What a set of OCR lines says about the window, each {text, x, y, w, h} with
+;the text lower case letters only. "endcrafting" may be two letters off,
+;"cancel" one; "blender", in the title, says the window is up.
+ext_blenderReadLines(lines) {
+	local seen := {button: "", cancel: 0, open: 0, endAt: 0}, n
+
+	for n in lines {
+		if (!IsObject(seen.endAt) && (nm_OCR_PhraseDistance("endcrafting", n.text) <= 2))
+			seen.endAt := n, seen.open := 1
+		if (nm_OCR_PhraseDistance("cancel", n.text) <= 1)
+			seen.cancel := 1, seen.open := 1
+		if (nm_OCR_PhraseDistance("blender", n.text) <= 1)
+			seen.open := 1
+	}
+	return seen
+}
+;Green (claim) or red (busy), from one ARGB pixel; "" for anything else.
+ext_blenderButtonColour(argb) {
+	local r := (argb >> 16) & 0xFF, g := (argb >> 8) & 0xFF, b := argb & 0xFF
+
+	if ((g > r + 60) && (g > b + 60))
+		return "done"
+	if ((r > g + 60) && (r > b + 60))
+		return "busy"
 	return ""
 }

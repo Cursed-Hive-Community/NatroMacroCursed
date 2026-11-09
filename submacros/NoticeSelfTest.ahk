@@ -20,6 +20,12 @@ OnError(SelfTestError)
 ;quarter of the same screen, with no notice. The sorting of what OCR read is
 ;checked by itself too, the trap first: "planteris" is one letter from
 ;"planters", and a placed planter must not pass for a full set.
+;
+;The Blender's window too: blender_done.png is what nm_Blender captures of a
+;finished batch, from the user's screen, left open by the macro.
+;blender_busy.png is the same with the button painted red - made up, as no
+;capture of a running craft exists yet. blender_none.png is the top of the
+;same screen, the honey bar and a hint, no window.
 
 #Include "%A_ScriptDir%\..\lib"
 #Include "Gdip_All.ahk"
@@ -45,6 +51,22 @@ Kind(["youcanonlyhaveplantersout"], "3planters", "3 planters, its digit gone")
 Kind(["youmustbestandinginafield"], "standing", "not in a field")
 Kind(["honey", "pollen"], "", "no notice")
 
+OcrLines(texts*) {
+	local out := [], t
+	for t in texts
+		out.Push({text: t, x: 0, y: 0, w: 10, h: 10})
+	return out
+}
+seen := ext_blenderReadLines(OcrLines("blender", "endcrafting"))
+Check(seen.open && IsObject(seen.endAt) && !seen.cancel, "the Blender window with End Crafting")
+seen := ext_blenderReadLines(OcrLines("blender", "cancei"))
+Check(seen.open && seen.cancel && !IsObject(seen.endAt), "the amount picker's Cancel, a letter misread")
+seen := ext_blenderReadLines(OcrLines("tomakehoneycollectpollen", "fromflowerfields"))
+Check(!seen.open && !seen.cancel && !IsObject(seen.endAt), "no window")
+Check(ext_blenderButtonColour(0xFF1ACC24) = "done", "the green button")
+Check(ext_blenderButtonColour(0xFFC9271C) = "busy", "the red button")
+Check(ext_blenderButtonColour(0xFF2868CC) = "", "the blue window behind it")
+
 if (nm_OCR_Language() = "") {
 	Check(0, "Windows OCR is not available on this machine")
 } else {
@@ -52,6 +74,13 @@ if (nm_OCR_Language() = "") {
 		pBM := Gdip_CreateBitmapFromFile(shots "\" name ".png")
 		got := ext_planterNoticeIn(pBM)
 		Gdip_DisposeImage(pBM)
+		Check(got = want, name ".png read as '" got "', wanted '" want "'")
+	}
+	for name, want in Map("blender_done", "done 1", "blender_busy", "busy 1", "blender_none", " 0") {
+		pBM := Gdip_CreateBitmapFromFile(shots "\" name ".png")
+		seen := ext_blenderRead(pBM)
+		Gdip_DisposeImage(pBM)
+		got := seen.button " " seen.open
 		Check(got = want, name ".png read as '" got "', wanted '" want "'")
 	}
 }
