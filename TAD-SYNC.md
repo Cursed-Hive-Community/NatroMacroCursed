@@ -112,6 +112,30 @@ restart.
 
 To take a macro out of the fleet: its own Settings, **Leave the fleet**.
 
+**Talk to the other macros**, on the macro's main window, works at once:
+untick it and that macro stops talking to the fleet, tick it and it joins
+again, without a restart. It is not the same as leaving: the macro keeps its
+place in the fleet and comes back to it.
+
+# Copying a macro folder
+
+A copied folder carries the account with it: its place in the fleet is in
+`settings\nm_config.ini`. Started, a copy notices it is not where that
+account was set up, does not talk to the fleet, and asks what it is for:
+
+- **Stay out of the fleet**: to change or test things. Nothing is sent to
+  the fleet, and the original keeps its place.
+- **Join as another account**: the copy will play another Roblox account. It
+  opens the usual join window, where you pick that account's username and
+  role; the original's username is refused. Press **Accept new macros** on
+  the main first, as for any new account.
+- **This replaces the original**: the macro moved to this folder or PC.
+  Close the old folder first: while it is running, the fleet keeps it and
+  turns the new one away.
+
+Never press **Leave the fleet** in a copy made before this version: it
+would take the original's place off the fleet.
+
 # When something is wrong
 
 **The alt says `Listening for a fleet on your network...` and nothing
@@ -131,6 +155,13 @@ happens.**
 Or go round it: the main's Settings window shows the main PC's address in
 section 1. Type it in the alt's join window under **Not found? Type its
 address**. The alt keeps that address and uses it to reconnect from then on.
+
+**A macro's panel says `... is already connected from ... - this macro is
+a copy of it`.**
+
+Two macro folders hold the same account, and the other one is running. It
+is a copy made before copies could recognise themselves. Close one, or in
+the one that should not be there untick **Talk to the other macros**.
 
 **The alt joined but keeps farming its own field.**
 

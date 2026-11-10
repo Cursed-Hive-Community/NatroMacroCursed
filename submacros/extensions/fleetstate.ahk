@@ -37,6 +37,9 @@ ext_fleetBindTyped := ""
 ;why the fleet turned this macro away, when it did. A refusal is final, so it
 ;is kept rather than retried - see the BYE case in extensions\fleet.ahk
 ext_fleetRefused := ""
+;the account this folder was copied from, while it waits for a decision - see
+;ext_FleetCopyGUI
+ext_fleetCopyOf := ""
 ;the fleet's configuration as the coordinator last described it - the roster as
 ;configured, and the servers - each with the generation that copy is on, how
 ;many entries that generation promised, and which generation has been written

@@ -358,6 +358,8 @@ ext_fleetFinishBind() {
 		ext_FleetSave("FleetId", joined)
 	ext_fleetEnsureDir()
 	ext_FleetSave("FleetRow", ext_fleetBoundWith.row)
+	ext_FleetSave("FleetHome", ext_fleetHomeHere())
+	ext_fleetCopyOf := ""
 	ext_FleetSave("FleetHostRow", 0)
 	if (ext_fleetBoundWith.secret != "")
 		ext_FleetSave("FleetSecret", ext_fleetBoundWith.secret)
@@ -409,6 +411,8 @@ ext_fleetStartFleet(name, role, user) {
 	;compare against and this is the first thing anybody will compare to
 	roster_Save(path, rows, 1, 1)
 	ext_FleetSave("FleetRow", 1)
+	ext_FleetSave("FleetHome", ext_fleetHomeHere())
+	ext_fleetCopyOf := ""
 	ext_FleetSave("FleetHostRow", 1)
 	ext_FleetSave("FleetCheck", 1)
 	ext_fleetStop()
@@ -484,7 +488,7 @@ ext_fleetHello() {
 	;its own fleet for knocking on the wrong door on its own machine
 	sock_SendLine(ext_fleetSock, fleet_Frame("HELLO", Map("row", FleetRow
 		, "secret", FleetSecret, "fid", ext_fleetId()
-		, "machine", A_ComputerName)))
+		, "machine", A_ComputerName, "home", ext_fleetHomeHere())))
 	;And the field we last said we were farming, said again straight away. A
 	;coordinator we are meeting for the first time - or one a takeover has just
 	;started - has no record of it, and its followers are waiting on it. This
@@ -623,6 +627,10 @@ ext_fleetOnLine(line) {
 			;macro itself is doing.
 			ext_fleetNote("the fleet turned this macro away: "
 				. fleet_Field(frame, "why", "refused"))
+			;a copy of a macro that is running: said where it shows, since the
+			;macro keeps knocking and nothing else would say why it never gets in
+			if InStr(fleet_Field(frame, "why"), "is already connected from")
+				ext_fleetProblem(fleet_Field(frame, "why"))
 			;another fleet answering on an address we tried. Not this macro's
 			;fault and not the fleet's, so the address is passed over for a
 			;minute and the next candidate gets a turn - without this the
@@ -1462,10 +1470,11 @@ ext_fleetNoteFlush() {
 }
 
 ;Bring the whole thing up. Called once, from the macro's start-up.
-ext_fleetStart() {
+ext_fleetStart(why := "macro started") {
 	global FleetCheck, FleetRow, FleetHostRow, ext_fleetRefused, ext_fleetMyField, FleetLastField
 	global ext_fleetRosterDisk, ext_fleetServerDisk
-	global FleetRosterPath, FleetServersPath
+	global FleetRosterPath, FleetServersPath, FleetHome, ext_fleetCopyOf
+	local rows
 
 	;a refusal is forgotten the moment somebody sets this macro up again -
 	;that is what being set up again means
@@ -1489,9 +1498,31 @@ ext_fleetStart() {
 	;the first line of every run, with the date the other lines leave out, so a
 	;file holding several sessions can be told apart - and so a macro that is
 	;not in a fleet at all says that, rather than leaving an empty file
-	ext_fleetNote("macro started " FormatTime(A_Now, "yyyy-MM-dd")
+	ext_fleetNote(why " " FormatTime(A_Now, "yyyy-MM-dd")
 		. ((FleetRow > 0) ? " - row " FleetRow ", fleet " ext_fleetId() : " - not in a fleet")
 		. (FleetCheck ? "" : ", talking to the fleet is switched off"))
+	;A macro set up before places were kept takes the one it runs from: there
+	;is no telling, the first time, whether this is the original. A copy made
+	;before this version is caught by the coordinator instead, while the
+	;original is connected - see fleet_OnHello.
+	if ((FleetRow > 0) && (FleetHome = ""))
+		ext_FleetSave("FleetHome", ext_fleetHomeHere())
+	;A copy says nothing to the fleet until somebody says what it is for. Not
+	;even when the original is off: a test copy started while the real macro
+	;was restarting would take its row, and the tads would follow the copy.
+	if fleet_IsCopy(FleetRow, FleetHome, ext_fleetHomeHere()) {
+		rows := roster_Load(ext_fleetRosterFile())
+		ext_fleetCopyOf := rows.Has(FleetRow) ? rows[FleetRow]
+			: { row: FleetRow, name: "row " FleetRow, role: "", user: "", machine: "" }
+		ext_fleetCopyOf.home := FleetHome
+		ext_fleetNote("this folder is a copy of " ext_fleetCopyOf.name
+			. ", set up in " fleet_HomeText(FleetHome) " - not talking to the fleet")
+		;asked only of a copy that would talk: with the box unticked it is out of
+		;the fleet already, and ticking it comes back here
+		if FleetCheck
+			SetTimer ext_FleetCopyGUI, -1500
+		return 0
+	}
 	if (!FleetCheck || (FleetRow <= 0))
 		return 0
 	;The field this macro last announced, said again by the first HELLO. A main
@@ -1554,9 +1585,11 @@ ext_fleetView() {
 ;which term.
 ext_fleetSummary() {
 	global ext_fleetSock, ext_fleetTerm, ext_fleetCoordRow, ext_fleetCoordSeen
-	global FleetCheck, ext_fleetFoundAt, ext_fleetRefused
+	global FleetCheck, ext_fleetFoundAt, ext_fleetRefused, ext_fleetCopyOf
 	local silent, config
 
+	if IsObject(ext_fleetCopyOf)
+		return "A copy of " ext_fleetCopyOf.name " - not talking to the fleet"
 	if !FleetCheck
 		return "Fleet is off"
 	;said plainly, because "listening for a coordinator" would be a lie - this
@@ -2285,12 +2318,116 @@ ext_FleetLeave() {
 	ext_fleetSayLeaving()
 	ext_fleetStop()
 	ext_fleetEndFleetCoord()
+	ext_fleetForget()
+	ext_FleetWhoDraw()
+}
+;This macro's part of the fleet, dropped here and nowhere else. Leaving says so
+;to the fleet first; a copy must not, since the row it would take off the
+;roster is the original's.
+ext_fleetForget() {
 	ext_FleetSave("FleetCheck", 0)
 	ext_FleetSave("FleetRow", 0)
 	ext_FleetSave("FleetHostRow", 0)
 	ext_FleetSave("FleetSecret", "")
 	ext_FleetSave("FleetId", "")
+	ext_FleetSave("FleetHome", "")
+}
+
+;Where this macro runs from - see fleet_Home.
+ext_fleetHomeHere() {
+	return fleet_Home(A_ComputerName, A_WorkingDir)
+}
+
+;--- a copied folder ----------------------------------------------------------
+;
+;A folder copied with its settings is the original's account as far as the
+;fleet can tell, and a copy left to work that out in silence leaves nobody
+;knowing what to do with it. So it says what it is and offers the three things
+;a copy is for: a place to change things without disturbing the fleet, a new
+;member playing another account, or the same account moved to a new folder.
+;Until one is picked it says nothing to the fleet. Closing the window picks
+;nothing, and it asks again on the next start.
+ext_FleetCopyGUI(*) {
+	global FleetCopyGui, ext_fleetCopyOf
+	local o
+
+	if !IsObject(ext_fleetCopyOf)
+		return
+	if (IsSet(FleetCopyGui) && IsObject(FleetCopyGui)) {
+		FleetCopyGui.Show()
+		return
+	}
+	o := ext_fleetCopyOf
+	FleetCopyGui := Gui("+AlwaysOnTop +Border", "Fleet - a copied folder")
+	FleetCopyGui.OnEvent("Close", ext_FleetCopyClose)
+	FleetCopyGui.SetFont("s8 cDefault Bold", "Tahoma")
+	FleetCopyGui.Add("Text", "x12 y10 w436", "This folder is a copy of " o.name
+		. ((o.role != "") ? " (" o.role ")" : ""))
+	FleetCopyGui.SetFont("Norm")
+	FleetCopyGui.Add("Text", "x12 y30 w436 h56", o.name " was set up in "
+		. fleet_HomeText(o.home) ". This is " fleet_HomeText(ext_fleetHomeHere()) "."
+		. "`nIt is not talking to the fleet, so the fleet still sees " o.name
+		. " as it was. Say what this copy is for:")
+	FleetCopyGui.Add("Button", "x12 y92 w200 h26", "Stay out of the fleet").OnEvent("Click", ext_FleetCopyOut)
+	FleetCopyGui.Add("Text", "x222 y92 w226 h30 c808080", "To change or test things. Nothing is sent; set it up later to join.")
+	FleetCopyGui.Add("Button", "x12 y126 w200 h26", "Join as another account").OnEvent("Click", ext_FleetCopyJoin)
+	FleetCopyGui.Add("Text", "x222 y126 w226 h30 c808080", "It will play another Roblox account: pick its role and get a place of its own.")
+	FleetCopyGui.Add("Button", "x12 y160 w200 h26", "This replaces the original").OnEvent("Click", ext_FleetCopyMoved)
+	FleetCopyGui.Add("Text", "x222 y160 w226 h30 c808080", "The macro moved here. Close the old folder: while it runs, the fleet keeps it.")
+	FleetCopyGui.Show("w460 h198")
+}
+ext_FleetCopyClose(*) {
+	global FleetCopyGui
+
+	if (IsSet(FleetCopyGui) && IsObject(FleetCopyGui))
+		FleetCopyGui.Destroy(), FleetCopyGui := ""
+}
+;Forgotten here only. LEAVE would take the original's row off the roster.
+ext_FleetCopyOut(*) {
+	global ext_fleetCopyOf
+
+	ext_FleetCopyClose()
+	ext_fleetNote("this copy of " ext_fleetCopyOf.name " stays out of the fleet")
+	ext_fleetCopyOf := ""
+	ext_fleetForget()
 	ext_FleetWhoDraw()
+}
+;Forgotten the same way, then the ordinary setup. ext_fleetCopyOf is kept until
+;the join succeeds, so the setup can refuse the original's username.
+ext_FleetCopyJoin(*) {
+	global ext_fleetCopyOf
+	local keep := ext_fleetCopyOf
+
+	ext_FleetCopyClose()
+	ext_fleetNote("this copy of " keep.name " joins as another account")
+	ext_fleetForget()
+	ext_fleetCopyOf := keep
+	ext_FleetJoinGUI()
+}
+ext_FleetCopyMoved(*) {
+	global ext_fleetCopyOf
+
+	ext_FleetCopyClose()
+	ext_fleetNote("this folder replaces " ext_fleetCopyOf.name "'s, set up in "
+		. fleet_HomeText(ext_fleetCopyOf.home))
+	ext_fleetCopyOf := ""
+	ext_FleetSave("FleetHome", ext_fleetHomeHere())
+	ext_fleetStart("moved here")
+}
+
+;"Talk to the other macros", acting when it is clicked. It used to be read at
+;start-up only, so unticking it on a running macro saved the setting and changed
+;nothing: the macro went on talking, as the same account, until it was
+;restarted - while whoever unticked it believed it had stopped.
+ext_FleetCheckClick(ctrl, *) {
+	global FleetCheck
+
+	nm_saveConfig(ctrl)
+	ext_fleetStop()
+	if FleetCheck
+		ext_fleetStart("talking to the fleet switched on")
+	else
+		ext_fleetNote("talking to the fleet switched off")
 }
 
 ;--- the join dialog ---------------------------------------------------------
@@ -2428,12 +2565,19 @@ ext_FleetJoinRefresh() {
 }
 
 ext_FleetJoinDo(*) {
-	global FleetJoinGui, FleetPort, ext_fleetBindTyped
+	global FleetJoinGui, FleetPort, ext_fleetBindTyped, ext_fleetCopyOf
 	local open := ext_fleetOpenFleets(), role := ext_fleetRolePicked(FleetJoinGui["JoinRole"])
 	local typed := Trim(FleetJoinGui["JoinAddr"].Value), addr, port
 
 	if (role = "")
 		return
+	if fleet_CopyClash(Trim(FleetJoinGui["JoinUser"].Value), Trim(FleetJoinGui["JoinName"].Value)
+		, A_ComputerName, ext_fleetCopyOf) {
+		MsgBox "That is " ext_fleetCopyOf.name "'s account, the one this folder was copied from."
+			. " Joining with it would take " ext_fleetCopyOf.name "'s place in the fleet."
+			. "`n`nType the Roblox username of the account this copy will play, and another name.", "Fleet", 0x40030
+		return
+	}
 	;A typed address becomes the reconnect address too, but only once the
 	;fleet has let this macro in - see ext_fleetFinishBind. Saved here, a
 	;mistyped one was kept and knocked on at every reconnection for good.

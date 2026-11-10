@@ -7,8 +7,8 @@
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetUiDump.ahk setup 1
 ;
-;The first argument names the window - join, setup, panel, panelfull, servers, hop
-;or adv - and the second, when given, is the row this macro sits on. Each
+;The first argument names the window - join, setup, panel, panelfull, servers, hop,
+;adv or copy - and the second, when given, is the row this macro sits on. Each
 ;control's type, name, rectangle, visible and enabled state and first sixty
 ;characters go to settings\ui_dump.txt, one per line.
 ;
@@ -54,6 +54,7 @@ global FleetHostRow := 1
 global FleetPort := 47600
 global FleetSecret := ""
 global FleetId := ""
+global FleetHome := ""
 global FleetAddress := ""
 global FleetGraceSecs := 45
 global FleetServerMain := ""
@@ -92,6 +93,10 @@ switch which {
 				dump .= ctrl.Name "=" ctrl.Text "`n"
 		FileAppend dump, out, "UTF-8"
 	case "adv": ext_FleetSetupGUI(), ext_FleetAdvanced(), g := "FleetAdvGui"
+	case "copy":
+		ext_fleetCopyOf := { row: 3, name: "Bob", role: "tad", user: "bob123"
+			, machine: "PC-SALON", home: "PC-SALON|C:\Users\Bob\Desktop\NatroMacro" }
+		ext_FleetCopyGUI(), g := "FleetCopyGui"
 }
 Sleep 1500
 G := %g%

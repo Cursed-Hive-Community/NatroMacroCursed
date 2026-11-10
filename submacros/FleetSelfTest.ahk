@@ -261,6 +261,11 @@ byeFinal := Map()           ;what each refusal said about being final
 seenBy := Map()             ;client label -> Map of row -> roster frame it received
 refused := ""               ;what the bad-secret connection was told
 otherWhy := ""              ;and what a macro of another fleet was told
+closedAt := Map()           ;client label -> when its connection was closed
+copyWhy := "", copyFinal := ""   ;what a copy of the main's folder was told
+restartSeen := ""           ;the verbs a restarted resident was sent
+clientCopy := 0, clientRestart := 0
+mainKept := -1              ;was the main still connected two seconds after the copy
 
 Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' PORT ' ' SECRET ' 1 1 "' ROSTER '"'
 	, , , &coordPid
@@ -286,6 +291,9 @@ clientOther := sock_Connect("127.0.0.1", PORT, OnOther)
 
 ;the late resident, long after the main said where it was farming
 SetTimer Late, -5000
+SetTimer Copy, -4000
+SetTimer AfterCopy, -6000
+SetTimer Restart, -12000
 ;the second coordinator, which must not get the port. It gives up after a few
 ;seconds of retrying, so it is started early enough to have finished by the
 ;time the report is written.
@@ -439,6 +447,55 @@ Late(*) {
 	global clientC
 
 	clientC := sock_Connect("127.0.0.1", PORT, OnC)
+}
+
+;A copy of the main's folder: the same row and secret, run from another place
+;while the main is connected. It must be turned away, and not final - it may
+;well be meant to come in once the original is gone - and the main must stay.
+Copy(*) {
+	global clientCopy
+
+	clientCopy := sock_Connect("127.0.0.1", PORT, OnCopy)
+}
+AfterCopy(*) {
+	global mainKept, closedAt
+
+	mainKept := !closedAt.Has("main")
+}
+OnCopy(s, event, data) {
+	global SECRET, copyWhy, copyFinal
+	local frame
+
+	if (event = "connect") {
+		if (data = "")
+			sock_SendLine(s, fleet_Frame("HELLO", Map("row", 1, "name", "main"
+				, "secret", SECRET, "machine", A_ComputerName
+				, "home", fleet_Home("selftest", "a copy of main"))))
+		return
+	}
+	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BYE"))
+		copyWhy := fleet_Field(frame, "why"), copyFinal := fleet_Field(frame, "final", "missing")
+}
+;The late resident restarting: the same place, so the new connection takes
+;the row and the old one goes, as it always did.
+Restart(*) {
+	global clientRestart
+
+	clientRestart := sock_Connect("127.0.0.1", PORT, OnRestart)
+}
+OnRestart(s, event, data) {
+	global SECRET, restartSeen
+	local frame
+
+	if (event = "connect") {
+		if (data = "")
+			sock_SendLine(s, fleet_Frame("HELLO", Map("row", 3, "name", "fuzzy 2"
+				, "secret", SECRET, "machine", A_ComputerName
+				, "home", fleet_Home("selftest", "late"))))
+		return
+	}
+	if ((event = "line") && (frame := fleet_Parse(data)))
+		restartSeen .= frame.verb " "
 }
 
 ;Only the host may open the door, and clientA is the host - row 1 is what the
@@ -685,9 +742,12 @@ Handle(label, row, name, s, event, data) {
 		if (data != "")
 			return
 		sock_SendLine(s, fleet_Frame("HELLO", Map("row", row, "name", name
-			, "role", label, "secret", SECRET, "machine", A_ComputerName)))
+			, "role", label, "secret", SECRET, "machine", A_ComputerName
+			, "home", fleet_Home("selftest", label))))
 		return
 	}
+	if (event = "close")
+		closedAt[label] := A_TickCount
 	if (event != "line")
 		return
 	if !(frame := fleet_Parse(data))
@@ -819,6 +879,7 @@ Report(*) {
 	global cfg, cfgWant, cfgMost, cfgUnseen, cfgLowVer, cfgHighVer
 	global cfgTookUp, byeFinal, otherWhy, clientOther
 	global ROSTER, gotoField
+	global closedAt, copyWhy, copyFinal, restartSeen, mainKept
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
 	local idsOk, idsSeen, newId, mandRoster, handLog
@@ -1038,6 +1099,28 @@ Report(*) {
 	;on this disk and the one the fleet runs, whichever is ahead.
 	ev1 := fleet_EditVersion({ version: 5, by: 1 }, { version: 7, by: 1 }, 3)
 	ev2 := fleet_EditVersion({ version: 9, by: 2 }, { version: 7, by: 1 }, 3)
+	allOk := Check(lines, "a copy of a connected macro's folder is turned away, not for good ("
+		. copyWhy ")", InStr(copyWhy, "main is already connected from main on selftest")
+		&& (copyFinal = "0")) && allOk
+	allOk := Check(lines, "and the macro it was copied from keeps its row"
+		, mainKept = 1) && allOk
+	allOk := Check(lines, "a macro restarting in its own folder takes its row back ("
+		. Trim(restartSeen) ")", closedAt.Has("late") && InStr(restartSeen, "HEARTBEAT")
+		;seated before any BYE: the one at the end is the deliberate wipe at 14s
+		&& (!InStr(restartSeen, "BYE") || (InStr(restartSeen, "BYE") > InStr(restartSeen, "HEARTBEAT")))) && allOk
+	allOk := Check(lines, "a place not known is the same place, a known one is compared"
+		, fleet_SameHome("", "pc|C:\a") && fleet_SameHome("pc|C:\a", "PC|c:\A")
+		&& !fleet_SameHome("pc|C:\a", "pc|C:\b")
+		&& fleet_IsCopy(3, "pc|C:\a", "pc|C:\b") && !fleet_IsCopy(0, "pc|C:\a", "pc|C:\b")
+		&& !fleet_IsCopy(3, "", "pc|C:\b")) && allOk
+	orig := { name: "Bob", user: "bob123", machine: "pc" }
+	allOk := Check(lines, "a copy may not join with its original's account"
+		, fleet_CopyClash("Bob123", "Alt", "other", orig)
+		&& fleet_CopyClash("", "Bob", "pc", orig)
+		&& fleet_CopyClash("alt456", "Bob", "pc", orig)
+		&& !fleet_CopyClash("alt456", "Alt", "pc", orig)
+		&& !fleet_CopyClash("", "Bob", "other", orig)
+		&& !fleet_CopyClash("bob123", "Bob", "pc", "")) && allOk
 	allOk := Check(lines, "an edit made anywhere beats both copies"
 		, (ev1.version = 8) && (ev1.by = 3)
 		&& fleet_ConfigBeats(ev1, { version: 7, by: 1 })

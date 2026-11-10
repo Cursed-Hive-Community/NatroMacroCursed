@@ -627,3 +627,44 @@ fleet_SameFleet(theirs, ours) {
 		return 1
 	return (theirs = ours)
 }
+
+;Where a macro runs from: the machine and the folder, as one string.
+;
+;An account is its row and its secret, and both live in nm_config.ini - so a
+;macro folder copied to make changes in, test or keep as a backup carries the
+;same identity as the macro it was copied from. Started, the copy took the
+;row: the coordinator hands a row to the newest connection, which is right for
+;a macro restarting and wrong for a second one. The two then threw each other
+;out every few seconds, both reporting their field as the same account, and a
+;tad followed whichever had spoken last (a friend's fleet, broken that way).
+;The place is what tells the two apart.
+fleet_Home(machine, dir) {
+	return machine "|" dir
+}
+;The same place? A place not known - an install from before places were kept,
+;or a macro too old to say - is taken for the same: refusing it would lock an
+;older macro out of its own row.
+fleet_SameHome(a, b) {
+	return (a = "") || (b = "") || (a = b)
+}
+;Is a macro bound to row, set up at saved, now running at here, a copy?
+fleet_IsCopy(row, saved, here) {
+	return (row > 0) && !fleet_SameHome(saved, here)
+}
+;Would joining as user and name land on the row of the account this folder was
+;copied from? The coordinator gives an account its row back by its Roblox
+;username, failing that by machine and name - so a copy joining "as another
+;account" with the original's username would take the original's place.
+fleet_CopyClash(user, name, machine, orig) {
+	if !IsObject(orig)
+		return 0
+	;fleet_RowFor tries the username first, then machine and name whatever the
+	;username was
+	return ((user != "") && (user = orig.user))
+		|| ((name = orig.name) && (machine = orig.machine))
+}
+;How a place is shown: the folder on the machine.
+fleet_HomeText(home) {
+	local at := InStr(home, "|")
+	return at ? SubStr(home, at + 1) " on " SubStr(home, 1, at - 1) : home
+}

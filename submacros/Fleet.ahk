@@ -247,7 +247,7 @@ fleet_OnLine(s, line) {
 fleet_OnHello(s, frame) {
 	global peers, bySocket, secret, term, startedBy, mandate, roster, leadField
 	global fleetId
-	local row, name, previous
+	local row, name, previous, home
 
 	;final says whether the macro being turned away can do anything about it.
 	;A wrong secret it cannot: nothing will change from knocking again. An
@@ -285,8 +285,23 @@ fleet_OnHello(s, frame) {
 		return
 	}
 	;a macro that restarts reconnects on a new socket while the old one may not
-	;have closed yet, so the row takes the newer connection and the old one goes
+	;have closed yet, so the row takes the newer connection and the old one goes.
+	;Not when the newcomer runs somewhere else while the row is still speaking:
+	;that is a copy of the macro folder carrying the same identity, and letting
+	;it in threw the real one out - which came back and threw the copy out, every
+	;few seconds, both reporting their field as the same account. A row gone
+	;quiet is taken over as before: its macro may have crashed.
+	home := fleet_Field(frame, "home", "")
 	if (peers.Has(row) && (previous := peers[row].socket) && (previous != s)) {
+		if ((peers[row].state = "online") && !fleet_SameHome(peers[row].home, home)) {
+			fleet_Log("refused row " row " from " fleet_HomeText(home)
+				. ": it is connected from " fleet_HomeText(peers[row].home))
+			sock_SendLine(s, fleet_Frame("BYE", Map("why", roster[row].name
+				. " is already connected from " fleet_HomeText(peers[row].home)
+				. " - this macro is a copy of it", "final", 0)))
+			sock_Close(s)
+			return
+		}
 		bySocket.Delete(previous)
 		sock_Close(previous)
 	}
@@ -294,7 +309,7 @@ fleet_OnHello(s, frame) {
 	peers[row] := { row: row, name: name
 		, role: roster[row].role
 		, user: roster[row].user
-		, machine: fleet_Field(frame, "machine", "")
+		, machine: fleet_Field(frame, "machine", ""), home: home
 		, socket: s, state: "online", lastSeen: nowUnix()
 		;charge -1 until a macro reads one: a guid not read yet waits behind every
 		;guid that has been; waitSince is when it reached the threshold

@@ -962,6 +962,10 @@ nm_importConfig()
 		;binding - see fleet_NewId. Empty until the macro joins or creates one,
 		;and filled in from the secret for a fleet that predates folders.
 		, "FleetId", ""
+		;where this macro was set up: the machine and the folder. A folder copied
+		;with its settings carries the row and the secret too, and this is what
+		;tells the copy it is one - see fleet_Home
+		, "FleetHome", ""
 		, "FleetAddress", ""
 		, "FleetGraceSecs", 45
 		;legacy: the two links that used to be typed on every machine. They are
@@ -3025,7 +3029,7 @@ MainGui.Add("Button", "x427 y91 w14 h16", "?").OnEvent("Click", ext_MondoInterru
 MainGui.Add("Text", "x20 y142 w350 vFleetStripSeats +BackgroundTrans", "")
 MainGui.Add("Text", "x20 y158 w350 vFleetStripNext +BackgroundTrans", "")
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y177 w180 h18 vFleetCheck Checked" FleetCheck
-	, "Talk to the other macros")).Section := "Fleet", GuiCtrl.OnEvent("Click", nm_saveConfig)
+	, "Talk to the other macros")).Section := "Fleet", GuiCtrl.OnEvent("Click", ext_FleetCheckClick)
 MainGui.Add("Button", "x202 y177 w14 h16", "?").OnEvent("Click", ext_FleetHelp)
 MainGui.Add("Button", "x380 y174 w100 h22", "Fleet panel").OnEvent("Click", ext_FleetGUI)
 (GuiCtrl := MainGui.Add("CheckBox", "x20 y213 w330 h18 cRed vGuidDataShots Checked" GuidDataShots

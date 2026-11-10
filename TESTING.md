@@ -683,6 +683,28 @@ PCs, two macros, and a network you can unplug.
       chosen - **built in the VM**, every control dumped, none overlapping
 - [ ] the coordinator's Settings show this PC's address `loads`
 
+A friend copied a fleet macro's folder to make changes in. The copy was the
+same account - row and secret are in `nm_config.ini` - and the coordinator
+gives a row to its newest connection, so the two threw each other out every
+few seconds; unticking the box in the copy changed nothing until a restart.
+
+- [x] a macro running from another place than a connected one with the same
+      row is turned away, not for good, and the original keeps its row
+      `wire` (FleetSelfTest)
+- [x] a macro restarting in its own folder still takes its row back `wire`
+- [x] a place nobody recorded counts as the same place, so an older macro is
+      not locked out; a copy may not join with its original's username, nor
+      its name on the same PC `wire`
+- [x] the copy's window: three choices and what each does - **built in the
+      VM**, every control dumped `layout`
+- [ ] a copied folder started for real: it says nothing to the fleet and
+      asks; each of the three choices does what it says `loads`
+- [ ] unticking **Talk to the other macros** disconnects at once, ticking it
+      reconnects, without a restart `loads`
+- [ ] a copy made before this version: both folders record their own place
+      on first start, so only the coordinator's refusal tells them apart,
+      and only while the first one is connected `loads`
+
 ### Following
 
 - [ ] a fuzzy or tad gathers the field the main is farming
