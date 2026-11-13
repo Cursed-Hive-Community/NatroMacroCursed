@@ -34,6 +34,12 @@ long := ""
 Loop 400
 	long .= "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
+;a frame three times the size a frame may be, sent in one go
+flood := ""
+Loop 14
+	flood .= long
+floodSock := 0, floodTaken := 0, floodClosed := 0
+
 probes := ["HELLO fleet"
 	, "ACCENTS " Chr(0xE9) Chr(0xE0) Chr(0xFC) Chr(0xEE) Chr(0xE7) " et un tiret " Chr(0x2014)
 	, long]
@@ -56,6 +62,9 @@ if !client {
 	Finish("The client socket could not be opened.")
 	return
 }
+
+;a second caller, whose one frame is too long to be a frame
+floodSock := sock_Connect("127.0.0.1", PORT, OnFlood)
 
 ;The UDP half, checked on its own: the coordinator cannot be found without
 ;it, and it shares nothing with the stream path above.
@@ -82,10 +91,29 @@ OnDatagram(s, event, data, from) {
 ;The listening side. Every frame is echoed back untouched; if the library is
 ;sound, what returns is exactly what left.
 OnServer(s, event, data) {
+	global floodTaken
+
 	Note("server: " event (StrLen(data) ? " (" StrLen(data) " chars)" : ""))
+	if ((event = "line") && (StrLen(data) > SOCK_MAX_LINE)) {
+		floodTaken := 1
+		return
+	}
 	if (event = "line")
 		Note("server: echo of " StrLen(data) " chars -> "
 			(sock_SendLine(s, data) ? "queued" : "refused" LastError(0)))
+}
+
+;A frame longer than a frame may be. The ceiling was only looked at once
+;everything waiting had been read, so a frame that arrived fast enough was
+;read whole, its newline found, and handed over at any size - and a sender
+;that never paused kept the reading loop, and the script with it.
+OnFlood(s, event, data) {
+	global flood, floodClosed
+
+	if ((event = "connect") && (data = ""))
+		sock_SendLine(s, flood)
+	else if (event = "close")
+		floodClosed := 1
 }
 
 ;The connecting side.
@@ -109,12 +137,14 @@ OnClient(s, event, data) {
 	if (event != "line")
 		return
 	echoed.Push(data)
+	;a moment more, for the caller that is being turned away
 	if (echoed.Length = probes.Length)
-		Report()
+		SetTimer Report, -1500
 }
 
 Report(*) {
 	global sent, echoed, probes, finished, trace, udpSeen
+	global flood, floodTaken, floodClosed, sock_lastError
 	local lines := [], i, ok, allOk
 
 	if finished
@@ -130,6 +160,10 @@ Report(*) {
 	ok := (udpSeen = "BEACON test=1")
 	allOk := allOk && ok
 	lines.Push((ok ? "PASS  " : "FAIL  ") "datagram, with the sender's address")
+	ok := !floodTaken && floodClosed && InStr(sock_lastError, "no end of frame")
+	allOk := allOk && ok
+	lines.Push((ok ? "PASS  " : "FAIL  ") "a frame of " StrLen(flood) " chars is refused"
+		. " (taken=" floodTaken ", closed=" floodClosed ", said: " sock_lastError ")")
 	Finish(allOk ? "" : Join(lines))
 }
 
@@ -137,7 +171,7 @@ Report(*) {
 ;as well as on screen - a message box cannot be copied out of, and a trace
 ;nobody can send on is a trace nobody can act on.
 Finish(problem) {
-	global finished, trace, listener, client, udpSock
+	global finished, trace, listener, client, udpSock, floodSock
 	local summary, path
 
 	if finished
@@ -145,6 +179,7 @@ Finish(problem) {
 	finished := 1
 	SetTimer Report, 0
 	try sock_Close(client)
+	try sock_Close(floodSock)
 	try sock_Close(listener)
 	try sock_Close(udpSock)
 	;Quiet mode is what makes this runnable over SSH: no window to close, a

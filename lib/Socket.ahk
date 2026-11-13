@@ -368,6 +368,13 @@ sock_Receive(s) {
 		st.inLen += n
 		if (n < chunk.Size)
 			break
+		;A sender that never pauses does not get to keep this loop - and with
+		;it the whole script, which holds Critical here - nor to grow the buffer
+		;past the ceiling checked below, which was only looked at once the loop
+		;had ended. What is left unread raises another notification: Windows
+		;posts one after any recv that leaves bytes behind.
+		if (st.inLen > SOCK_MAX_LINE)
+			break
 	}
 	while ((at := sock_FindNewline(st.inBuf, st.inLen)) >= 0) {
 		line := sock_Decode(st.inBuf, at)
