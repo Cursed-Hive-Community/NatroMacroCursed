@@ -700,8 +700,10 @@ ext_fleetOnMove(frame) {
 		ext_fleetSayServer()
 		return 0
 	}
-	ext_fleetJoinLink := rows[slot].link
-	IniWrite (FleetServerAssigned := rows[slot].link), "settings\nm_config.ini", "Fleet", "FleetServerAssigned"
+	;rebuilt from its code: the link came over the network and is about to be
+	;run and written to disk - see servers_CanonicalLink
+	ext_fleetJoinLink := servers_CanonicalLink(rows[slot].link)
+	IniWrite (FleetServerAssigned := ext_fleetJoinLink), "settings\nm_config.ini", "Fleet", "FleetServerAssigned"
 	ext_fleetNote("the fleet sends this macro to the " where " server - " why)
 	nm_setStatus("Fleet", "moving to the " where " server - " why)
 	nm_ForceReconnect(1)
@@ -799,12 +801,12 @@ ext_fleetReconnectLink() {
 		return ""
 	rows := ext_fleetServerRows()
 	if ((FleetServerAssigned != "") && (servers_KindOf(rows, FleetServerAssigned) != ""))
-		return FleetServerAssigned
+		return servers_CanonicalLink(FleetServerAssigned)
 	home := ((ext_fleetMyRole = "guid") || (ext_fleetMyRole = "atk"))
 		? servers_FirstReserve(rows) : servers_Main(rows)
 	if (!home || (servers_LinkParts(home.link).type = ""))
 		home := servers_Main(rows)
-	return (home && (servers_LinkParts(home.link).type != "")) ? home.link : ""
+	return home ? servers_CanonicalLink(home.link) : ""
 }
 ;For DisconnectCheck, once Roblox is back in a server: which link it joined,
 ;"" for a public server. Remembered across restarts and told to the fleet.

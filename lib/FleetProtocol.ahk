@@ -61,7 +61,10 @@ fleet_Parse(line) {
 		if !(at := InStr(part, "="))
 			continue
 		k := SubStr(part, 1, at - 1)
-		v := fleet_Unescape(SubStr(part, at + 1))
+		;one line, whatever was sent: these values are written to ini files -
+		;the roster, the servers, nm_config.ini - and a value carrying a new
+		;line would add a section or a setting of its own choosing there
+		v := RegExReplace(fleet_Unescape(SubStr(part, at + 1)), "[\x00-\x1F\x7F]", " ")
 		out.fields[k] := v
 	}
 	return (out.verb = "") ? 0 : out

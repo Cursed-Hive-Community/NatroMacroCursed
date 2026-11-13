@@ -160,11 +160,35 @@ servers_Main(list) {
 ;DisconnectCheck in natro_macro.ahk, which builds its own list and is left
 ;alone.
 servers_LinkParts(link) {
-	if RegExMatch(link, "i)(?<=privateServerLinkCode=)(.{32})", &m)
+	;letters, digits, - and _ only, where Natro takes any 32 characters. Natro
+	;reads the link its own user typed; these come over the network, and the
+	;code is run as part of a URL - see servers_CanonicalLink.
+	if RegExMatch(link, "i)(?<=privateServerLinkCode=)[A-Za-z0-9_-]{32}", &m)
 		return { type: "LinkCode", code: m[0] }
-	if RegExMatch(link, "i)(?<=share\?code=)(.{32})(?=&type=Server)", &m)
+	if RegExMatch(link, "i)(?<=share\?code=)[A-Za-z0-9_-]{32}(?=&type=Server)", &m)
 		return { type: "ShareCode", code: m[0] }
 	return { type: "", code: "" }
+}
+;The link a macro joins: rebuilt from the code, with nothing else kept of what
+;was sent. "" for a link with no usable code.
+;
+;A server's link reaches a macro in a SERVER frame, from whatever is acting as
+;coordinator, and Natro's reconnect then does two things with it: every fifth
+;attempt it hands the whole link to the default browser, substituted into the
+;browser's own command line, and it writes it to nm_config.ini. Passed through
+;as it came, a link could open any site at all, add arguments to the browser,
+;or - carrying a new line - add settings to the file. Roblox's own two forms
+;are all a fleet needs, so those are all that ever leave here.
+servers_CanonicalLink(link) {
+	local p := servers_LinkParts(link)
+
+	switch p.type {
+		case "LinkCode":
+			return "https://www.roblox.com/games/1537690962?privateServerLinkCode=" p.code
+		case "ShareCode":
+			return "https://www.roblox.com/share?code=" p.code "&type=Server"
+	}
+	return ""
 }
 ;Two links to the same server: the same kind of code and the same code. A
 ;link code and a share code are different things, so 32 equal characters in

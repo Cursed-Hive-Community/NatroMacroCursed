@@ -406,6 +406,25 @@ ExpectEq(servers_KindOf(hopServers, "https://www.roblox.com/share?code=" B32 "&t
 ExpectEq(servers_KindOf(hopServers, "https://www.roblox.com/games/1537690962?privateServerLinkCode=" B32), "", "hop: some other server")
 ExpectEq(servers_KindOf(hopServers, ""), "", "hop: a public server")
 ExpectEq(servers_LinkParts("https://www.roblox.com/share?code=" B32 "&type=Server").type, "ShareCode", "hop: read as Natro reads it")
+;A server link reaches a macro over the network and ends up on a command line:
+;Natro's browser reconnect puts the whole link among the browser's arguments,
+;and the deeplink puts the code in a URL it runs. So a code is letters and
+;digits, and the link a macro joins is rebuilt from the code alone.
+ExpectEq(servers_LinkParts('https://evil.example/?privateServerLinkCode=a" --flag="bcdefghijklmnopqrstuv').type, ""
+	, "link: a code with a quote or a space in it is not a code")
+ExpectEq(servers_CanonicalLink('https://evil.example/x?privateServerLinkCode=' A32 '&y=" --flag')
+	, "https://www.roblox.com/games/1537690962?privateServerLinkCode=" A32, "link: only the code is kept of a link from the wire")
+ExpectEq(servers_CanonicalLink("https://www.roblox.com/share?code=" B32 "&type=Server")
+	, "https://www.roblox.com/share?code=" B32 "&type=Server", "link: a share link comes back as itself")
+ExpectEq(servers_CanonicalLink("https://example.com/"), "", "link: no code, no link")
+ExpectEq(servers_KindOf(hopServers, servers_CanonicalLink(hopServers[1].link "&x=1")), "main", "link: the rebuilt link is still the same server")
+;and a value read off the wire is one line: the server a macro is sent to is
+;written to nm_config.ini, where a second line is a setting of its own
+ExpectEq(InStr(fleet_Field(fleet_Parse("SERVER link=a%0D%0AKey=1"), "link"), "`n")
+	+ InStr(fleet_Field(fleet_Parse("SERVER link=a%0D%0AKey=1"), "link"), "`r"), 0
+	, "wire: a value cannot carry a new line")
+ExpectEq(fleet_Field(fleet_Parse("ROW name=fuzzy%201 user=A%25b"), "name") "/" fleet_Field(fleet_Parse("ROW name=fuzzy%201 user=A%25b"), "user")
+	, "fuzzy 1/A%b", "wire: a space and a percent still survive")
 
 Report()
 return
