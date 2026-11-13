@@ -268,20 +268,21 @@ fleet_OnHello(s, frame) {
 			. fleet_Field(frame, "fid") " - this is " fleetId)
 		sock_SendLine(s, fleet_Frame("BYE", Map("why", "another fleet - this one is "
 			. fleetId, "final", 0)))
-		sock_Close(s)
+		;not closed at once: see sock_CloseAfterSend for what that cost
+		sock_CloseAfterSend(s)
 		return
 	}
 	if (fleet_Field(frame, "secret") != secret) {
 		fleet_Log("rejected a connection: wrong secret")
 		sock_SendLine(s, fleet_Frame("BYE", Map("why", "bad secret", "final", 1)))
-		sock_Close(s)
+		sock_CloseAfterSend(s)
 		return
 	}
 	row := Integer(fleet_Field(frame, "row", 0))
 	if ((row <= 0) || !roster.Has(row)) {
 		fleet_Log("rejected a connection: row " row " is not in the roster")
 		sock_SendLine(s, fleet_Frame("BYE", Map("why", "unknown row", "final", 0)))
-		sock_Close(s)
+		sock_CloseAfterSend(s)
 		return
 	}
 	;a macro that restarts reconnects on a new socket while the old one may not
@@ -299,7 +300,7 @@ fleet_OnHello(s, frame) {
 			sock_SendLine(s, fleet_Frame("BYE", Map("why", roster[row].name
 				. " is already connected from " fleet_HomeText(peers[row].home)
 				. " - this macro is a copy of it", "final", 0)))
-			sock_Close(s)
+			sock_CloseAfterSend(s)
 			return
 		}
 		bySocket.Delete(previous)
@@ -480,7 +481,7 @@ fleet_Drop(row, why, tell := 1) {
 		if tell
 			sock_SendLine(p.socket, fleet_Frame("BYE", Map("why", why, "final", 1)))
 		bySocket.Delete(p.socket)
-		sock_Close(p.socket)
+		sock_CloseAfterSend(p.socket)
 	}
 	peers.Delete(row)
 	fleet_Event(p.name " " why)

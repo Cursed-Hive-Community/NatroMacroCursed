@@ -251,6 +251,45 @@ sock_Close(s) {
 	return 1
 }
 
+;Close once the other end has had time to read what was just sent to it.
+;
+;closesocket on a socket still holding bytes nobody has read sends a reset
+;instead of an orderly close, and a reset throws away whatever the other end
+;has not read yet - which is the very frame that said why it was being
+;turned away. A macro says HELLO and goes straight on talking, so there
+;nearly always are such bytes: on a real install nine refusals in ten were
+;never read.
+;
+;So: no more from this side, which lets the other end read to the end and
+;close; what it still sends is read and dropped; and the socket goes when it
+;closes, or after linger milliseconds for one that never does. The token is
+;there because Windows reuses handle values: a timer keyed on the handle alone
+;could close a connection accepted since.
+sock_CloseAfterSend(s, linger := 3000) {
+	global sock_state
+	static tokens := 0
+	local st
+
+	if !sock_state.Has(s)
+		return 0
+	st := sock_state[s]
+	st.callback := (*) => 0
+	st.closing := ++tokens
+	;with bytes still queued here the shutdown would cut them off, so the timer
+	;alone ends it
+	if (st.outPos >= st.outLen)
+		DllCall("ws2_32\shutdown", "Ptr", s, "Int", 1)
+	SetTimer sock_CloseIfStill.Bind(s, st.closing), -linger
+	return 1
+}
+sock_CloseIfStill(s, token) {
+	global sock_state
+
+	if (sock_state.Has(s) && sock_state[s].HasOwnProp("closing")
+		&& (sock_state[s].closing = token))
+		sock_Close(s)
+}
+
 ;Everything Windows has to say about every socket arrives here. wParam is the
 ;socket; lParam packs the event in its low word and any error in its high.
 sock_Dispatch(wParam, lParam, *) {

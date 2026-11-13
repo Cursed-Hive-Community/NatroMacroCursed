@@ -266,6 +266,7 @@ copyWhy := "", copyFinal := ""   ;what a copy of the main's folder was told
 restartSeen := ""           ;the verbs a restarted resident was sent
 clientCopy := 0, clientRestart := 0
 mainKept := -1              ;was the main still connected two seconds after the copy
+knockCount := 0, knockByes := 0  ;refusals sent to a macro that kept talking, and read
 
 Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' PORT ' ' SECRET ' 1 1 "' ROSTER '"'
 	, , , &coordPid
@@ -292,6 +293,8 @@ clientOther := sock_Connect("127.0.0.1", PORT, OnOther)
 ;the late resident, long after the main said where it was farming
 SetTimer Late, -5000
 SetTimer Copy, -4000
+;another fleet's macro again, ten times over, talking the way a real one does
+SetTimer Knock, -1500
 SetTimer AfterCopy, -6000
 SetTimer Restart, -12000
 ;the second coordinator, which must not get the port. It gives up after a few
@@ -475,6 +478,37 @@ OnCopy(s, event, data) {
 	}
 	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BYE"))
 		copyWhy := fleet_Field(frame, "why"), copyFinal := fleet_Field(frame, "final", "missing")
+}
+;A real macro says HELLO and goes straight on to its field and its server.
+;Turned away, the coordinator closed on those unread frames, which resets the
+;connection, and a reset throws away what the other end has not read yet: on
+;a real install nine refusals in ten were never seen by the macro they were
+;for. Ten in a row, since one alone gets through about half the time.
+Knock(*) {
+	global knockCount, PORT
+
+	if (knockCount >= 10)
+		return
+	knockCount++
+	sock_Connect("127.0.0.1", PORT, OnKnock)
+}
+OnKnock(s, event, data) {
+	global knockByes
+	local frame
+
+	if (event = "connect") {
+		if (data != "")
+			return
+		sock_SendLine(s, fleet_Frame("HELLO", Map("row", 1, "secret", "not ours"
+			, "fid", "fsomewhereelse", "machine", "another machine")))
+		sock_SendLine(s, fleet_Frame("FIELD", Map("name", "Pine Tree")))
+		sock_SendLine(s, fleet_Frame("STATE", Map("server", "", "mondo", 0)))
+		return
+	}
+	if ((event = "line") && (frame := fleet_Parse(data)) && (frame.verb = "BYE"))
+		knockByes++
+	else if (event = "close")
+		SetTimer Knock, -100
 }
 ;The late resident restarting: the same place, so the new connection takes
 ;the row and the old one goes, as it always did.
@@ -880,6 +914,7 @@ Report(*) {
 	global cfgTookUp, byeFinal, otherWhy, clientOther
 	global ROSTER, gotoField
 	global closedAt, copyWhy, copyFinal, restartSeen, mainKept
+	global knockCount, knockByes
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
 	local idsOk, idsSeen, newId, mandRoster, handLog
@@ -1231,6 +1266,8 @@ Report(*) {
 		, InStr(otherWhy, "fleet")
 		&& byeFinal.Has("another fleet")
 		&& (byeFinal["another fleet"] = 0)) && allOk
+	allOk := Check(lines, "a refusal is read by a macro that went on talking"
+		, (knockCount = 10) && (knockByes = 10)) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -1263,6 +1300,8 @@ Report(*) {
 		. ((otherWhy != "") ? otherWhy : "nothing at all")
 		. ", final=" (byeFinal.Has("another fleet")
 			? byeFinal["another fleet"] : "no BYE"))
+	lines.Push("refusals read by a macro that went on talking: " knockByes
+		. " of " knockCount)
 	lines.Push("refusals: bad secret final="
 		. (byeFinal.Has("bad secret") ? byeFinal["bad secret"] : "no BYE")
 		. ", unknown row final="
