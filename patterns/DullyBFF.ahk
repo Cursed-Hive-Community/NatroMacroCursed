@@ -1,7 +1,7 @@
 ﻿; config
 patternWidth:=2
 patternHeight:=6
-patternReps:=5
+patternReps:=3
 ; towards corner
 nm_Walk(5, RightKey),nm_Walk(12, BackKey)
 ; away from corner
@@ -14,7 +14,7 @@ loop patternReps {
         nm_Walk(1, LeftKey)
         nm_Walk(patternHeight, BackKey)
     }
-    nm_Walk(1.5, LeftKey),nm_Walk(patternHeight, FwdKey)
+    nm_Walk(1.5, LeftKey),nm_Walk(6.5, FwdKey)
     loop patternWidth {
         nm_Walk(1.5, RightKey)
         nm_Walk(patternHeight, BackKey)
