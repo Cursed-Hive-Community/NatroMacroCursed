@@ -1493,12 +1493,18 @@ ext_fleetStart(why := "macro started") {
 	global FleetCheck, FleetRow, FleetHostRow, ext_fleetRefused, ext_fleetMyField, FleetLastField
 	global ext_fleetRosterDisk, ext_fleetServerDisk
 	global FleetRosterPath, FleetServersPath, FleetHome, ext_fleetCopyOf
-	global ext_fleetBackoff, ext_fleetTurnedAway
+	global ext_fleetBackoff, ext_fleetTurnedAway, ext_fleetCoordSeen
 	local rows
 
 	;a refusal is forgotten the moment somebody sets this macro up again -
 	;that is what being set up again means
 	ext_fleetRefused := "", ext_fleetBackoff := 0, ext_fleetTurnedAway := 0
+	;The grace period starts now. It ran from the last word of whatever
+	;coordinator this macro had heard before - from never, on a fresh start -
+	;so the first look, five seconds in, found no coordinator for a very long
+	;time and started one at once. Seen on a real install: "no coordinator for
+	;98s", five seconds after joining a fleet whose coordinator was up.
+	ext_fleetCoordSeen := nowUnix()
 	;before anything resolves a path: this fleet's configuration may still be
 	;sitting in the one pair of files every fleet used to share
 	ext_fleetMigrate()
