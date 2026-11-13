@@ -29,6 +29,12 @@
 #Include "FleetHop.ahk"
 #Include "nowUnix.ahk"
 
+;An error nobody caught is a dialog, and this process has no desktop of its
+;own: the dialog lands over the game the macros on this machine are playing.
+;Written to the log and told to the fleet instead, and the thread it happened
+;in is ended - the next frame is handled as if nothing had been said.
+OnError fleet_OnError
+
 ;How often the coordinator says it is alive, and how long a silent macro has
 ;before it is written off. The macro side's own grace period is longer than
 ;this on purpose: it should take more than one missed beat to trigger a relief.
@@ -278,7 +284,9 @@ fleet_OnHello(s, frame) {
 		sock_CloseAfterSend(s)
 		return
 	}
-	row := Integer(fleet_Field(frame, "row", 0))
+	;fleet_Num for everything a frame says is a number: Integer() throws on
+	;anything else, and a frame is whatever the other end chose to send
+	row := fleet_Num(fleet_Field(frame, "row"))
 	if ((row <= 0) || !roster.Has(row)) {
 		fleet_Log("rejected a connection: row " row " is not in the roster")
 		sock_SendLine(s, fleet_Frame("BYE", Map("why", "unknown row", "final", 0)))
@@ -367,12 +375,12 @@ fleet_OnReport(s, frame) {
 			;seconds left, turned into this machine's time here - an absolute
 			;time from the reporting machine would carry its clock's drift
 			p.guidingUntil := (fleet_Field(frame, "left") != "")
-				? nowUnix() + Integer(fleet_Field(frame, "left"))
-				: Integer(fleet_Field(frame, "until", 0))
+				? nowUnix() + fleet_Num(fleet_Field(frame, "left"))
+				: fleet_Num(fleet_Field(frame, "until"))
 		case "CHARGE":
-			p.charge := Integer(fleet_Field(frame, "tokens", 0))
+			p.charge := fleet_Num(fleet_Field(frame, "tokens"))
 		case "MONDO_IN":
-			p.mondoIn := Integer(fleet_Field(frame, "secs", 0))
+			p.mondoIn := fleet_Num(fleet_Field(frame, "secs"))
 		case "STATE":
 			;a server change is acted on now rather than on the next beat - a
 			;seat given up is a seat somebody is waiting for
@@ -494,7 +502,7 @@ fleet_Drop(row, why, tell := 1) {
 ;everything worth reading.
 fleet_OnAck(s, frame) {
 	global peers, pingAt
-	local id := Integer(fleet_Field(frame, "id", 0)), waiting
+	local id := fleet_Num(fleet_Field(frame, "id")), waiting
 
 	if (id && pingAt.Has(id)) {
 		waiting := pingAt[id]
@@ -920,7 +928,7 @@ fleet_Beacon() {
 ;minutes - the point of a window is that it closes.
 fleet_OnOpen(s, frame) {
 	global bindUntil, mandate, roster
-	local row := fleet_RowOf(s), secs := Integer(fleet_Field(frame, "secs", 120))
+	local row := fleet_RowOf(s), secs := fleet_Num(fleet_Field(frame, "secs", 120))
 
 	;The mandate rather than the starter: a stand-in used to inherit this door.
 	;
@@ -1005,7 +1013,7 @@ fleet_OnBind(s, frame) {
 ;against a listener that retries its bind for five seconds.
 fleet_OnHost(s, frame) {
 	global peers, roster, mandate, term
-	local row := fleet_RowOf(s), want := Integer(fleet_Field(frame, "row", 0))
+	local row := fleet_RowOf(s), want := fleet_Num(fleet_Field(frame, "row"))
 
 	if !fleet_MayCommand(mandate, row, roster) {
 		fleet_Log("refused a handover asked for by row " row
@@ -1171,6 +1179,11 @@ fleet_Hop() {
 			, Map("server", o.to, "slot", target.slot, "why", o.why)))
 		fleet_Event("guid hop: row " o.row " (" peers[o.row].name ") to the " o.to " - " o.why)
 	}
+	return 1
+}
+
+fleet_OnError(e, *) {
+	try fleet_Event("ERROR: " e.Message " (" e.What ", line " e.Line ")")
 	return 1
 }
 

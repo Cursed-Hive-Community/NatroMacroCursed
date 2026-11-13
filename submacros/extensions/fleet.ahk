@@ -271,7 +271,7 @@ ext_fleetOpenFleets() {
 
 	for addr, f in ext_fleetOpen
 		out.Push({ addr: addr
-			, port: Integer(f.Has("port") ? f["port"] : 0)
+			, port: fleet_Num(f.Has("port") ? f["port"] : 0)
 			, host: f.Has("host") ? f["host"] : addr
 			, size: f.Has("size") ? f["size"] : 0
 			;what the fleet calls itself, which only a test fleet bothers to do
@@ -315,7 +315,7 @@ ext_fleetOnBindSocket(s, event, data) {
 	if !(frame := fleet_Parse(data))
 		return
 	if (frame.verb = "BOUND")
-		ext_fleetBound(Integer(fleet_Field(frame, "row", 0))
+		ext_fleetBound(fleet_Num(fleet_Field(frame, "row"))
 			, fleet_Field(frame, "secret"), fleet_Field(frame, "fid"))
 	else if (frame.verb = "BYE")
 		ext_fleetBindResult := fleet_Field(frame, "why", "refused")
@@ -513,20 +513,22 @@ ext_fleetOnLine(line) {
 		return
 	switch frame.verb {
 		case "HEARTBEAT":
-			term := Integer(fleet_Field(frame, "term", 0))
+			;fleet_Num, here and below: Integer() throws on anything that is not
+			;a number, and an error in the macro is a dialog over the game
+			term := fleet_Num(fleet_Field(frame, "term"))
 			;a lower term is an older coordinator that has not noticed it was
 			;replaced; its orders are stale and are not followed
 			if (term < ext_fleetTerm)
 				return
 			ext_fleetTerm := term
-			ext_fleetCoordRow := Integer(fleet_Field(frame, "row", 0))
+			ext_fleetCoordRow := fleet_Num(fleet_Field(frame, "row"))
 			;who may give this coordinator orders, which is not who is running
 			;it. Kept so that a macro taking over carries the say rather than
 			;helping itself to it - see fleet_MayCommand.
 			ext_fleetMandate := fleet_Num(fleet_Field(frame, "mandate"))
 			ext_fleetCoordSeen := nowUnix()
 		case "ROSTER":
-			if (row := Integer(fleet_Field(frame, "row", 0)))
+			if (row := fleet_Num(fleet_Field(frame, "row")))
 				ext_fleetPeers[row] := fleet_LocalTimes(frame.fields, nowUnix())
 			if (row = FleetRow)
 				ext_fleetSetRole(fleet_Field(frame, "role"))
@@ -598,7 +600,7 @@ ext_fleetOnLine(line) {
 			;the one frame that removes an account. Everything else is a ROSTER
 			;row whose state says what happened, so this is how a macro that
 			;left for good stops being drawn.
-			row := Integer(fleet_Field(frame, "row", 0))
+			row := fleet_Num(fleet_Field(frame, "row"))
 			if (row && ext_fleetPeers.Has(row))
 				ext_fleetPeers.Delete(row)
 			ext_fleetCoordSeen := nowUnix()
@@ -642,7 +644,7 @@ ext_fleetOnLine(line) {
 					. ". Looking elsewhere for ours.")
 			}
 			;absent means final, so an older coordinator behaves as it used to
-			if (Integer(fleet_Field(frame, "final", 1))) {
+			if (fleet_Field(frame, "final", "1") != "0") {
 				ext_fleetRefused := fleet_Field(frame, "why", "refused")
 				ext_fleetStop()
 			}
@@ -724,7 +726,7 @@ ext_fleetSayCharge(text) {
 
 	if ((p[1] != "charge") && (p[1] != "cooldown"))
 		return 0
-	ext_fleetMyCharge := (p[1] = "charge" && p.Length >= 2) ? Integer(p[2]) : 0
+	ext_fleetMyCharge := (p[1] = "charge" && p.Length >= 2) ? fleet_Num(p[2]) : 0
 	if ext_fleetSock
 		sock_SendLine(ext_fleetSock, fleet_Frame("CHARGE", Map("tokens", ext_fleetMyCharge)))
 }

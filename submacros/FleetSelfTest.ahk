@@ -267,6 +267,7 @@ restartSeen := ""           ;the verbs a restarted resident was sent
 clientCopy := 0, clientRestart := 0
 mainKept := -1              ;was the main still connected two seconds after the copy
 knockCount := 0, knockByes := 0  ;refusals sent to a macro that kept talking, and read
+garbleDialogs := -1         ;error dialogs the coordinator raised over frames that are not numbers
 
 Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' PORT ' ' SECRET ' 1 1 "' ROSTER '"'
 	, , , &coordPid
@@ -295,6 +296,9 @@ SetTimer Late, -5000
 SetTimer Copy, -4000
 ;another fleet's macro again, ten times over, talking the way a real one does
 SetTimer Knock, -1500
+;frames whose numbers are not numbers, from a connection that never said HELLO
+SetTimer Garble, -2000
+SetTimer GarbleLook, -4500
 SetTimer AfterCopy, -6000
 SetTimer Restart, -12000
 ;the second coordinator, which must not get the port. It gives up after a few
@@ -509,6 +513,43 @@ OnKnock(s, event, data) {
 		knockByes++
 	else if (event = "close")
 		SetTimer Knock, -100
+}
+;Anything on the network can connect and send a frame. Every number in one
+;was converted with Integer(), which throws on anything else, and an error
+;nobody catches is a dialog on the coordinator's desktop - over the game the
+;macros on that machine are playing. One line from a stranger was enough.
+Garble(*) {
+	global PORT
+
+	sock_Connect("127.0.0.1", PORT, OnGarble)
+}
+OnGarble(s, event, data) {
+	global SECRET
+
+	if ((event != "connect") || (data != ""))
+		return
+	sock_SendLine(s, "OPEN secs=abc")
+	sock_SendLine(s, "HOST row=x")
+	sock_SendLine(s, "ACK id=y")
+	sock_SendLine(s, "GUIDING field=Rose left=soon")
+	sock_SendLine(s, fleet_Frame("HELLO", Map("row", "first", "secret", SECRET)))
+}
+GarbleLook(*) {
+	global garbleDialogs, coordPid
+	local id
+
+	garbleDialogs := 0
+	DetectHiddenWindows 1
+	for id in WinGetList("ahk_pid " coordPid) {
+		try {
+			if (WinGetClass(id) = "#32770") {
+				garbleDialogs++
+				;closed, or the thread it stopped never ends and the rest of
+				;the run tests a coordinator with a hole in it
+				WinClose id
+			}
+		}
+	}
 }
 ;The late resident restarting: the same place, so the new connection takes
 ;the row and the old one goes, as it always did.
@@ -914,7 +955,7 @@ Report(*) {
 	global cfgTookUp, byeFinal, otherWhy, clientOther
 	global ROSTER, gotoField
 	global closedAt, copyWhy, copyFinal, restartSeen, mainKept
-	global knockCount, knockByes
+	global knockCount, knockByes, garbleDialogs
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
 	local idsOk, idsSeen, newId, mandRoster, handLog
@@ -1268,6 +1309,8 @@ Report(*) {
 		&& (byeFinal["another fleet"] = 0)) && allOk
 	allOk := Check(lines, "a refusal is read by a macro that went on talking"
 		, (knockCount = 10) && (knockByes = 10)) && allOk
+	allOk := Check(lines, "frames that are not numbers raise no error dialog"
+		, (garbleDialogs = 0) && !InStr(logText, "ERROR:")) && allOk
 
 	if IsObject(row2)
 		lines.Push("", "row 2 as the main macro last saw it:"
@@ -1302,6 +1345,7 @@ Report(*) {
 			? byeFinal["another fleet"] : "no BYE"))
 	lines.Push("refusals read by a macro that went on talking: " knockByes
 		. " of " knockCount)
+	lines.Push("error dialogs after frames that are not numbers: " garbleDialogs)
 	lines.Push("refusals: bad secret final="
 		. (byeFinal.Has("bad secret") ? byeFinal["bad secret"] : "no BYE")
 		. ", unknown row final="

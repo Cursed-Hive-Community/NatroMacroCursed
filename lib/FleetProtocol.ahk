@@ -135,8 +135,8 @@ fleet_BeaconVerdict(beaconTerm, myTerm, connected) {
 ;countdown two minutes wrong, and ten made "last heard from" meaningless.
 fleet_LocalTimes(fields, now) {
 	if (fields.Has("left") && (fields["left"] != ""))
-		fields["until"] := (Integer(fields["left"]) > 0) ? now + Integer(fields["left"]) : 0
+		fields["until"] := (fleet_Num(fields["left"]) > 0) ? now + fleet_Num(fields["left"]) : 0
 	if (fields.Has("age") && (fields["age"] != ""))
-		fields["seen"] := now - Integer(fields["age"])
+		fields["seen"] := now - fleet_Num(fields["age"])
 	return fields
 }
