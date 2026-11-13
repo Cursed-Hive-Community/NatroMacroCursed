@@ -783,22 +783,29 @@ fleet splits in two", E1 to E5. None of that is fixed.
 - [ ] killing the whole **machine** does too - this is the case the election
       escalation exists for, since one machine carries several rows
 - [ ] the replacement serves a **current** configuration, because it had a replica
-- [ ] **FAILED** the designated host takes the job back when it returns: it
-      could not for five minutes, while a coordinator it had started earlier
-      was still running, and when it did it connected to the stand-in's
-      coordinator instead of its own
-- [ ] **FAILED** the macro that starts a coordinator connects to it: it went
-      to the address of the last higher term it had heard
-- [ ] **FAILED** a restarted host is followed at once: it comes back at term
-      1, which the rest of the fleet has learnt to ignore
+These failed on the real run of 11 November and are fixed since. Each is now
+`wire`: `FleetElectionTest` runs three real macro sides (`FleetMacroStub`)
+and the coordinators they start, on one PC and on two stood in for by
+127.0.0.2 and 127.0.0.3. They stay unticked for `fleet` until two real PCs
+have run them.
+
+- [ ] the designated host takes the job back when it returns, by asking the
+      stand-in for it `wire`
+- [ ] the macro that starts a coordinator connects to it `wire`
+- [ ] a restarted host is followed at once: the term is kept across a
+      restart `wire`
+- [ ] alts started before the main end up with the main's coordinator `wire`
+- [ ] a main killed without warning and started again finds the fleet `wire`
+- [ ] after each of those, one coordinator is left running and a field the
+      main announces reaches both tads `wire`
 - [ ] accounts do not bounce between servers while that happens
 - [ ] a macro that loses the fleet entirely **carries on farming alone** - the
       governing rule of the whole subsystem
 - [ ] two coordinators cannot both serve: the port is the lock on one machine,
       and across machines a macro follows the highest term it hears, on the
       beacon as on the heartbeat; the one left behind loses its macros and
-      exits when idle. **FAILED**: two served for 27 hours in all, the main
-      on one and the tads on the other
+      exits when idle. Failed on 11 November (27 hours in all); `wire` since,
+      see above
 
 ### Configuration, shared
 
@@ -881,10 +888,14 @@ runs two fleets at once. Checks 36 to 38 do now.
 
 Not bugs to find - bugs already known about, with no fix yet.
 
-- **The fleet splits in two, and a macro trusts any coordinator.** The two
-  findings of the audit that are not fixed, because each needs a decision:
-  `AUDIT.md`, E1 to E5 and S1 to S5. The macro's side of the fleet has no
-  test of any kind, which is why neither was caught.
+- **A macro trusts any coordinator.** The finding of the audit that is not
+  fixed, because it needs a decision: `AUDIT.md`, S1 to S5.
+
+- **The election test has run green twice on one PC and three times on
+  two, and it is timed.** It
+  waits real grace periods and gives each step a deadline. A slow VM could
+  fail it without the election being wrong; the report says where each
+  macro was.
 
 - **The bench failed again on 2026-11-13, once in ten runs**: two of its ten
   timed checks, straight after the fleet self-test, which now ends by

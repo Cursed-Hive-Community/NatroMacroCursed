@@ -966,6 +966,8 @@ nm_importConfig()
 		;with its settings carries the row and the secret too, and this is what
 		;tells the copy it is one - see fleet_Home
 		, "FleetHome", ""
+		, "FleetTerm", 0
+		, "FleetMandate", 0
 		, "FleetAddress", ""
 		, "FleetGraceSecs", 45
 		;legacy: the two links that used to be typed on every machine. They are

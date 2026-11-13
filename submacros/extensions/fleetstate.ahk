@@ -11,6 +11,10 @@
 ;the fleet as this macro currently sees it. All of it is rebuilt from the
 ;coordinator on connect, so none of it is saved.
 ext_fleetSock := 0, ext_fleetTerm := 0, ext_fleetCoordRow := 0
+;this machine, as a macro on it reaches a coordinator on it. Changed by
+;FleetElectionTest alone, which runs two "machines" in one - see bindAddr in
+;Fleet.ahk.
+ext_fleetLocalAddr := "127.0.0.1"
 ;the row the coordinator takes orders on behalf of, and the row a handover
 ;order named - see ext_fleetOnTakeOver. Both learnt from the fleet, never set
 ;here: a macro that decided its own mandate would be deciding it had the say.
@@ -35,6 +39,9 @@ ext_fleetMyField := "", ext_fleetFollowField := ""
 ext_fleetMyRole := "", ext_fleetNotes := []
 ;where a coordinator on a higher term was heard, tried first - see ext_fleetSwitch
 ext_fleetPrefer := ""
+;where the fleet was last heard on a beacon, on this macro's term or above,
+;and when
+ext_fleetBestAt := "", ext_fleetBestSeen := 0
 ;an address typed in the join window, kept only once the fleet lets us in
 ext_fleetBindTyped := ""
 ;why the fleet turned this macro away, when it did. A refusal is final, so it

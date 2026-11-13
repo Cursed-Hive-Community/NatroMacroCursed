@@ -65,6 +65,8 @@ global FleetFollowBoost := 1
 global FleetFollowQuest := 0
 global FleetFollowPlanter := 0
 global FleetLastField := ""
+global FleetTerm := 0
+global FleetMandate := 0
 #Include "%A_ScriptDir%\extensions\fleetstate.ahk"
 which := A_Args.Length ? A_Args[1] : "join"
 if (A_Args.Length >= 2)

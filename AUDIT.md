@@ -205,10 +205,14 @@ this PC only and sends no beacon, and none of S1 to S4 can be reached.
   the update scripts, which fetch over HTTPS from the fork's repository.
 - The fleet's logs hold no secret.
 
-# Open: the fleet splits in two
+# The fleet splits in two
 
-**This is what cost the 27 hours above. Logs for E1, E3 and E4; read for
-E2 and E5.**
+**Fixed since this audit was written, in the commit "Keep the fleet on one
+coordinator". Proven in the VM by `FleetElectionTest`, on one PC and on two
+stood in for by two local addresses. Not yet run on real machines.**
+
+This is what cost the 27 hours above. Logs for E1, E3 and E4; read for E2
+and E5.
 
 Five faults, each small, that only do damage together:
 
@@ -236,9 +240,12 @@ when leaving it for a higher term. It needs a harness that runs the
 macro's side of the fleet in the VM, three at a time, which does not exist
 yet: the macro's side has no test at all today.
 
-Until then, the one arrangement the logs show working is the one where
-nothing restarts: start the main first, the alts after, and do not restart
-the main's macro while the alts run.
+What was done differs from that proposal in two ways. The host does not
+start a rival coordinator to take its job back: it asks the stand-in, which
+tells everybody and stands down (the user's choice). And a macro leaves a
+lower-term coordinator only when the fleet has been heard elsewhere in the
+last ten seconds; otherwise that coordinator is the fleet, and its term is
+taken - refusing it would strand a macro on a PC whose port it holds.
 
 # Open: guid hop
 
@@ -281,5 +288,5 @@ With extensions on, from the logs:
 1. S1 and S2: mutual proof of the secret. Changes the protocol; an older
    macro and a newer coordinator would not talk.
 2. S5: a "one PC" setting, which is the cheapest protection there is.
-3. E1 to E5, with the harness first.
+3. E1 to E5: done. What is left is a run on two real PCs.
 4. B1 and B2: keep, or put behind their switches.

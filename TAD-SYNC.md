@@ -11,8 +11,9 @@ Macro Dev, which works differently and is not in this fork.
 > **Status.** The pieces are covered by automated tests on one Windows
 > machine. One fleet has run for a day on two PCs, and its logs were read:
 > following works, to within about three seconds of the main, but the alts
-> stopped following after the main's macro was restarted. See "The alts
-> stopped following" below, and `AUDIT.md`. Use it on a network that only
+> stopped following after the main's macro was restarted. That is fixed in
+> this version and tested on one machine, not yet on two: see "The alts
+> stopped following" below. Use it on a network that only
 > your own machines are on: a macro does not yet check who it is taking
 > orders from.
 
@@ -191,8 +192,10 @@ each field is listed with whether it was announced.
 Every macro says it is connected, the main changes field, and an alt stays
 where it was. This happens after the main's macro has been stopped for more
 than 45 seconds while the alts kept running: an alt takes over running the
-fleet, and when the main comes back the macros can end up split between two
-coordinators. It is a known fault, not fixed yet.
+fleet, and when the main came back the macros could end up split between
+two coordinators. It is fixed in this version: the main asks the alt for
+its job back, and every macro moves with it within a few seconds. If you
+still see it, this is how to tell and what to do.
 
 - On the main, the Fleet panel should show every account, and
   `settings\fleet_macro.log` should say `main farming X - 2 fuzzy/tad
@@ -200,14 +203,13 @@ coordinators. It is a known fault, not fixed yet.
   number, or no such line, means some alts are elsewhere.
 - To put it right: stop the alts' macros, check the main's macro is
   running, then start the alts again.
-- To avoid it: start the main first and the alts after, and when the main's
-  macro has to be restarted, restart the alts after it.
+- Every macro must be on this version: an older one still splits.
 
 **The main's PC is turned off.**
 
 Another macro takes over running the fleet after 45 seconds. The alts keep
 farming the last field they were sent to. No macro stops because the fleet
-is gone. When the main returns, restart the alts' macros: see above.
+is gone. When the main returns it asks for the job back and is given it.
 
 **The Fleet panel shows an error.**
 

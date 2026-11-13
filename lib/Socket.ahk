@@ -138,7 +138,9 @@ sock_Track(s, callback, udp := 0) {
 ;that works between processes without inventing one. It is off by default
 ;because the plain reuse is what a lone listener wants: without it, restarting
 ;inside the TIME_WAIT window cannot rebind.
-sock_Listen(port, callback, exclusive := 0) {
+;host is the one address to listen on; empty, as every caller but a test
+;leaves it, is every address this machine has.
+sock_Listen(port, callback, exclusive := 0, host := "") {
 	global sock_state
 	local s, addr, opt
 
@@ -151,7 +153,7 @@ sock_Listen(port, callback, exclusive := 0) {
 	opt := Buffer(4, 0), NumPut("Int", 1, opt)
 	DllCall("ws2_32\setsockopt", "Ptr", s, "Int", 0xFFFF
 		, "Int", exclusive ? -5 : 4, "Ptr", opt, "Int", 4)
-	if (!(addr := sock_Address("", port))
+	if (!(addr := sock_Address(host, port))
 		|| (DllCall("ws2_32\bind", "Ptr", s, "Ptr", addr, "Int", 16, "Int") != 0)
 		|| (DllCall("ws2_32\listen", "Ptr", s, "Int", 16, "Int") != 0)) {
 		DllCall("ws2_32\closesocket", "Ptr", s)
@@ -448,7 +450,7 @@ sock_Consume(st, n) {
 ;Listen for beacons on a port. Several macros on one machine all want the same
 ;port, which is what SO_REUSEADDR is for; SO_BROADCAST is what lets the same
 ;socket send one.
-sock_UdpListen(port, callback) {
+sock_UdpListen(port, callback, host := "") {
 	local s, addr, opt
 
 	if !sock_Startup()
@@ -458,7 +460,7 @@ sock_UdpListen(port, callback) {
 	opt := Buffer(4, 0), NumPut("Int", 1, opt)
 	DllCall("ws2_32\setsockopt", "Ptr", s, "Int", 0xFFFF, "Int", 4, "Ptr", opt, "Int", 4)
 	DllCall("ws2_32\setsockopt", "Ptr", s, "Int", 0xFFFF, "Int", 0x20, "Ptr", opt, "Int", 4)
-	if (!(addr := sock_Address("", port))
+	if (!(addr := sock_Address(host, port))
 		|| (DllCall("ws2_32\bind", "Ptr", s, "Ptr", addr, "Int", 16, "Int") != 0)) {
 		DllCall("ws2_32\closesocket", "Ptr", s)
 		return 0

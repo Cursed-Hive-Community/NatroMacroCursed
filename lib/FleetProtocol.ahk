@@ -120,12 +120,23 @@ fleet_NewSecret() {
 ;which records where the fleet is. A beacon with no term comes from an older
 ;coordinator and is not held against it, and a macro that has obeyed nobody
 ;yet has nothing to compare.
-fleet_BeaconVerdict(beaconTerm, myTerm, connected) {
+;
+;Two coordinators on the same term is the one case a term cannot settle - two
+;macros that each took over without hearing the other. The lower row wins it,
+;the rule the election and the configuration already use, so every macro
+;gathers on the same one without a message being sent about it. beaconRow is
+;the row that started the coordinator heard, myCoordRow the one this macro is
+;with; either unknown, and the term alone decides as it did.
+fleet_BeaconVerdict(beaconTerm, myTerm, connected, beaconRow := 0, myCoordRow := 0) {
 	if (!beaconTerm || !myTerm)
 		return "note"
 	if (beaconTerm < myTerm)
 		return "ignore"
-	return ((beaconTerm > myTerm) && connected) ? "switch" : "note"
+	if !connected
+		return "note"
+	if (beaconTerm > myTerm)
+		return "switch"
+	return (beaconRow && myCoordRow && (beaconRow < myCoordRow)) ? "switch" : "note"
 }
 
 ;Turn the durations a ROSTER frame carries back into times on this machine's

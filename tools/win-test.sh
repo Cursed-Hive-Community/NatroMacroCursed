@@ -59,12 +59,16 @@ COVER_bench="submacros/FleetBench.ahk tools/bench-selfcheck.txt lib/Socket.ahk l
 # and what it writes is read by a person, not checked against an answer
 COVER_uidump="submacros/FleetUiDump.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk lib/FleetHop.ahk"
 
+# the macro's side of the fleet, run for real: three stubs and the coordinators
+# they start. Twice - on one PC, and on two (the argument)
+COVER_election="submacros/FleetElectionTest.ahk submacros/FleetMacroStub.ahk lib/Socket.ahk lib/FleetProtocol.ahk lib/FleetRoster.ahk lib/FleetServers.ahk lib/FleetHop.ahk submacros/Fleet.ahk submacros/extensions/fleet.ahk submacros/extensions/fleetstate.ahk"
+
 # entry point -> coverage var
-ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump submacros/PassiveSelfTest.ahk:COVER_passivetest submacros/background.ahk:COVER_background submacros/NoticeSelfTest.ahk:COVER_noticetest"
+ENTRY_FILES="submacros/natro_macro.ahk:COVER_natro submacros/Fleet.ahk:COVER_fleet submacros/SocketSelfTest.ahk:COVER_sockettest submacros/FleetSelfTest.ahk:COVER_fleettest submacros/ExtensionSelfTest.ahk:COVER_exttest submacros/FleetBench.ahk:COVER_bench submacros/FleetUiDump.ahk:COVER_uidump submacros/PassiveSelfTest.ahk:COVER_passivetest submacros/background.ahk:COVER_background submacros/NoticeSelfTest.ahk:COVER_noticetest submacros/FleetMacroStub.ahk:COVER_election submacros/FleetElectionTest.ahk:COVER_election"
 # self-test -> name:script:diagfile:coverage var[:argument]
 # the fifth field is an argument the script takes before /quiet - only the
 # bench has one, because only the bench is driven by a file of commands
-TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest bench:submacros/FleetBench.ahk:fleet_bench.txt:COVER_bench:tools/bench-selfcheck.txt passives:submacros/PassiveSelfTest.ahk:passive_diag.txt:COVER_passivetest notices:submacros/NoticeSelfTest.ahk:notice_diag.txt:COVER_noticetest"
+TEST_SPECS="socket:submacros/SocketSelfTest.ahk:socket_diag.txt:COVER_sockettest fleet:submacros/FleetSelfTest.ahk:fleet_diag.txt:COVER_fleettest extensions:submacros/ExtensionSelfTest.ahk:extension_diag.txt:COVER_exttest bench:submacros/FleetBench.ahk:fleet_bench.txt:COVER_bench:tools/bench-selfcheck.txt passives:submacros/PassiveSelfTest.ahk:passive_diag.txt:COVER_passivetest notices:submacros/NoticeSelfTest.ahk:notice_diag.txt:COVER_noticetest election-one-pc:submacros/FleetElectionTest.ahk:election_diag.txt:COVER_election election-two-pcs:submacros/FleetElectionTest.ahk:election_diag.txt:COVER_election:two"
 
 # every owned file, for the full-run default
 ALL_FILES=(
@@ -78,6 +82,7 @@ ALL_FILES=(
   submacros/background.ahk submacros/extensions/guidshots.ahk submacros/extensions/guidread.ahk
   lib/FleetHop.ahk
   submacros/NoticeSelfTest.ahk submacros/extensions/notices.ahk
+  submacros/FleetMacroStub.ahk submacros/FleetElectionTest.ahk
 )
 
 # --- arguments --------------------------------------------------------------
@@ -213,7 +218,8 @@ for spec in $TEST_SPECS; do
   code=0
   winextra=""
   [ -n "${extra:-}" ] && winextra=" .\\${extra//\//\\}"
-  timeout 120 $SSH "cd ${WIN_REPO} && .\\submacros\\AutoHotkey64.exe /script .\\${winscript}${winextra} /quiet" >/dev/null 2>&1 || code=$?
+  # ten minutes: the election test runs real grace periods, twice over
+  timeout 600 $SSH "cd ${WIN_REPO} && .\\submacros\\AutoHotkey64.exe /script .\\${winscript}${winextra} /quiet" >/dev/null 2>&1 || code=$?
   if [ "$code" -eq 0 ]; then
     echo "   PASS  $name"
   else

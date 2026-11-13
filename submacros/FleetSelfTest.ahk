@@ -1285,7 +1285,13 @@ Report(*) {
 		&& (fleet_BeaconVerdict(4, 3, 1) = "switch")
 		&& (fleet_BeaconVerdict(4, 3, 0) = "note")
 		&& (fleet_BeaconVerdict(2, 0, 0) = "note")
-		&& (fleet_BeaconVerdict(0, 3, 1) = "note")) && allOk
+		&& (fleet_BeaconVerdict(0, 3, 1) = "note")
+		;the same term on two coordinators: the lower row's is the fleet's
+		&& (fleet_BeaconVerdict(3, 3, 1, 2, 3) = "switch")
+		&& (fleet_BeaconVerdict(3, 3, 1, 3, 2) = "note")
+		&& (fleet_BeaconVerdict(3, 3, 1, 2, 2) = "note")
+		&& (fleet_BeaconVerdict(3, 3, 0, 2, 3) = "note")
+		&& (fleet_BeaconVerdict(3, 3, 1, 0, 3) = "note")) && allOk
 	;A guiding star's end and "last heard from" were absolute times taken on one
 	;machine and read on another, so two minutes of drift between PCs made the
 	;countdown two minutes wrong. They travel as durations, turned back into

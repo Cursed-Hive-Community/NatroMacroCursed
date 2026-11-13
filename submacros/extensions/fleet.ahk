@@ -65,13 +65,13 @@ ext_fleetCoordWho() {
 }
 
 ext_fleetCandidates() {
-	global FleetAddress, ext_fleetFoundAt, ext_fleetPrefer
+	global FleetAddress, ext_fleetFoundAt, ext_fleetPrefer, ext_fleetLocalAddr
 	local list := [], a
 
 	;a coordinator heard on a higher term than the one this macro was talking
 	;to goes first - otherwise loopback would hand it straight back to the
 	;replaced one on this machine
-	for _, a in [ext_fleetPrefer, "127.0.0.1", ext_fleetFoundAt, FleetAddress] {
+	for _, a in [ext_fleetPrefer, ext_fleetLocalAddr, ext_fleetFoundAt, FleetAddress] {
 		if ((a = "") || ext_fleetElsewhere(a) || ext_fleetHasAddr(list, a))
 			continue
 		list.Push(a)
@@ -80,7 +80,7 @@ ext_fleetCandidates() {
 	;real state - a bench holding the port on this machine - and a macro that
 	;stopped listing any address would never knock again even after it stopped.
 	if !list.Length
-		list.Push("127.0.0.1")
+		list.Push(ext_fleetLocalAddr)
 	return list
 }
 
@@ -159,6 +159,7 @@ ext_fleetOnTakeOver(frame) {
 	;what makes the fleet follow it instead of the process being replaced
 	if (said > ext_fleetTerm)
 		ext_fleetTerm := said
+	ext_fleetKeep()
 	ext_fleetTakeOverTo := want
 	SetTimer ext_fleetFinishTakeOver, -50
 	return 1
@@ -192,8 +193,12 @@ ext_fleetSwitch() {
 	if ((nowUnix() - lastAt) < 10)
 		return 0
 	lastAt := nowUnix()
-	ext_fleetNote("a coordinator on a higher term answers at " ext_fleetPrefer
-		. " - moving to it")
+	ext_fleetNote("the fleet is now run from " ext_fleetPrefer " - moving to it")
+	;The coordinator this macro started is the one being left, so it goes. Left
+	;running it kept the port and went on announcing itself, and for as long
+	;as it ran this macro could not start another: a host waited five minutes
+	;to take its job back, behind its own leftover.
+	ext_fleetEndCoord()
 	if ext_fleetSock
 		sock_Close(ext_fleetSock), ext_fleetSock := 0
 	ext_fleetConnect()
@@ -214,7 +219,8 @@ ext_fleetDiscover() {
 ;carries that fingerprint rather than the secret itself.
 ext_fleetOnBeacon(s, event, data, from) {
 	global FleetSecret, ext_fleetFoundAt, ext_fleetSock, ext_fleetOpen
-	global ext_fleetTerm, ext_fleetPrefer, ext_fleetTurnedAway
+	global ext_fleetBestAt, ext_fleetBestSeen
+	global ext_fleetTerm, ext_fleetPrefer, ext_fleetTurnedAway, ext_fleetCoordRow
 	local frame := fleet_Parse(data), verdict
 
 	if (!frame || (frame.verb != "FLEET"))
@@ -228,7 +234,12 @@ ext_fleetOnBeacon(s, event, data, from) {
 	;the highest term wins here as it does on the heartbeat - see
 	;fleet_BeaconVerdict
 	verdict := fleet_BeaconVerdict(fleet_Num(fleet_Field(frame, "term"))
-		, ext_fleetTerm, ext_fleetSock ? 1 : 0)
+		, ext_fleetTerm, ext_fleetSock ? 1 : 0
+		, fleet_Num(fleet_Field(frame, "row")), ext_fleetCoordRow)
+	;where the fleet was last heard, on a term at least this macro's own - what
+	;a macro that finds itself with a lower one goes by, see HEARTBEAT
+	if (fleet_Num(fleet_Field(frame, "term")) >= ext_fleetTerm)
+		ext_fleetBestAt := from, ext_fleetBestSeen := nowUnix()
 	if (verdict = "ignore")
 		return
 	ext_fleetFoundAt := from
@@ -511,7 +522,8 @@ ext_fleetOnLine(line) {
 	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant
 	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant
 	global ext_fleetMandate, ext_fleetOtherFleet, ext_fleetTrying, FleetRow
-	global ext_fleetBackoff, ext_fleetTurnedAway
+	global ext_fleetBackoff, ext_fleetTurnedAway, ext_fleetBestAt, ext_fleetBestSeen
+	global ext_fleetPrefer
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
@@ -523,16 +535,40 @@ ext_fleetOnLine(line) {
 			;fleet_Num, here and below: Integer() throws on anything that is not
 			;a number, and an error in the macro is a dialog over the game
 			term := fleet_Num(fleet_Field(frame, "term"))
-			;a lower term is an older coordinator that has not noticed it was
-			;replaced; its orders are stale and are not followed
-			if (term < ext_fleetTerm)
-				return
-			ext_fleetTerm := term
+			;A lower term is a coordinator that was replaced and has not
+			;noticed. Its heartbeat used to be ignored and nothing else: every
+			;other frame it sent still counted as a sign of life and its orders
+			;were still followed, so a macro that reached one stayed with it for
+			;good, connected and out of the fleet (a tad for seven hours, then
+			;the main for twenty, on a real install).
+			;good, connected and out of the fleet. So: if the fleet has been
+			;heard elsewhere in the last ten seconds, this macro goes there. If it
+			;has not, this coordinator is all the fleet there is, and its term is
+			;taken - refusing it would leave a macro with nobody, on a machine
+			;whose port that coordinator holds.
+			if (term < ext_fleetTerm) {
+				if (ext_fleetBestAt && ((nowUnix() - ext_fleetBestSeen) <= 10)) {
+					ext_fleetNote("the coordinator at " ext_fleetTrying " is on term " term
+						. " and the fleet is on " ext_fleetTerm ", at " ext_fleetBestAt
+						. " - going there")
+					ext_fleetPrefer := ext_fleetBestAt
+					sock_Close(ext_fleetSock), ext_fleetSock := 0
+					SetTimer ext_fleetConnect, -200
+					return
+				}
+				ext_fleetNote("the coordinator at " ext_fleetTrying " is on term " term
+					. ", below the " ext_fleetTerm " this macro last heard, and nothing"
+					. " higher answers - it is the fleet now")
+				ext_fleetTerm := term, ext_fleetKeep()
+			}
+			if (term > ext_fleetTerm)
+				ext_fleetTerm := term, ext_fleetKeep()
 			ext_fleetCoordRow := fleet_Num(fleet_Field(frame, "row"))
 			;who may give this coordinator orders, which is not who is running
 			;it. Kept so that a macro taking over carries the say rather than
 			;helping itself to it - see fleet_MayCommand.
-			ext_fleetMandate := fleet_Num(fleet_Field(frame, "mandate"))
+			if (ext_fleetMandate != fleet_Num(fleet_Field(frame, "mandate")))
+				ext_fleetMandate := fleet_Num(fleet_Field(frame, "mandate")), ext_fleetKeep()
 			ext_fleetCoordSeen := nowUnix()
 		case "ROSTER":
 			if (row := fleet_Num(fleet_Field(frame, "row")))
@@ -1323,7 +1359,51 @@ ext_fleetWatch() {
 	;the host reclaiming: only once the stand-in has actually been heard from,
 	;so a host starting up does not fight a coordinator that is about to answer
 	if ((FleetRow = FleetHostRow) && ext_fleetCoordRow && (ext_fleetCoordRow != FleetRow))
-		ext_fleetTakeOver("taking the coordinator back from row " ext_fleetCoordRow)
+		ext_fleetAskBack()
+}
+
+;The host asks whoever is running the fleet to hand it back.
+;
+;It used to start a coordinator of its own beside the stand-in's, on a higher
+;term, and leave the fleet to notice. On one PC that cannot work at all: the
+;stand-in holds the port, the newcomer gives up after five seconds, and the
+;host tried again every few seconds for ever. On two it split the fleet: the
+;host and the alts changed places, each with the other's coordinator (the
+;user's fleet, twenty hours).
+;
+;HOST is the order the coordinator already has for this: it tells everybody
+;who is taking over and on which term, then stands down, and the row named
+;starts the next one - see ext_fleetOnTakeOver. Asked again every twenty
+;seconds for as long as it takes; a coordinator that refuses says why, on the
+;problem line.
+ext_fleetAskBack() {
+	global ext_fleetSock, ext_fleetCoordRow, FleetRow
+	static lastAt := 0
+
+	if (!ext_fleetSock || ((nowUnix() - lastAt) < 20))
+		return 0
+	lastAt := nowUnix()
+	ext_fleetNote("asking row " ext_fleetCoordRow " for the coordinator back")
+	return sock_SendLine(ext_fleetSock, fleet_Frame("HOST", Map("row", FleetRow)))
+}
+
+;The term and the mandate, kept across a restart.
+;
+;Both were learnt from the fleet and forgotten when the macro closed. A host
+;restarted came back on term 1 while the rest of the fleet remembered 6, and
+;a macro that took over before hearing a coordinator named itself the one
+;with the say. Written from a timer: this is called inside the socket
+;dispatch, where a disk has no business.
+ext_fleetKeep() {
+	SetTimer ext_fleetKeepNow, -500
+}
+ext_fleetKeepNow() {
+	global ext_fleetTerm, ext_fleetMandate, FleetTerm, FleetMandate
+
+	if (FleetTerm != ext_fleetTerm)
+		ext_FleetSave("FleetTerm", ext_fleetTerm)
+	if (ext_fleetMandate && (FleetMandate != ext_fleetMandate))
+		ext_FleetSave("FleetMandate", ext_fleetMandate)
 }
 
 ;Whose turn it is to coordinate. Ours counts even when the roster is empty - a
@@ -1354,6 +1434,7 @@ ext_fleetSuccessor(skip := 0) {
 ext_fleetTakeOver(why) {
 	global ext_fleetTerm, ext_fleetSock, ext_fleetCoordSeen, ext_fleetCoordPid
 	global FleetPort, FleetSecret, FleetRow, exe_path32, ext_fleetMandate
+	global ext_fleetLocalAddr, ext_fleetPrefer
 
 	;A coordinator we started and which is still running is the coordinator. A
 	;second one would be refused the port anyway, and leaving the first behind
@@ -1363,13 +1444,22 @@ ext_fleetTakeOver(why) {
 		return 0
 	nm_setStatus("Starting", "Fleet coordinator`n" why)
 	ext_fleetNote("starting a coordinator: " why)
-	ext_fleetTerm++
+	;one term above the last heard, given to the process and not taken here:
+	;this macro's own term moves when that coordinator is heard, like anybody
+	;else's. Counted here it stayed counted when the coordinator never came
+	;up - the port taken - and left this macro a term ahead of the fleet.
+	;
+	;The one just started is where this macro goes. An address heard on a
+	;higher term was tried before this machine's own and never forgotten, so
+	;the macro that had just taken over went back to the coordinator it was
+	;replacing.
+	ext_fleetPrefer := ""
 	;the failure is caught rather than swallowed: a wrong path here means no
 	;coordinator ever starts, and the macro would otherwise retry for ever
 	;against a launch that silently does nothing
 	try
 		Run '"' exe_path32 '" /script "' A_WorkingDir '\submacros\Fleet.ahk" '
-			. FleetPort ' "' FleetSecret '" ' ext_fleetTerm ' ' FleetRow
+			. FleetPort ' "' FleetSecret '" ' (ext_fleetTerm + 1) ' ' FleetRow
 			;which fleet it is coordinating: the folder to read the roster out of,
 			;and the identity to hand to the next macro that binds
 			. ' "' ext_fleetRosterFile() '" "' ext_fleetId() '"'
@@ -1378,6 +1468,8 @@ ext_fleetTakeOver(why) {
 			;macro that has never seen a coordinator is creating the fleet and
 			;holds its own.
 			. ' ' (ext_fleetMandate ? ext_fleetMandate : FleetRow)
+			;no label, and the one address to listen on - only ever under test
+			. ((ext_fleetLocalAddr != "127.0.0.1") ? ' "" "' ext_fleetLocalAddr '"' : "")
 			, , "Hide", &ext_fleetCoordPid
 	catch as e {
 		ext_fleetCoordPid := 0
@@ -1494,6 +1586,7 @@ ext_fleetStart(why := "macro started") {
 	global ext_fleetRosterDisk, ext_fleetServerDisk
 	global FleetRosterPath, FleetServersPath, FleetHome, ext_fleetCopyOf
 	global ext_fleetBackoff, ext_fleetTurnedAway, ext_fleetCoordSeen
+	global ext_fleetTerm, ext_fleetMandate, FleetTerm, FleetMandate
 	local rows
 
 	;a refusal is forgotten the moment somebody sets this macro up again -
@@ -1558,20 +1651,36 @@ ext_fleetStart(why := "macro started") {
 	;almost always where the main is about to farm anyway; if not, the main's
 	;first trip puts it right.
 	ext_fleetMyField := FleetLastField
+	;where the fleet had got to when this macro last ran - see ext_fleetKeep
+	ext_fleetTerm := Max(ext_fleetTerm, fleet_Num(FleetTerm))
+	if !ext_fleetMandate
+		ext_fleetMandate := fleet_Num(FleetMandate)
 	;the role from this machine's copy of the roster, so a follower behaves as
 	;one from its first trip rather than from whenever it reaches the fleet
 	rows := roster_Load(ext_fleetRosterFile())
 	if rows.Has(FleetRow)
 		ext_fleetSetRole(rows[FleetRow].role)
-	;the designated host starts a coordinator without waiting to discover there
-	;is none - it is the expected state at the beginning of a session
+	;The designated host looks before it starts a coordinator. It used to start
+	;one at once, and a fleet already being run - by a stand-in, while the host
+	;was away - then had two. Four and a half seconds: a coordinator on this
+	;machine answers at once, and one elsewhere is heard within two beacons.
+	ext_fleetConnect()
 	if (FleetRow = FleetHostRow)
-		ext_fleetTakeOver("this macro coordinates by default")
-	else
-		ext_fleetConnect()
+		SetTimer ext_fleetHostStart, -4500
 	SetTimer ext_fleetBeat, 10000
 	SetTimer ext_fleetWatch, 5000
 	return 1
+}
+
+;The host, a moment after starting: seated with a coordinator, it asks for its
+;job in its own time - see ext_fleetAskBack. Nobody answered, and it starts
+;the fleet's.
+ext_fleetHostStart() {
+	global ext_fleetSock, ext_fleetCoordRow, FleetCheck, FleetRow, FleetHostRow
+
+	if (!FleetCheck || (FleetRow != FleetHostRow) || (ext_fleetSock && ext_fleetCoordRow))
+		return 0
+	return ext_fleetTakeOver("this macro coordinates by default")
 }
 
 ;Stop talking to the fleet, without killing a coordinator that other macros may
@@ -1588,6 +1697,7 @@ ext_fleetStop() {
 	SetTimer ext_fleetBeat, 0
 	SetTimer ext_fleetWatch, 0
 	SetTimer ext_fleetConnect, 0
+	SetTimer ext_fleetHostStart, 0
 	if ext_fleetSock
 		sock_Close(ext_fleetSock), ext_fleetSock := 0
 	return 1

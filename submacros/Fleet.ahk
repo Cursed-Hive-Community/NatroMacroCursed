@@ -97,6 +97,14 @@ mandate := (A_Args.Length >= 7) ? Integer(A_Args[7]) : startedBy
 ;kind of account count, same open door.
 label := (A_Args.Length >= 8) ? A_Args[8] : ""
 
+;The one address to listen on and to send the beacon from. Empty, as every
+;launcher leaves it, is every address this machine has. Given by
+;FleetElectionTest alone: Windows answers on the whole of 127.0.0.0/8, so a
+;coordinator on 127.0.0.1 and another on 127.0.0.2 are two machines as far as
+;the macros can tell, port and beacon included - and what went wrong with the
+;election only ever went wrong between two machines.
+bindAddr := (A_Args.Length >= 9) ? A_Args[9] : ""
+
 ;row number -> what we know about that macro. The row is assigned by the panel
 ;and is the one thing a macro carries locally, so it is the identity here too.
 peers := Map()
@@ -177,7 +185,7 @@ fleet_Log("coordinator starting, port " port ", term " term ", row " startedBy
 ;handover that does not happen.
 listener := 0
 Loop 10 {
-	if (listener := sock_Listen(port, fleet_OnSocket, 1))
+	if (listener := sock_Listen(port, fleet_OnSocket, 1, bindAddr))
 		break
 	Sleep 500
 }
@@ -191,7 +199,7 @@ fleet_Log("listening")
 ;the router hands out a new lease, so instead we shout where we are onto the
 ;local network and let the macros come to us. Bound to port zero - an
 ;ephemeral one - so it never competes with the macros for the listening port.
-beacon := sock_UdpListen(0, (*) => 0)
+beacon := sock_UdpListen(0, (*) => 0, bindAddr)
 if !beacon
 	fleet_Log("no UDP socket - macros will have to be given an address by hand")
 
