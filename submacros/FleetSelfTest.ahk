@@ -1243,10 +1243,20 @@ Report(*) {
 	allOk := Check(lines, "a copy may not join with its original's account"
 		, fleet_CopyClash("Bob123", "Alt", "other", orig)
 		&& fleet_CopyClash("", "Bob", "pc", orig)
-		&& fleet_CopyClash("alt456", "Bob", "pc", orig)
+		&& !fleet_CopyClash("alt456", "Bob", "pc", orig)
 		&& !fleet_CopyClash("alt456", "Alt", "pc", orig)
 		&& !fleet_CopyClash("", "Bob", "other", orig)
 		&& !fleet_CopyClash("bob123", "Bob", "pc", "")) && allOk
+	;two alts on one PC, both left on the default name: the second is another
+	;account and gets a row of its own
+	twoAlts := Map(2, { row: 2, name: "DESKTOP", role: "tad", user: "alt1", machine: "DESKTOP" }
+		, 3, { row: 3, name: "Old", role: "tad", user: "", machine: "DESKTOP" })
+	allOk := Check(lines, "another account with the same label gets a row of its own"
+		, (roster_RowFor(twoAlts, "alt2", "DESKTOP", "DESKTOP") = 0)
+		&& (roster_RowFor(twoAlts, "alt1", "ELSEWHERE", "renamed") = 2)
+		&& (roster_RowFor(twoAlts, "", "DESKTOP", "DESKTOP") = 2)
+		&& (roster_RowFor(twoAlts, "alt9", "DESKTOP", "Old") = 3)
+		&& (roster_RowFor(twoAlts, "", "", "Old") = 0)) && allOk
 	allOk := Check(lines, "an edit made anywhere beats both copies"
 		, (ev1.version = 8) && (ev1.by = 3)
 		&& fleet_ConfigBeats(ev1, { version: 7, by: 1 })

@@ -651,17 +651,44 @@ fleet_SameHome(a, b) {
 fleet_IsCopy(row, saved, here) {
 	return (row > 0) && !fleet_SameHome(saved, here)
 }
+;The row an account setting itself up already has, or 0.
+;
+;A second setup of the same macro - after a settings reset, a reinstall, a move
+;to another machine - should land back on its own row. Minting a new one leaves
+;the old listed offline for ever, and an offline row is a row somebody goes
+;looking for a reason behind.
+;
+;The Roblox username is the identity when it is set: one account is one row.
+;Without one there is only the machine and the label. A row that carries
+;another username is another account, whatever it is called: matched on the
+;label alone, a second alt left on the default name was "rebound" onto the
+;first alt's row, and the two then threw each other out every two seconds (a
+;real install, 10 November).
+roster_RowFor(rows, user, machine, name) {
+	local r, e
+
+	if (user != "")
+		for r, e in rows
+			if (e.user = user)
+				return r
+	if ((machine = "") || (name = ""))
+		return 0
+	for r, e in rows
+		if ((e.machine = machine) && (e.name = name)
+			&& ((user = "") || (e.user = "") || (e.user = user)))
+			return r
+	return 0
+}
 ;Would joining as user and name land on the row of the account this folder was
-;copied from? The coordinator gives an account its row back by its Roblox
-;username, failing that by machine and name - so a copy joining "as another
-;account" with the original's username would take the original's place.
+;copied from? By the rule above: the same username, or the same machine and
+;label with no username on one side to tell the two apart.
 fleet_CopyClash(user, name, machine, orig) {
+	local rows := Map()
+
 	if !IsObject(orig)
 		return 0
-	;fleet_RowFor tries the username first, then machine and name whatever the
-	;username was
-	return ((user != "") && (user = orig.user))
-		|| ((name = orig.name) && (machine = orig.machine))
+	rows[1] := orig
+	return roster_RowFor(rows, user, machine, name) ? 1 : 0
 }
 ;How a place is shown: the folder on the machine.
 fleet_HomeText(home) {
