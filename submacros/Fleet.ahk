@@ -360,7 +360,8 @@ fleet_OnReport(s, frame) {
 
 	if !row
 		return
-	p := peers[row], p.lastSeen := nowUnix()
+	fleet_Touch(s)
+	p := peers[row]
 	switch frame.verb {
 		case "FIELD":
 			p.field := fleet_Field(frame, "name")
@@ -393,12 +394,29 @@ fleet_OnReport(s, frame) {
 		fleet_Hop()
 }
 
+;Any frame from a seated macro is a sign of life, and they all come through
+;here.
+;
+;A row written off for its silence is put back the moment it speaks. Nothing
+;did that: "stale" was set on the beat and only a new HELLO cleared it, so a
+;macro that had gone quiet for half a minute - a long reconnect, a PC asleep -
+;stayed "not heard from" for as long as its connection lasted, was sent no
+;field to follow, was never pinged and took no part in the guid hop. It is
+;told the main's field on the way back in, since it missed any GOTO sent while
+;it was written off.
 fleet_Touch(s) {
 	global peers
-	local row := fleet_RowOf(s)
+	local row := fleet_RowOf(s), p
 
-	if row
-		peers[row].lastSeen := nowUnix()
+	if !row
+		return
+	p := peers[row], p.lastSeen := nowUnix()
+	if (p.state != "stale")
+		return
+	p.state := "online"
+	fleet_Event("row " row " (" p.name ") is heard from again")
+	fleet_FollowOne(p)
+	fleet_Broadcast()
 }
 
 ;A heartbeat says which configuration that macro holds, so the panel can show

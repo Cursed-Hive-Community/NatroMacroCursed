@@ -268,6 +268,18 @@ clientCopy := 0, clientRestart := 0
 mainKept := -1              ;was the main still connected two seconds after the copy
 knockCount := 0, knockByes := 0  ;refusals sent to a macro that kept talking, and read
 garbleDialogs := -1         ;error dialogs the coordinator raised over frames that are not numbers
+;A coordinator of its own for the row that goes quiet: it has to stay silent
+;for longer than the main one lives, and the main one's roster is wiped on
+;the way.
+QUIETPORT := 47659
+QUIETROSTER := A_ScriptDir "\..\settings\fleet_roster_quiet.ini"
+quietPid := 0, quietSock := 0
+quietStates := ""           ;each state the quiet row was given, in order
+try FileDelete QUIETROSTER
+roster_Save(QUIETROSTER, Map(1, { row: 1, name: "quiet", role: "tad", user: ""
+	, machine: "selftest" }), 1, 1)
+Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' QUIETPORT ' ' SECRET ' 1 1 "' QUIETROSTER '"'
+	, , "Hide", &quietPid
 
 Run '"' A_AhkPath '" /script "' A_ScriptDir '\Fleet.ahk" ' PORT ' ' SECRET ' 1 1 "' ROSTER '"'
 	, , , &coordPid
@@ -340,7 +352,11 @@ SetTimer Leave, -11500
 SetTimer Handover, -15000
 SetTimer Stray, -3000
 SetTimer HopState, -3500
-SetTimer Report, -25000
+;a row that says HELLO and then nothing, for longer than the thirty seconds
+;it is given, and then speaks again
+SetTimer QuietJoin, -1000
+SetTimer QuietSpeak, -37500
+SetTimer Report, -42000
 return
 
 ;Every beacon from the handover coordinator, kept by field so the report can
@@ -550,6 +566,39 @@ GarbleLook(*) {
 			}
 		}
 	}
+}
+;A macro that goes quiet for more than thirty seconds is written off, and
+;nothing wrote it back in when it spoke again: it stayed "not heard from" for
+;as long as its connection lasted, was sent no field to follow and took no
+;part in the guid hop. Every macro goes quiet sooner or later - a long
+;reconnect, a PC that sleeps for a minute.
+QuietJoin(*) {
+	global quietSock, QUIETPORT
+
+	quietSock := sock_Connect("127.0.0.1", QUIETPORT, OnQuiet)
+}
+OnQuiet(s, event, data) {
+	global SECRET, quietStates
+	local frame, state
+
+	if (event = "connect") {
+		if (data = "")
+			sock_SendLine(s, fleet_Frame("HELLO", Map("row", 1, "secret", SECRET
+				, "machine", A_ComputerName)))
+		return
+	}
+	if ((event != "line") || !(frame := fleet_Parse(data)) || (frame.verb != "ROSTER")
+		|| (fleet_Field(frame, "row") != "1"))
+		return
+	state := fleet_Field(frame, "state")
+	if (SubStr(quietStates, -StrLen(state)) != state)
+		quietStates .= ((quietStates = "") ? "" : " ") state
+}
+QuietSpeak(*) {
+	global quietSock
+
+	if quietSock
+		sock_SendLine(quietSock, fleet_Frame("HEARTBEAT", Map("cv", 1, "cby", 1)))
 }
 ;The late resident restarting: the same place, so the new connection takes
 ;the row and the old one goes, as it always did.
@@ -956,6 +1005,7 @@ Report(*) {
 	global ROSTER, gotoField
 	global closedAt, copyWhy, copyFinal, restartSeen, mainKept
 	global knockCount, knockByes, garbleDialogs
+	global quietPid, quietSock, quietStates, QUIETROSTER
 	global bothSeen, row2, rttSeen, pinged, goneRows, lateField
 	local lines := [], allOk := 1, summary, path, leftRoster, logText
 	local idsOk, idsSeen, newId, mandRoster, handLog
@@ -1309,6 +1359,8 @@ Report(*) {
 		&& (byeFinal["another fleet"] = 0)) && allOk
 	allOk := Check(lines, "a refusal is read by a macro that went on talking"
 		, (knockCount = 10) && (knockByes = 10)) && allOk
+	allOk := Check(lines, "a row written off for its silence is back when it speaks"
+		, (quietStates = "online stale online")) && allOk
 	allOk := Check(lines, "frames that are not numbers raise no error dialog"
 		, (garbleDialogs = 0) && !InStr(logText, "ERROR:")) && allOk
 
@@ -1346,6 +1398,7 @@ Report(*) {
 	lines.Push("refusals read by a macro that went on talking: " knockByes
 		. " of " knockCount)
 	lines.Push("error dialogs after frames that are not numbers: " garbleDialogs)
+	lines.Push("the quiet row was: " ((quietStates != "") ? quietStates : "never seen"))
 	lines.Push("refusals: bad secret final="
 		. (byeFinal.Has("bad secret") ? byeFinal["bad secret"] : "no BYE")
 		. ", unknown row final="
@@ -1363,6 +1416,12 @@ Report(*) {
 		sock_Close(clientE)
 	if coordPid
 		try ProcessClose(coordPid)
+	if quietSock
+		sock_Close(quietSock)
+	if quietPid
+		try ProcessClose(quietPid)
+	try FileDelete QUIETROSTER
+	try FileDelete RegExReplace(QUIETROSTER, "i)\.ini$", ".log")
 	;it should have exited on its own, having been refused the port. Closed
 	;anyway, because a test that leaves a coordinator behind poisons the next
 	;run - which is how this very bug was found.
