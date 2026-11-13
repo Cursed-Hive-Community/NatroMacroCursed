@@ -19,6 +19,9 @@ ext_fleetMandate := 0, ext_fleetTakeOverTo := 0
 ;number of addresses a macro ever tries, which is three.
 ext_fleetOtherFleet := Map()
 ext_fleetCoordSeen := 0, ext_fleetBackoff := 0, ext_fleetTrying := ""
+;set when a coordinator turns this macro away, cleared when one seats it - see
+;ext_fleetOnBeacon
+ext_fleetTurnedAway := 0
 ext_fleetPeers := Map()
 ;where the last beacon came from, and the socket that listens for them.
 ;Discovered rather than configured, which is the point: an address typed in

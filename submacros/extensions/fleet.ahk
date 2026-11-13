@@ -214,7 +214,7 @@ ext_fleetDiscover() {
 ;carries that fingerprint rather than the secret itself.
 ext_fleetOnBeacon(s, event, data, from) {
 	global FleetSecret, ext_fleetFoundAt, ext_fleetSock, ext_fleetOpen
-	global ext_fleetTerm, ext_fleetPrefer
+	global ext_fleetTerm, ext_fleetPrefer, ext_fleetTurnedAway
 	local frame := fleet_Parse(data), verdict
 
 	if (!frame || (frame.verb != "FLEET"))
@@ -238,8 +238,11 @@ ext_fleetOnBeacon(s, event, data, from) {
 		return
 	}
 	;a beacon while we are adrift is the best news we are going to get, so act on
-	;it rather than sitting out whatever backoff happens to be running
-	if !ext_fleetSock
+	;it rather than sitting out whatever backoff happens to be running. Not
+	;after being turned away: the coordinator that said no goes on shouting
+	;every two seconds, and a macro whose row had left the roster knocked 8800
+	;times in four hours on a real install. That one waits out the backoff.
+	if (!ext_fleetSock && !ext_fleetTurnedAway)
 		SetTimer ext_fleetConnect, -200
 }
 
@@ -422,11 +425,12 @@ ext_fleetStartFleet(name, role, user) {
 
 ;Everything the socket layer reports about our one connection.
 ext_fleetOnSocket(s, event, data) {
-	global ext_fleetSock, ext_fleetBackoff
+	global ext_fleetSock
 
 	if (event = "connect") {
 		if (data = "") {
-			ext_fleetBackoff := 0
+			;the backoff is not reset here: a door that opens is not a seat,
+			;and the heartbeat that follows a HELLO taken is what resets it
 			ext_fleetHello()
 			return
 		}
@@ -507,12 +511,15 @@ ext_fleetOnLine(line) {
 	global ext_fleetServers, ext_fleetServerVer, ext_fleetServerWant
 	global ext_fleetRoster, ext_fleetRosterVer, ext_fleetRosterWant
 	global ext_fleetMandate, ext_fleetOtherFleet, ext_fleetTrying, FleetRow
+	global ext_fleetBackoff, ext_fleetTurnedAway
 	local frame := fleet_Parse(line), row, term
 
 	if !frame
 		return
 	switch frame.verb {
 		case "HEARTBEAT":
+			;seated: only a macro whose HELLO was taken is sent one
+			ext_fleetBackoff := 0, ext_fleetTurnedAway := 0
 			;fleet_Num, here and below: Integer() throws on anything that is not
 			;a number, and an error in the macro is a dialog over the game
 			term := fleet_Num(fleet_Field(frame, "term"))
@@ -629,6 +636,13 @@ ext_fleetOnLine(line) {
 			;macro itself is doing.
 			ext_fleetNote("the fleet turned this macro away: "
 				. fleet_Field(frame, "why", "refused"))
+			ext_fleetTurnedAway := 1
+			;said where it shows: the macro keeps knocking, and "connecting" was
+			;all the panel ever said about a row that had left the roster
+			if InStr(fleet_Field(frame, "why"), "unknown row")
+				ext_fleetProblem("the fleet has no row " FleetRow " in its roster. If"
+					. " that lasts, this account was taken out of the fleet: set"
+					. " this macro up again to rejoin.")
 			;a copy of a macro that is running: said where it shows, since the
 			;macro keeps knocking and nothing else would say why it never gets in
 			if InStr(fleet_Field(frame, "why"), "is already connected from")
@@ -1252,7 +1266,7 @@ ext_fleetSayLeaving() {
 ;Say we are still here. Cheap, and it is what tells the coordinator apart from a
 ;macro that has quietly died.
 ext_fleetBeat() {
-	global ext_fleetSock, ext_fleetRosterDisk
+	global ext_fleetSock, ext_fleetRosterDisk, ext_fleetTurnedAway
 
 	;the heartbeat carries which configuration this macro holds, so that one
 	;macro sitting on a different version from the rest can be seen rather than
@@ -1261,7 +1275,8 @@ ext_fleetBeat() {
 		sock_SendLine(ext_fleetSock, fleet_Frame("HEARTBEAT"
 			, Map("cv", ext_fleetRosterDisk.version, "cby", ext_fleetRosterDisk.by)))
 		ext_fleetSayServer()
-	} else
+	} else if !ext_fleetTurnedAway
+		;turned away, it knocks again on the backoff's clock and no other
 		ext_fleetConnect()
 }
 
@@ -1478,11 +1493,12 @@ ext_fleetStart(why := "macro started") {
 	global FleetCheck, FleetRow, FleetHostRow, ext_fleetRefused, ext_fleetMyField, FleetLastField
 	global ext_fleetRosterDisk, ext_fleetServerDisk
 	global FleetRosterPath, FleetServersPath, FleetHome, ext_fleetCopyOf
+	global ext_fleetBackoff, ext_fleetTurnedAway
 	local rows
 
 	;a refusal is forgotten the moment somebody sets this macro up again -
 	;that is what being set up again means
-	ext_fleetRefused := ""
+	ext_fleetRefused := "", ext_fleetBackoff := 0, ext_fleetTurnedAway := 0
 	;before anything resolves a path: this fleet's configuration may still be
 	;sitting in the one pair of files every fleet used to share
 	ext_fleetMigrate()
