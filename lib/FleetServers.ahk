@@ -1,0 +1,265 @@
+﻿;The fleet's servers - where the accounts actually sit
+;
+;A fleet runs on one main private server and as many reserves as the setup
+;needs: somewhere to park an account that has to leave the main, somewhere to
+;stage a guiding star, somewhere to put a macro that is between jobs.
+;
+;Each one carries the account that owns it, because only the owner's /kick does
+;anything - so "who can clear this server" is a fact about the server, not
+;about the account. It used to be one flag on one roster row, which could not
+;say that two servers have two different owners, and that is why the flag is
+;gone.
+;
+;Shared through the coordinator like the roster, and for the same reason: an
+;owner that disagreed between machines would mean a kick sent from the one
+;account whose kick does nothing.
+;
+;	[1]
+;	Name=Main
+;	Link=https://www.roblox.com/games/1537690962?privateServerLinkCode=000
+;	Owner=2
+;	Kind=main
+;
+;The [fleet] section carries the version and the row that wrote it, exactly as
+;the roster's does and for the same reason - see FleetRoster.ahk.
+;
+;Kind is main or reserve, and exactly one entry is the main. Owner is a roster
+;row number, 0 when nobody has said. Slot numbers are stable and never reused,
+;so a control that points at one keeps pointing at the same server after
+;another is deleted.
+
+;What a server is, said once.
+;
+;A server travels through the file, two kinds of frame each way and two windows,
+;and each of those used to list its fields by hand - seven lists, so a field
+;added to one was a field silently dropped by another. They are all built from
+;these now.
+servers_Keys() {
+	return ["name", "link", "owner", "kind", "hop", "threshold", "capacity", "blue"]
+}
+;hop to blue are the guid hop's settings, read on the main server only: whether
+;the coordinator moves guids at all, the charge a guid stops farming at in the
+;reserve, how many players the server takes, and the fields the main farms,
+;Pine Tree|Rose. Facts about the server, so they live on it. Off by default;
+;200 tokens, six seats.
+servers_Blank(slot, kind := "reserve") {
+	return { slot: slot, name: "server " slot, link: "", owner: 0, kind: kind
+		, hop: 0, threshold: 200, capacity: 6, blue: "" }
+}
+;One field from text - a line of the file or a field of a frame.
+servers_Set(e, k, v) {
+	switch StrLower(k) {
+		case "name":  e.name := v
+		case "link":  e.link := v
+		case "owner": e.owner := fleet_Num(v)
+		case "kind":  e.kind := (StrLower(v) = "main") ? "main" : "reserve"
+		case "hop":   e.hop := fleet_Num(v) ? 1 : 0
+		;a number out of range is a hand-edited file, not a reason to stop
+		case "threshold": e.threshold := Min(Max(fleet_Num(v), 1), 249)
+		case "capacity":  e.capacity := Min(Max(fleet_Num(v), 1), 50)
+		case "blue":  e.blue := v
+	}
+	return e
+}
+;A server from a frame's fields. One an older build sent without some field
+;keeps that field's default.
+servers_FromFields(slot, fields) {
+	local e := servers_Blank(slot), k
+
+	for _, k in servers_Keys()
+		if fields.Has(k)
+			servers_Set(e, k, fields[k])
+	return e
+}
+;One field of a server, or its default when the entry was made without it - by
+;code older than the field, or a test building one by hand.
+servers_Get(e, k) {
+	return e.HasOwnProp(k) ? e.%k% : servers_Blank(0).%k%
+}
+;A server as a frame: verb SERVER from the coordinator, SETSERVER up to it, with
+;the version of the list it belongs to and how many entries that version has.
+servers_Frame(verb, e, ver, n) {
+	local m := Map("v", ver.version, "by", ver.by, "bench", fleet_IsBench(ver), "n", n
+		, "slot", e.slot), k
+
+	for _, k in servers_Keys()
+		m[k] := servers_Get(e, k)
+	return fleet_Frame(verb, m)
+}
+
+;Read the servers.
+;
+;A missing file is not an empty list - a fleet has a main server before anybody
+;has pasted a link into it, so it is one unfilled main. That also keeps the
+;broadcast non-empty, which matters: the generation number that makes a
+;deletion converge travels on the entries themselves.
+servers_Load(path) {
+	local list := Map(), slot, line, at
+
+	slot := 0
+	if FileExist(path) {
+		Loop Parse FileRead(path, "UTF-8"), "`n", "`r" {
+			line := Trim(A_LoopField)
+			if ((line = "") || (SubStr(line, 1, 1) = ";"))
+				continue
+			if (SubStr(line, 1, 1) = "[") {
+				;[fleet] is the version, not a server - and a hand-edited file
+				;must not be able to stop the list from loading at all
+				slot := fleet_SectionNumber(line)
+				if (slot > 0)
+					list[slot] := servers_Blank(slot)
+				continue
+			}
+			if (!slot || !list.Has(slot) || !(at := InStr(line, "=")))
+				continue
+			servers_Set(list[slot], Trim(SubStr(line, 1, at - 1)), Trim(SubStr(line, at + 1)))
+		}
+	}
+	if !list.Count
+		list[1] := servers_Blank(1, "main"), list[1].name := "Main"
+	servers_FixMain(list)
+	return list
+}
+
+;Exactly one main, whatever the file said.
+;
+;Self-healing rather than an error: the file can be edited by hand, and a fleet
+;with two mains or none is a fleet that cannot answer "where is everybody
+;supposed to be". The lowest slot takes the job, which is stable - it does not
+;change on the next load.
+servers_FixMain(list) {
+	local keys := [], s, seen := 0
+
+	for s, _ in list
+		keys.Push(s)
+	roster_Sort(keys)
+	for _, s in keys {
+		if (list[s].kind != "main")
+			continue
+		if seen
+			list[s].kind := "reserve"
+		seen := s
+	}
+	if !seen
+		list[keys[1]].kind := "main"
+	return list
+}
+
+;The main server, or 0 if the list is empty - which servers_Load never returns.
+servers_Main(list) {
+	local s, e
+
+	for s, e in list
+		if (e.kind = "main")
+			return e
+	return 0
+}
+
+;A server link as Natro's reconnect reads it: {type, code}, type LinkCode,
+;ShareCode or "" for a link it cannot use. The same two patterns as
+;DisconnectCheck in natro_macro.ahk, which builds its own list and is left
+;alone.
+servers_LinkParts(link) {
+	;letters, digits, - and _ only, where Natro takes any 32 characters. Natro
+	;reads the link its own user typed; these come over the network, and the
+	;code is run as part of a URL - see servers_CanonicalLink.
+	if RegExMatch(link, "i)(?<=privateServerLinkCode=)[A-Za-z0-9_-]{32}", &m)
+		return { type: "LinkCode", code: m[0] }
+	if RegExMatch(link, "i)(?<=share\?code=)[A-Za-z0-9_-]{32}(?=&type=Server)", &m)
+		return { type: "ShareCode", code: m[0] }
+	return { type: "", code: "" }
+}
+;The link a macro joins: rebuilt from the code, with nothing else kept of what
+;was sent. "" for a link with no usable code.
+;
+;A server's link reaches a macro in a SERVER frame, from whatever is acting as
+;coordinator, and Natro's reconnect then does two things with it: every fifth
+;attempt it hands the whole link to the default browser, substituted into the
+;browser's own command line, and it writes it to nm_config.ini. Passed through
+;as it came, a link could open any site at all, add arguments to the browser,
+;or - carrying a new line - add settings to the file. Roblox's own two forms
+;are all a fleet needs, so those are all that ever leave here.
+servers_CanonicalLink(link) {
+	local p := servers_LinkParts(link)
+
+	switch p.type {
+		case "LinkCode":
+			return "https://www.roblox.com/games/1537690962?privateServerLinkCode=" p.code
+		case "ShareCode":
+			return "https://www.roblox.com/share?code=" p.code "&type=Server"
+	}
+	return ""
+}
+;Two links to the same server: the same kind of code and the same code. A
+;link code and a share code are different things, so 32 equal characters in
+;one of each are not one server.
+servers_SameServer(a, b) {
+	local pa := servers_LinkParts(a), pb := servers_LinkParts(b)
+
+	return (pa.type != "") && (pa.type = pb.type) && (pa.code = pb.code)
+}
+;Which of the servers a link is - "main", "reserve" - or "" for none of them,
+;or for a link Natro cannot use. By code, so a link pasted with other
+;parameters still matches.
+servers_KindOf(list, link) {
+	local s, e
+
+	for s, e in list
+		if servers_SameServer(e.link, link)
+			return e.kind
+	return ""
+}
+
+;The reserve a guid is sent to: the first, in slot order. 0 when there is none.
+servers_FirstReserve(list) {
+	local keys := [], s
+
+	for s, _ in list
+		keys.Push(s)
+	roster_Sort(keys)
+	for _, s in keys
+		if (list[s].kind != "main")
+			return list[s]
+	return 0
+}
+
+;How many reserves there are, which is the number the settings window shows.
+servers_Reserves(list) {
+	local s, e, n := 0
+
+	for s, e in list
+		if (e.kind != "main")
+			n++
+	return n
+}
+
+;The next free slot. Never reused, so a control that remembers a slot number
+;cannot come to mean a different server than the one it was pointed at.
+servers_NextSlot(list) {
+	local s, best := 0
+
+	for s, _ in list
+		if (s > best)
+			best := s
+	return best + 1
+}
+
+;Write it back, slots in order. Through the same whole-file write the roster
+;uses, because this file has the same two writers and the same readers on a
+;timer - see fleet_WriteWhole.
+servers_Save(path, list, version := 1, by := 0, bench := 0) {
+	local out := ";the fleet's servers - written by the macro, safe to read by hand`r`n`r`n"
+		. fleet_MetaSection(version, by, bench)
+	local keys := [], s
+
+	for s, _ in list
+		keys.Push(s)
+	roster_Sort(keys)
+	for _, s in keys {
+		out .= "[" s "]`r`n"
+		for _, k in servers_Keys()
+			out .= StrTitle(k) "=" servers_Get(list[s], k) "`r`n"
+		out .= "`r`n"
+	}
+	return fleet_WriteWhole(path, out)
+}

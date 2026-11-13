@@ -1,0 +1,973 @@
+# What is proven, and what is not
+
+This fork adds a lot that has never been played. The commits say so one at a
+time, which is no use when the question is "what is left to check?" - so this
+file is the one list, and it is meant to be edited as things get proven.
+
+**The rule: move a line up only when you have the evidence the line names.**
+A thing that loads is not a thing that works.
+
+## The six kinds of evidence
+
+They are not interchangeable, and most of this fork has only the first two.
+
+| Tag | What it means | How |
+|---|---|---|
+| `sieve` | The structure is not obviously broken. Says nothing about behaviour. | `python3 tools/nm-check.py` |
+| `loads` | AutoHotkey parses it and would start it. | `tools/win-test.sh`, step 3 |
+| `wire` | A self-test drove the real code and checked the answer. | `tools/win-test.sh`, step 4 |
+| `layout` | Every control's rectangle and text was read out of the built window. | the dump harness, see below |
+| `game` | Somebody watched it do the right thing in Bee Swarm Simulator. | you, on the machine that plays |
+| `fleet` | It was run across two or more machines at once. | you, with two PCs |
+
+`sieve`, `loads`, `wire` and `layout` are all automated and all run from the
+Mac against the Windows VM. `game` and `fleet` cannot be: the VM has no Roblox
+and one network interface. No macro feature in this fork had `game` or
+`fleet` until 11 November 2026, when a main on one PC and two tads on another
+ran this branch for a day and their logs were read: see `AUDIT.md`. A line
+proven that way is tagged `fleet` and says "logs". Nobody watched it happen.
+
+### Running the automated ones
+
+```bash
+tools/win-test.sh                 # everything
+tools/win-test.sh --changed       # only what your edits can break
+```
+
+On the Windows machine itself, without the Mac:
+
+```
+.\submacros\AutoHotkey64.exe /script .\submacros\SocketSelfTest.ahk
+.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
+```
+
+Both open a window with the verdict and write `settings\fleet_diag.txt` or
+`settings\socket_diag.txt`. Add `/quiet` for an exit code and no window.
+
+### Why `layout` exists instead of screenshots
+
+A window built over SSH lives on the service session's desktop and is never
+composited, so `PrintWindow` returns solid black however it is asked. The
+substitute is to build the real window and dump every control's name, type,
+rectangle, enabled state and text. That catches a wrong field, a collision, an
+overflow and a control that should be greyed out. It cannot catch a colour.
+
+The harness is `submacros/FleetUiDump.ahk`. It takes the window to build -
+`join`, `setup`, `panel`, `panelfull`, `servers` or `adv` - and, for some,
+the row this macro sits on, then writes `settings\ui_dump.txt`:
+
+```
+.\submacros\AutoHotkey64.exe /script .\submacros\FleetUiDump.ahk setup 1
+```
+
+It reads the same fleet state file as the macro,
+`submacros/extensions/fleetstate.ahk`, so it cannot fall behind it.
+`tools/win-test.sh` validates it but does not run it: the dump is read by a
+person.
+
+---
+
+## Proven on the wire
+
+These fifty-six checks run the real coordinator process, the real socket
+layer and the real protocol. They are the strongest evidence in the repository.
+
+- [x] both rows reach the main macro
+- [x] both rows reach the fuzzy macro
+- [x] a space in an account name survives the wire
+- [x] a wrong secret is refused
+- [x] the main's field reaches a resident as a GOTO
+- [x] a resident joining late is sent the field anyway
+- [x] an unreadable roster strikes nobody off
+- [x] a ping is answered and timed
+- [x] a macro that leaves is struck from the fleet, file included
+- [x] a second coordinator is refused the port
+- [x] a second setup of one account reuses its row
+- [x] the server list arrives with its link and owner intact
+- [x] a deleted server disappears from a macro's copy
+- [x] a configured row that has never connected is still broadcast
+- [x] a bad secret is final, an unknown row is not
+- [x] a stale configuration handed up is refused
+- [x] a better configuration handed up is taken
+- [x] a tie keeps ours and files theirs as `.conflict`
+- [x] a roster cleared on purpose is applied, where an unreadable one is not
+- [x] a macro's own configuration version reaches the fleet
+- [x] a bench configuration loses to a real one, in the comparison
+- [x] and is refused over the wire, at version 999 against a real 10
+- [x] an empty fleet id falls back to the old flat file, and is refused as a
+      folder name
+- [x] an id carrying a path separator is refused - it arrives from the wire
+- [x] two fleets keep two folders, roster and servers
+- [x] a new fleet id always opens with a letter, over two hundred draws, so an
+      ini cannot read `00123456` back as `123456`
+- [x] an old fleet's id is the fingerprint of its secret, so every machine in
+      it reaches the same answer without being told
+- [x] binding hands the fleet's identity over beside the secret
+- [x] only the mandated row may command a coordinator, and a coordinator told
+      no mandate obeys the fleet
+- [x] a mandate nobody holds any more passes to the rows that are still in the
+      roster, and to no others
+- [x] a macro without the mandate is refused a handover, on the wire
+- [x] the mandated row hands the coordinator on: the order reaches every macro
+      carrying the say, and the old process stands down
+- [x] the binding door refuses out loud rather than ignoring the request
+- [x] the beacon says where to knock, which fleet it is, whether the door is
+      open, and what the fleet calls itself
+- [x] a macro from another fleet is recognised as such, and an identity nobody
+      sent leaves the secret deciding as it always did
+- [x] and the refusal is not final, so that macro keeps looking for its own
+      fleet instead of letting go of it
+- [x] a fleet log is size-checked on the first line of a run, so a macro that
+      writes a few lines per session cannot grow it across restarts - not on
+      the wire, but in the same self-test
+- [x] the main's field is on the roster every follower receives, and reads
+      back the way a follower reads it, with no GOTO involved
+- [x] only a fuzzy or a tad is pulled out of a field for the main, and a field
+      differing only in capitals is not a move - the rule, not the gather loop
+- [x] the coordinator of a fleet being left is found among this folder's
+      processes by its fleet id and stopped, and another fleet's is left running
+- [x] binding as main while another account is the main is refused, and the
+      refusal names that account
+- [x] an edit made on any macro is saved at a version beating both its own
+      copy and the fleet's, and a roster with two mains is recognised
+- [x] a follower whose field is not the main's is told apart from one that is,
+      by the rule the cards are coloured with
+- [x] a beacon on a lower term is ignored and one on a higher term moves a
+      connected macro to it, by the rule the macro applies
+- [x] a guiding star's end and "last heard from" travel as durations and are
+      turned back into this machine's times, and the coordinator sends them
+- [x] a hand-up is remembered by both versions, so a new edit is offered even
+      after an earlier offer against the same fleet version
+- [x] a refusal is read by a macro that went on talking: ten in a row, each
+      HELLO followed at once by a field and a server. It was read about half
+      the time before `87d377d`, and one time in ten on a real install
+- [x] frames whose numbers are words, from a connection that never said
+      HELLO, raise no error dialog on the coordinator
+- [x] a row written off for thirty seconds of silence is back online when it
+      speaks again, on a coordinator of its own
+- [x] another account with the same label on the same PC gets a row of its
+      own; a known username gets its row back from anywhere
+
+Plus the socket layer: a plain line, an accented line, a line longer than one
+read, a UDP datagram with the sender's address, and a frame three times the
+size a frame may be, sent in one go and refused.
+
+And in `ExtensionSelfTest`, on the values a frame carries:
+
+- [x] a server code holding a quote or a space is not a code
+- [x] a link to any other site comes back as the Roblox link for its code,
+      and that is the only link a macro joins, runs or saves
+- [x] no value read off the wire carries a new line into a settings file
+
+And ten checks on the bench's own wiring, in `tools/bench-selfcheck.txt`,
+which the bench loads and runs because it takes a file of commands as an
+argument. Every one of them failed before the seat model was split into the
+two sockets a seat has:
+
+- [x] a fake seat keeps its kind when it reaches the bench's own coordinator
+- [x] and can still be driven, and still be sent an order as the coordinator
+- [x] the coordinator's heartbeat, with its term, reaches a fake seat
+- [x] a newcomer that sends only BIND comes back with the bench's secret and
+      the bench's fleet identity
+- [x] the bench coordinating under another row's name says so on its beat
+- [x] a real `Fleet.ahk` started on behalf of a row, asked by that row to hand
+      the coordinator to another - the production handover path, driven from
+      the asking end for the first time
+- [x] `drop 100` and the frame cannot arrive; `faults off` and the same frame
+      does, so the check cannot pass for a seat that had stopped listening
+- [x] a frame cut in half is never mistaken for the one that was sent
+
+And forty-two checks on the extensions' arithmetic — every window in time
+that any of them turns on, each with a row one second outside it, one exactly
+on its edge and one inside:
+
+- [x] the lease window at thirty, sixty, seventy and a hundred and five
+      seconds, and the upper edge being exclusive because at 900 the lease is
+      over
+- [x] pre-glitter between ten and eleven minutes before the booster, and not
+      while a glitter is still running
+- [x] the blue booster at 2660 of its 2700 second cooldown, and due again at
+      once after a trip that found nothing to press
+- [x] the sticker stack past its timer, after a failure, and never twice inside
+      a minute
+- [x] Mondo at :59, through the :00 to :14 catch-up window, and the fifty-five
+      minute guard against claiming one spawn twice
+- [x] no planter, quest or collect round started between :55 and :00
+
+They run in well under a second: no socket, no sleep, no clock read. The
+functions they call were deliberately separated from the state they used to
+read, so they take their numbers as arguments.
+
+**This proves the arithmetic, not the feature.** That a window is the right
+thirty seconds says nothing about whether the macro presses the key when it
+opens.
+
+### The gap inside that, now half closed
+
+The self-test speaks the protocol **directly**. It is a pretend macro, not the
+real one. So the coordinator and the wire are proven by it; the macro's own
+half is not, and had never run at all.
+
+The bench's coordinator mode closed three of the five. Driven against the real
+extension code - the same functions the macro runs, with nothing of Natro
+around them - it served a configuration at version 9, then served version 2,
+and the macro:
+
+- [x] `ext_fleetReplicate` wrote the replica at v9
+- [x] refused to go backwards: the file still said v9 after v2 arrived
+- [x] `ext_fleetHandUp` offered its v9 back, and the bench received the SETROW
+      frames carrying it
+
+And then the bench staged losing a coordinator - serve a roster where rows 1
+and 2 are alive, let a real macro connect as row 3, and stop listening - which
+closed two more. Read out of the macro's own state as it happened:
+
+```
++0.5s   connected to the bench
++15.5s  the connection went. row 1 reads offline, row 2 reads online
++15.5s  ext_fleetSuccessor(0) says 2, with one passed over it says 3
++35.0s  TOOK OVER: started a coordinator, pid 11300, term 2
+```
+
+- [x] `ext_fleetLostCoord` took the coordinator's row out of the running at
+      once, and left row 2 alone - first-hand evidence only, which is the rule
+- [x] the election escalated: row 2 was elected, given a whole grace period,
+      and passed over. The takeover came 20 seconds after the loss, which is
+      two grace periods of ten - not one, and not never.
+
+Still never run:
+
+- [ ] `ext_fleetReplicate` re-reading disk versions on a change of role `loads`
+      — needs a macro that coordinates and then stops coordinating, which is
+      two benches or two macros rather than one of each
+
+---
+
+## Proven as layout
+
+Control rectangles and text read out of the built window. Geometry and content
+only - **no colour in this fork has ever been looked at**.
+
+- [x] Fleet window: seat cards, their three lines, the three bands, no overflow
+- [x] Fleet settings: section 2 summary, section 3 table, the disabled state off
+      the coordinator and the line naming who to go to
+- [x] Servers window: the table, the owner dropdown and the rows behind it,
+      selecting a row filling the fields
+- [x] One account: all ten rows, including an account owning two servers
+- [x] Advanced: the four follow switches, their checked state, the group box and
+      hint not overlapping
+- [x] Join window: role first and empty, both buttons grey until a role is
+      picked, the address field and the hint inside their frames
+
+Never dumped:
+
+- [ ] the Extensions tab and its two live strip lines `loads`
+- [ ] the Git Sync window `loads`
+
+---
+
+## Never run at all
+
+Everything below has `sieve` and `loads` and nothing more. Grouped by what you
+would sit and watch.
+
+The numbers in these windows are now checked by the extension self-test, so
+what is left in each line is the half a table of values cannot reach: that the
+macro notices the window, presses the right key, and goes to the right place.
+
+### Boost lease - Glitter Extend
+
+The windows are DefinetlyNotRay's measured values and are deliberately kept.
+
+- [ ] glitter fires in the **last 30 seconds** of a lease while gathering
+      (870-900s after the boost was detected)
+- [ ] glitter fires in the **last 70 seconds** when a full bag sends the macro
+      home (830-900s), because the trip would outlast the lease otherwise
+- [ ] in the **last minute** of a lease during a convert (840-900s), the macro
+      walks to the field, glitters, walks back and **carries on converting**
+      `loads`
+- [ ] a trip ends on its own time limit even while boosted, as in
+      DefinetlyNotRay's version `loads`
+- [ ] **one renewal per lease** and no more - a second would throw away whatever
+      is left of the first
+- [ ] the status line says `Boosted / Glitter Extend` when it fires
+- [ ] 30 minutes of continuous boost from one booster plus one renewal
+- [ ] the lease is handed back when it expires, so the next boost gets its own
+      renewal (`ext_boostLeaseExpire`)
+- [ ] nothing fires with no glitter hotbar key set
+
+Needs: Extensions tab, Glitter Extend on; a glitter key in the Boost tab.
+
+### Pre-Glitter
+
+- [ ] fires only on **Pine Tree**
+- [ ] fires when the blue booster is **10 to 11 minutes** away and not otherwise
+- [ ] the macro still collects, does quests and tends planters while it runs -
+      the whole point, since locking them out for 15 minutes costs more than the
+      boost is worth
+- [ ] it stops counting as a boost once the booster comes due
+- [ ] pressing the blue booster clears it (`ext_preGlitterClear`)
+
+Needs: Pre-Glitter on **and** Blue Booster Interrupt on, which is what tracks
+the cooldown.
+
+### Blue booster interrupt
+
+- [ ] the macro breaks off a gathering trip **40 seconds before** the 45 minute
+      cooldown is up (2660s), rather than waiting for the trip to end
+- [ ] it goes **straight from the field**, with no walk home and no convert on
+      the way - the forty seconds are the reset and the walk `loads`
+- [ ] it arrives as the booster becomes available instead of standing there
+- [ ] pressing it starts a fresh lease owed its own renewal
+- [ ] a trip that found no booster to press - it arrived early - goes again
+      **at once** and lands on it (`ext_blueBoosterFailed`); it used to wait
+      five minutes and was seen arriving six minutes late `loads`
+- [ ] every trip goes back to the boosted field **until the boost ends**,
+      not only the first one (`ext_boostChaseField`). Seen on a real
+      install: one trip there, then Pine Tree, sometimes back. The
+      deadline and the Boost tab box are `wire`, by the extension
+      self-test; the trip itself is `loads`
+- [ ] a macro restarted halfway through a boost goes back to its field
+      `loads`
+
+### Sticker stack interrupt
+
+- [ ] the macro breaks off as soon as the timer is up and goes **straight from
+      the field**, without walking home or converting first `loads`
+- [ ] in the last minute of a boost lease it waits for the glitter first
+      `loads`
+- [ ] it is placed in the middle of a backpack or balloon convert too, and the
+      balloon convert is **resumed** afterwards `loads`
+- [ ] a reset that is about to convert places a due stack first `loads`
+- [ ] five attempts at reaching the stack rather than two `loads`
+- [ ] **no convert on the way** to the stack: the reset before the trip no
+      longer converts `loads`
+- [ ] it then returns to the hive to convert **under** the stack - the second
+      half is the point of the first
+- [ ] a placement that failed retries after 15 seconds, and never twice inside a
+      minute whatever the timers say
+- [ ] a failure says so in the status line rather than passing silently
+- [ ] re-entry is impossible: the reset passes back through interrupt checks and
+      a stack placed twice is a stack wasted
+
+Needs: Sticker Stack enabled in the Boost tab, where the timer and item live.
+
+### Mondo interrupt
+
+- [ ] the macro leaves at **:59** and is standing at Mountain Top as the chick
+      appears, **straight from the field** `loads`
+- [ ] it also leaves from the middle of a convert `loads`
+- [ ] with the interrupt on, Natro's own Mondo - **Kill** included - is gone to
+      straight from the field, without walking home and converting `loads`
+- [ ] glitter is pressed **before** leaving when the lease is in its last 105
+      seconds, and the boost counts again from that press
+- [ ] arriving between **:00 and :14** still counts, for the times it was
+      mid-pattern with a full backpack
+- [ ] one spawn is never claimed twice (the 3300s guard)
+- [ ] it runs for `MondoSecs` and goes home
+- [ ] a spawn that never appears is reported, not waited on for ever
+- [ ] it does nothing unless Mondo is set to **Buff**
+
+Leaving at :59 is for **Buff** only, as in DefinetlyNotRay's version: a Kill
+macro is not sent early, but no longer walks home and converts before going.
+
+### Limits and process lifecycle
+
+These are the two that can take a process down, and neither is cheaply testable
+with the harness that exists - which is a reason to write it down, not a reason
+to pretend otherwise.
+
+- [ ] a peer that stops reading is dropped once its send queue passes 1 MB
+      `loads` — needs a peer that does not drain its socket, and this library's
+      dispatcher always drains, so the harness cannot build one
+- [x] a frame over 64 KB is dropped, however fast it arrives `wire`
+      (SocketSelfTest: 201 600 characters in one go; before `3f28504` it was
+      delivered whole). A stream that never sends a newline at all is the
+      same path and is still not sent as such
+- [x] a coordinator nobody is connected to exits after 5 minutes `fleet`
+      (logs: "nothing has been connected for 300s - exiting")
+- [ ] closing the macro ends the coordinator it started (`OnExit`) `loads`
+- [ ] a coordinator whose macro was killed exits after 5 minutes alone `loads` —
+      correct by reading, and a test would have to wait out the 5 minutes
+- [ ] a macro does not start a second coordinator while its own still runs
+      `loads`
+- [ ] a coordinator that fails to launch says so instead of being retried in
+      silence `loads`
+
+The quickest real check for all six: open the macro, look in Task Manager for
+one `AutoHotkey64.exe` more than you started, close the macro, and look again.
+
+### Enzymes, boosted only
+
+- [ ] ticked, an enzyme is held back until the field is boosted
+- [ ] unticked, one is used whenever the 10 minute cooldown is up
+- [ ] the boost is read through the **lease**, so a glitter renewal counts
+- [ ] the status line says `Converting / Balloon - Used Enzyme`
+
+### Harvesting a planter that is not full
+
+The Yes button matched every pixel of a user's screenshot of the dialog, by a
+script replaying the search; what was never seen is the timing.
+
+- [ ] a planter harvested before it is full is collected: the dialog comes up
+      and Yes is clicked `loads`
+- [ ] a full grown planter, which gives no dialog, is counted once, about 1.5 s
+      later than before `loads`
+- [ ] a dialog that never comes up leaves the slot alone and the status says
+      `Retrying` - rests on the E prompt still showing at the planter `loads`
+
+### Roblox's new font - the community OCR fix
+
+Roblox changed its interface font in November 2026 and every image of text
+Natro searched for stopped matching. The fix, by @TheFallenYeeter, reads
+that text with Windows OCR instead. It needs an OCR language pack on each
+PC, English preferably. Everything below is `loads`: nothing has run in the
+game here.
+
+- [x] the GUI offset found by reading "Pollen" in the top bar: 22 px in
+      46 ms, the line on the label `game` - OCR_Test on the user's PC,
+      2026-11-09, Windows OCR en-GB. `tools\Set_GUI_Offset.ahk` sets it by
+      hand if needed `loads`
+- [ ] the movespeed correction reads the Haste stack `loads`
+- [ ] Stat Monitor reads buffs and honey; the report keeps its official look
+      and credit `loads`
+- [x] "Make Honey" at the hive, by image and by OCR; the inventory read in
+      109 ms and Gumdrops matched, the one item of the test's list on
+      screen (Whirligig read "whirliaia", within the 2 letters allowed)
+      `game` - the same OCR_Test
+- [ ] the Yes, No and Feed buttons and quest objectives found by OCR `loads`
+- [x] a planter's notices read by OCR - "already in the", "3 Planters",
+      "standing" - from the user's capture of a paper planter thrown again
+      and again, its notice not seen: read as "already", and a screen
+      quarter without a notice as nothing `wire` (NoticeSelfTest, Windows
+      OCR in the VM)
+- [ ] the paper planter placed once and reported Placed, in the game
+      `loads`
+- [ ] 16 more pictures of text Natro searches for, probably broken the same
+      way and not yet looked at: the kill notices (King, Tunnel, Mondo,
+      Werewolf, Rhino, Mantis, Spider, Scorpion, Ladybug, Crab, Chick dead
+      and fled), Honey Hunt, and the Pro Shop's Craft Item, Capacity
+      Exceeded and Paper Planter
+- [ ] the hive camera turn waits for the camera to stop, and accepts the
+      default direction after two turns instead of resetting again `loads`
+- [ ] the honeycomb recognised by its colour on the user's hive: it is not -
+      `Hive not recognised by camera` on every return to the hive. Each
+      warning now carries the colour seen (h, s, v; the check wants h 20 to
+      55, s at least 50, v 20 to 85), and the first one of a run saves and
+      sends `settings\hive_debug_view.png`, the frame the honeycomb should
+      have been in `loads`
+- [ ] `tools\OCR_Test.ahk` reports what OCR sees on a running game `loads`
+- [ ] the Auto-Jelly rewrite (@definetlynotray), taken whole from the same
+      zip: it runs as its own generated script, which /Validate of
+      natro_macro checks only as a string - nothing has parsed or run the
+      script itself `loads`
+
+### Guid hop
+
+Who sits in the main server, decided by `fleet_HopPlan` in
+`lib/FleetHop.ahk`. The rules are `wire`, as whole situations in the
+extension self-test; nothing acts on them yet.
+
+- [x] a guid is in the main only ready to fire or under a star running on a
+      blue field: one still charging never takes a free seat, and one whose
+      blue star is over goes back unless it is ready again `wire`
+- [x] a ready guid waits for a free seat; nobody is pushed out for it `wire`
+- [x] a star on any field but a blue one sends its guid back at once `wire`
+- [x] a guid whose star runs on a blue field is never moved `wire`
+- [x] at Mondo a tad makes room for the atk (the first of two), else a
+      fuzzy, else the guid with least and no star; the atk beats a ready
+      guid `wire`
+- [ ] the atk asks for its seat by the extensions' Mondo timer - from :59 -
+      and gives it back as soon as its Mondo is done `loads`
+- [x] accounts in a server that is none of the fleet's - a main link changed
+      by hand - are brought over like those in the reserve `wire`
+- [x] after Mondo the atk leaves and the resident is back before any guid
+      `wire`
+- [x] ready guids take free seats, the longest waiting first `wire`
+- [x] a macro gone quiet keeps its seat counted and gets no order; a move is
+      not ordered twice `wire`
+- [x] the leave and the join go out together - Roblox queues a player
+      joining a full private server - and an account whose server move is
+      under way is not given a contrary one `wire`
+- [ ] a MOVE is obeyed at once, whatever the macro is doing: walking,
+      gathering, converting `loads`
+- [ ] a charge that cannot be read says nothing, so a ready guid is not sent
+      back on a menu over the row `loads`
+- [x] a guid that left because its star fell on another field is not asked
+      back while the star counts down `wire`
+- [ ] an account told to leave says it is out as soon as Roblox is closed,
+      and the coordinator acts on a server change at once rather than on the
+      next beat `loads`
+- [ ] joining takes 5 to 10 seconds, as the user sees it in the game; the
+      coordinator's log will say `loads`
+- [x] its settings - on or off, the threshold, the seats, the blue fields -
+      live on the main server and reach a macro intact, a field name with a
+      space and the separator included `wire`
+- [x] the Guid hop window, from Fleet settings: its controls, laid out
+      without overlap, read only until the fleet is reached `layout`
+- [x] a field reported as PineTree by the notice is the blue Pine Tree
+      `wire`
+- [x] the coordinator runs the plan every beat and sends MOVE, with the
+      slot, and says why in its log: a fuzzy reporting the reserve is sent
+      to the main `wire`
+- [x] which fleet server a link is, by kind and code, so a link pasted
+      another way still matches and a link code never matches a share code
+      `wire`
+- [ ] on MOVE, Roblox is closed and the next reconnect joins the server the
+      fleet named, not the private server, which is left as it was in the
+      settings `loads`
+- [ ] the macro says which server it is in when it connects and every beat,
+      and remembers it across a restart `loads`
+- [ ] in a fleet the account's own Private Server link plays no part: a
+      reconnect goes to the server the fleet last sent it to while that is
+      still one of the fleet's, else to its role's - the main for the main,
+      tads and fuzzies, the first reserve for a guid or an atk `loads`
+- [ ] before its first reconnect an account says it is in none of the
+      fleet's servers, and the coordinator places it `loads`
+- [ ] a reconnect that lands in a fallback or public server reports none of
+      the fleet's, and the coordinator leaves that account alone `loads`
+- [ ] on a guid, background.ahk reads the star every five seconds and the
+      coordinator sees CHARGE once two reads agree `loads`
+- [ ] the landing notice reaches the coordinator as GUIDING with the field,
+      and nothing is typed in the chat `loads`
+- [ ] a guid in the reserve at the threshold cuts its gather short and waits
+      at the hive, doing nothing, until it is moved `loads`
+- [ ] a guid that has lost the coordinator farms on its own `loads`
+
+### Passive row reader
+
+`submacros/extensions/passives.ahk`, for the guid hop: the Guiding Star's
+charge, or its cooldown timer. `PassiveSelfTest` replays 47 rows cut from the
+user's captures (1300x669 to 2560x1440), each read with digit examples from
+other moments of play only. That is `wire` for the reading itself; nothing has
+read a live screen.
+
+- [x] the row and its cooldowns: 47 of 47, one capture with no passives at
+      all included `wire`
+- [x] visible icons: 340 of 340 recognised `wire`
+- [x] numbers: 291 of 291, none wrong - a strip of white background read as
+      a 1 was the one fault, fixed by asking for the digit's dark outline
+      `wire`
+- [x] timers: 29 of 32, none wrong, 3 refused `wire`
+- [x] the star at 241, whose number covers the bottom of its ring `wire`
+- [x] a star in cooldown read where it was last seen; with no memory, not
+      guessed at `wire`
+- [ ] the same on a live capture of the Roblox window, while playing
+- [ ] the time one read takes in the game, against the macro's loop
+- [ ] a cooldown at either end of the row: no capture has one, and the
+      reader does not return it - the star's is read from memory `wire` for
+      the memory only
+- [ ] the remembered place after the window is resized or the equipment
+      changes: nothing refreshes it until the star is seen again
+
+### Guiding Star screenshots, for training data
+
+Temporary, until the timer reader has enough examples. The schedule is `wire`
+in the extension self-test; the rest needs the game.
+
+- [ ] ticked, the star's landing notice sends the window to Discord at once
+      as `Detected: DataModelScreen <field> +0s settings\passive_debug_NN.png`,
+      with the picture `loads`
+- [ ] ten more follow inside the five minutes, at different moments for
+      every star `wire` for the moments
+- [ ] nothing is typed in the chat unless Announce Guiding Star is also
+      ticked `loads`
+- [ ] the notice still on screen a few seconds later does not start a
+      second series `loads`
+- [ ] the Testing box in the Extensions tab, under Fleet, does not overlap
+      it `loads`
+
+### Blender
+
+Stock Natro's blender, repaired. The times are worked out from five minutes
+an item and never read from the screen; their arithmetic is `wire`, by the
+extension self-test.
+
+- [ ] two slots with Repeat 1 each craft once each, A then B; it used to be
+      A twice and B never `loads`
+- [ ] Ready in the timers window sends the running macro to the blender at
+      once, on any slot `loads`
+- [ ] Ready pressed while nothing is crafting forces one trip, not one per
+      round `loads`
+- [ ] after the last repeat, the macro goes back once to claim the batch and
+      then stops `loads`
+- [ ] a blender already crafting is left 5, 10, 20, then 30 minutes, not
+      visited every round `loads`
+- [ ] a slot with a wait of 110 minutes is crafted, then not tried again
+      for 110 minutes, while the other slots take their turns `loads`
+- [ ] a slot short of ingredients is kept, the status says
+      `Blender: not enough for ...`, and the next due slot is crafted on the
+      same visit: rests on the recipe arrows still working with the
+      shortage shown `loads`
+- [x] the window read by OCR since Roblox's new font, where Natro's
+      pictures of "End" and "Cancel" no longer match: the user's capture of
+      a finished batch left open reads as done, the same painted red as
+      busy, and the top of that screen as no window `wire`
+      (NoticeSelfTest, Windows OCR in the VM)
+- [ ] a running craft really shows the red End Crafting button in the same
+      place: the red capture is made up `loads`
+- [ ] a finished batch is claimed and the window closed, in the game; a
+      window still open at the end of a visit is closed, with the warning
+      `Blender window left open` `loads`
+- [ ] "not enough" for an item: `NoItems` is a picture of a letter in the
+      old font and is not replaced yet, for want of a capture; until then a
+      short slot may be taken for crafted `loads`
+- [ ] the Every row in the Collect tab's add panel sits where Add Item
+      was, without overlapping the picture or the Repeat column `loads`
+- [ ] the timers window's Add dialog has an Every row, and both windows
+      show the wait as `(20) [∞] 110m` `loads`
+
+---
+
+## The bench, and what it reaches
+
+`submacros\FleetBench.ahk` is a fleet you drive by hand: it connects as as many
+pretend macros as you like, says whatever you tell it to say, and shows every
+frame crossing the wire in both directions. One of these and one real macro
+with the game running replaces most of "set up six accounts on three machines
+first", which is the reason almost nothing below was ever tried.
+
+```
+.\submacros\AutoHotkey64.exe /script .\submacros\FleetBench.ahk
+```
+
+It has its own port (47700), its own roster file and its own coordinator, and
+it cannot reach the real configuration. To use it, point a macro at 47700 in
+Fleet settings, Advanced.
+
+It has a console rather than a folder of scripts: the commands are in the
+fleet's own idiom, the reference is the box's own opening text, and the
+Commands button brings it back if you clear it. `expect` and `reject` make a
+sequence of them a test rather than a demonstration.
+
+**It is one fleet with two kinds of member.** The bench always has its fake
+macros, which are yours to drive; real macros join the same port and sit in it
+beside them. The only choice is who coordinates - nobody, a real `Fleet.ahk`
+the bench starts, or the bench itself. Fakes and reals together is the
+arrangement that presses on both halves at once: a real coordinator with a
+crowd of fakes tests what it does with a crowd, the bench coordinating a real
+macro tests what that macro does when it is told something wrong, and both at
+the same time tests the crowd and the lie together.
+
+What it has already proven is listed in the two sections above: five fakes
+against a real coordinator, and the stale-configuration and lost-coordinator
+cases against a real macro.
+
+**What it serves is marked as the bench's**, and a marked configuration loses
+to an unmarked one whatever its version. Without that, a real macro pointed
+here would replicate the bench's configuration and then hand it up to the real
+coordinator, which would take it if the number happened to be higher - a test
+tool replacing a real roster. Checked two ways, in the comparison and on the
+wire.
+
+The button is on Natro's own **Advanced** tab, the one that appears after
+clicking the version several times.
+
+What it turns into a twenty-minute check:
+
+- [ ] **field following**: add a main to the bench, connect it, pick a field and
+      press Say the field. A real macro set up as fuzzy or tad should walk
+      there on its next gather trip.
+- [ ] **the other direction**: let the real macro be the main and watch a GOTO
+      arrive at the bench's fuzzy in the log.
+- [x] **who follows**: `02-goto-reaches-residents.txt`, above.
+- [ ] **leaving**: press Leave the fleet and watch the row vanish from the real
+      macro's panel.
+- [ ] **a macro out of step**: set Config to a version behind the fleet's and
+      press Beat. The real macro's account panel should say so.
+- [ ] **the socket ceilings**: paste a very long line into the raw box. The
+      connection should be dropped rather than the memory grown.
+- [ ] **an unknown verb**: send `WOBBLE x=1` and confirm it is logged and
+      ignored rather than breaking anything.
+
+What it does not reach: there is one machine, one network interface, no Roblox
+behind the pretend macros, and nothing of theirs ever walks anywhere. It puts
+the architecture under pressure from something other than its own self-test,
+which is the point, and it is not a fleet.
+
+## Never run across machines
+
+This was the half with no evidence at all. It now has one day of logs: a
+main on one PC and two tads on another, 11 November 2026, read in `AUDIT.md`.
+What those logs settle is ticked below with `fleet` (logs). What they show
+failing is marked **FAILED** and left unticked.
+
+### Binding and discovery
+
+- [x] a second machine finds the fleet by beacon with **nothing typed**
+      `fleet` (logs: no address in either tad's settings)
+- [ ] the door opens for two minutes and shuts itself
+- [ ] clicking the button again shuts it early
+- [x] a macro bound once rejoins by itself after a restart `fleet` (logs)
+- [ ] **FAILED** a macro that has just joined waits for its coordinator: it
+      started one of its own five seconds in. Fixed in `5a1ed7d` `loads`
+- [ ] **FAILED** two alts on one PC, both left on the default name, get two
+      rows: they were bound to one. Fixed in `fe97446` `wire`
+- [ ] a beacon from a different fleet on the same network is ignored
+- [ ] a hand-typed address works where broadcasts are blocked - typed in the
+      join window, and kept as the reconnect address only once the join
+      succeeds, so a mistyped one is not kept `loads`
+- [ ] the join window picks no role, and its buttons stay grey until one is
+      chosen - **built in the VM**, every control dumped, none overlapping
+- [ ] the coordinator's Settings show this PC's address `loads`
+
+A friend copied a fleet macro's folder to make changes in. The copy was the
+same account - row and secret are in `nm_config.ini` - and the coordinator
+gives a row to its newest connection, so the two threw each other out every
+few seconds; unticking the box in the copy changed nothing until a restart.
+
+- [x] a macro running from another place than a connected one with the same
+      row is turned away, not for good, and the original keeps its row
+      `wire` (FleetSelfTest)
+- [x] a macro restarting in its own folder still takes its row back `wire`
+- [x] a place nobody recorded counts as the same place, so an older macro is
+      not locked out; a copy may not join with its original's username, nor
+      its name on the same PC `wire`
+- [x] the copy's window: three choices and what each does - **built in the
+      VM**, every control dumped `layout`
+- [ ] a copied folder started for real: it says nothing to the fleet and
+      asks; each of the three choices does what it says `loads`
+- [ ] unticking **Talk to the other macros** disconnects at once, ticking it
+      reconnects, without a restart `loads`
+- [ ] a copy made before this version: both folders record their own place
+      on first start, so only the coordinator's refusal tells them apart,
+      and only while the first one is connected `loads`
+
+### Following
+
+- [x] a fuzzy or tad gathers the field the main is farming `fleet` (logs:
+      gathering there three seconds after the main)
+- [x] it leaves its field in the same second as the order arrives, without
+      walking home first `fleet` (logs, to the second)
+- [x] it never does planters, quests, bugs, collecting, boosts, Mondo or the
+      night hunt, and gathers with no time limit `fleet` (logs: seven hours
+      of gather and convert statuses and nothing else)
+- [ ] a full bag converts the way its own Natro is set, then it goes straight
+      back to the main's field `loads`
+- [ ] a main that reconnects - or meets a coordinator that just took over -
+      says its field at once rather than at its next trip `loads`
+- [x] a main that **restarts** says the last field it announced as soon as it
+      connects, before Mondo and the planters `fleet` (logs)
+- [ ] a follower that missed the GOTO is put right by the roster within a
+      beat `loads`
+- [ ] it farms that field exactly as one of its own - boost detection and
+      gather-start hotkeys included
+- [ ] a `guid` or an `atk` never follows
+- [ ] the roster editor refuses a second main with the current main's name
+      `loads`
+- [ ] the four Advanced switches decide which of the main's trips are followed,
+      and only the **main's** switches matter
+- [ ] a suppressed trip leaves the residents where they are rather than recalling
+      them
+- [ ] a resident re-roled away from fuzzy/tad stops following without a restart
+- [ ] every macro writes `settings\fleet_macro.log`: a follower shows `the main
+      is farming X` when the order arrives and `gather trip: following` when it
+      acts,
+      and the main shows each field it announced or kept to itself `fleet`
+      (logs: it is what the audit was read from)
+- [ ] **FAILED** every follower follows for as long as the fleet runs: one
+      tad was out for 7 h 24, then both for 20 h, each time connected and
+      silent. The cause is the next section
+
+### Failover - the dangerous one
+
+Everything here was reasoning and a self-test against a pretend macro. The
+logs of 11 November show it happening, and going wrong: `AUDIT.md`, "The
+fleet splits in two", E1 to E5. None of that is fixed.
+
+- [x] the host's coordinator comes up at startup `fleet` (logs)
+- [x] a host gone for longer than the grace period gets a replacement: a tad
+      took over after 49 s `fleet` (logs)
+- [ ] killing the coordinator's **process** gets a replacement within the grace
+      period
+- [ ] killing the whole **machine** does too - this is the case the election
+      escalation exists for, since one machine carries several rows
+- [ ] the replacement serves a **current** configuration, because it had a replica
+These failed on the real run of 11 November and are fixed since. Each is now
+`wire`: `FleetElectionTest` runs three real macro sides (`FleetMacroStub`)
+and the coordinators they start, on one PC and on two stood in for by
+127.0.0.2 and 127.0.0.3. They stay unticked for `fleet` until two real PCs
+have run them.
+
+- [ ] the designated host takes the job back when it returns, by asking the
+      stand-in for it `wire`
+- [ ] the macro that starts a coordinator connects to it `wire`
+- [ ] a restarted host is followed at once: the term is kept across a
+      restart `wire`
+- [ ] alts started before the main end up with the main's coordinator `wire`
+- [ ] a main killed without warning and started again finds the fleet `wire`
+- [ ] after each of those, one coordinator is left running and a field the
+      main announces reaches both tads `wire`
+- [ ] accounts do not bounce between servers while that happens
+- [ ] a macro that loses the fleet entirely **carries on farming alone** - the
+      governing rule of the whole subsystem
+- [ ] two coordinators cannot both serve: the port is the lock on one machine,
+      and across machines a macro follows the highest term it hears, on the
+      beacon as on the heartbeat; the one left behind loses its macros and
+      exits when idle. Failed on 11 November (27 hours in all); `wire` since,
+      see above
+
+### Configuration, shared
+
+- [ ] an account bound on machine B appears in the table on machine A
+- [ ] editing the roster on the coordinator reaches every macro
+- [ ] a server added on the coordinator reaches every macro
+- [ ] a server deleted disappears everywhere within a beat
+- [ ] the configuration goes out on a change, on a join and once a minute,
+      not on every beat - the self-test's propagation checks pass on that
+      `loads`
+- [ ] the owner dropdown lists accounts that have never connected
+- [ ] the table and the servers window can be edited on **any** macro in the
+      fleet once its copy is whole, and the change reaches every macro `loads`
+- [ ] off the coordinator they are grey while disconnected or still receiving,
+      and say which - **built in the VM**, the note dumped
+- [ ] a handed-up roster with two mains is refused by the coordinator `loads`
+- [ ] **the stale-copy case**: unplug two machines, change the configuration on
+      the rest, plug the two back in first so one takes over, and check that the
+      good configuration wins and nobody's file was overwritten
+- [ ] a tie leaves a `.conflict` file and a line in the log
+- [ ] the macro that loses a tie says so on its own screen too, not only in the
+      coordinator's log
+- [ ] a settings folder made read-only is reported rather than silently costing
+      the fleet its replica
+
+### The panel, live
+
+- [ ] seat colours mean what they claim: offline grey, stale pink, a follower
+      away from the main yellow, guiding amber, online blue - **the only check
+      in this file that a dump cannot do**
+- [ ] a card repaints correctly when a macro quits and comes back
+- [ ] response time and "last heard from" tick along on their own
+- [ ] the log says why seats changed hands
+- [ ] clicking a card opens the right account
+- [ ] the two strip lines on the main window track the fleet
+- [ ] the summary names who runs the fleet, and the configuration version only
+      when this macro holds a different one
+- [ ] the line under it says what this account does, and each card shows the
+      field beside the role - **built in the VM** with a main in Pine Tree and a
+      fuzzy in Bamboo, the card text dumped
+- [ ] more than six offline accounts end in a `+N more` card - **built in the
+      VM**, nine offline gave `+4 more`
+- [ ] the account panel's Configuration row shows a macro out of step
+
+---
+
+## Git tooling
+
+From earlier commits, and partly used in anger already.
+
+- [x] `nm-git-adopt.ps1` turns a plain Natro install into this fork - done once
+      on a real machine, `safe.directory` problem and all
+- [ ] `nm-git-update.ps1` updates in place without losing settings `loads`
+- [ ] `nm-new-instance.ps1` makes a second instance `loads`
+- [ ] `nm-update-all.ps1` updates every instance on a machine `loads`
+- [ ] the Git Sync window in the GUI `loads`
+
+---
+
+## Fixed because somebody ran it
+
+The folder per fleet made two fleets on one machine a supported arrangement,
+and a macro always tries `127.0.0.1` first - whatever fleet is listening
+there. So pointing a real macro at the bench produced:
+
+> The fleet refused this macro: bad secret - set it up again to rejoin
+
+A wrong secret is marked final, a final refusal makes a macro let go of the
+fleet and stop looking, and that macro had done nothing but knock on the wrong
+door on its own machine. HELLO carries the fleet's identity now, and belonging
+to another fleet is answered as what it is: not final, with the address passed
+over for a minute so the next candidate gets a turn. The bench does the same
+rather than silently admitting a stranger, which would have had that macro
+replicate the bench's configuration into its real fleet's folder.
+
+Nothing in the repository had caught it, and nothing could have: no self-test
+runs two fleets at once. Checks 36 to 38 do now.
+
+## Known holes, written down rather than forgotten
+
+Not bugs to find - bugs already known about, with no fix yet.
+
+- **A macro trusts any coordinator.** The finding of the audit that is not
+  fixed, because it needs a decision: `AUDIT.md`, S1 to S5.
+
+- **The election test has run green twice on one PC and three times on
+  two, and it is timed.** It
+  waits real grace periods and gives each step a deadline. A slow VM could
+  fail it without the election being wrong; the report says where each
+  macro was.
+
+- **The bench failed again on 2026-11-13, once in ten runs**: two of its ten
+  timed checks, straight after the fleet self-test, which now ends by
+  closing three coordinators. The lines were not kept. Same suspicion as
+  below, still not proven.
+
+- **The bench failed once, on 2026-11-04, and not in four reruns.** Every
+  connection was closed by the other end at the same second, then "row 2 is
+  not connected" twice. It runs on the fleet's real port, 47600, so a
+  coordinator left by an earlier run - they live five minutes alone - is
+  the likeliest cause. Not proven: the next failure should list the
+  AutoHotkey processes in the VM before anything else.
+
+- **Two accounts set as main would pull the followers back and forth.** A
+  GOTO carries the field of whichever main reported last, and the roster is
+  read for the lowest main row, so the two could disagree on every beat and
+  cut every trip short. The roster editor does not stop a second main.
+
+- **One folder per fleet is proven on the wire, not across fleets.** The
+  identity reaches a macro during binding and names the folder its
+  configuration lives in, so a macro that belongs to the real fleet and to the
+  test bench can no longer write one roster over the other. What the self-test
+  cannot show is a macro actually moving between two fleets and finding both
+  configurations intact afterwards - that needs the bench and a real macro,
+  which is the next brick.
+- **The coordinator's log moved.** It is derived from the roster path, and the
+  roster now lives in a folder per fleet, so it is
+  `settings\fleet\<id>\roster.log` rather than `settings\fleet_log.txt`. The
+  old file is left where it is; nothing reads it.
+- **Leaving a fleet now forgets its secret, reasoned but never driven by a
+  test.** Keeping it let one macro create a second fleet carrying the first
+  one's secret, and two fleets with one secret share a beacon fingerprint - so
+  either one's macros could reach the other's coordinator and replicate its
+  configuration into their own folder. Fixed in `ext_FleetLeave` and
+  `ext_fleetStartFleet`. No self-test reaches it: both are window code behind a
+  confirmation box, and the self-tests only speak the protocol.
+- **No real macro has ever joined the bench.** The beacon, the door and the
+  binding are all driven and checked, but by the bench's own fake seats
+  connecting to its own listener - which is a real socket, a real frame and a
+  real roster write, and still not a copy of natro_macro.ahk deciding to
+  join. That is the one thing left before the answer to "how do I connect a
+  real account" is proven rather than reasoned.
+- **The bench's window is dumped by a harness in the scratchpad**, not by
+  anything in the repository. It opens the real bench, reads every control's
+  rectangle out of it, compares only the visible ones tab by tab, and closes
+  it again. Both tabs are clean as of this commit. Nothing re-checks it.
+- **The recorder was driven once, by clicking.** A `/quiet` run clicks on
+  nothing, so the one thing that cannot be checked the way everything else is
+  is the thing that turns clicks into commands. A scratchpad harness opened
+  the real window, clicked Connect them all, Accept new macros and Save what
+  just happened, and read the file back: the three commands are in it with the
+  real gaps as waits, and the save did not record itself. Once, not on every
+  change.
+- **A frame cut in half usually still parses.** `GOTO field=Mountain%20Top`
+  becomes `GOTO field=M`, a valid order to a field that does not exist, and
+  nothing downstream checks that a field name is a field name. The check
+  proves the truncated value is not mistaken for the real one; it does not
+  prove anything refuses it, because nothing does.
+- **No window asks for a handover.** The bench does, with `host <row>`, and
+  that path is checked end to end. Choosing the coordinator from a macro's own
+  settings is still part of P4.
+- **The split brain can be staged but not asserted.** `coordinator 3 real
+  keep` leaves the previous coordinator running, and the bench's state line
+  says "2 real coordinators are running at once - a split brain". On one
+  machine the second is refused the port, which is the exclusive bind doing
+  its job rather than the term doing its job - so what this stages is the
+  refusal, not the thing P3 is about. Two machines are still needed for that,
+  and `expect` can only assert what a seat heard.
+- **The mandate is in no window.** It rides on every heartbeat and appears in
+  the coordinator's first log line, and the settings window says where new
+  macros are accepted when this macro cannot accept them - but nothing names
+  the mandated row outright. Deliberate: the interface says who coordinates and
+  nothing else, which is the vocabulary that was asked for.
+- **Colour has never been seen.** Every palette decision in the Fleet window is
+  unverified.

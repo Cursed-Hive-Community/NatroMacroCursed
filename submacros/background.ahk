@@ -23,6 +23,9 @@ You should have received a copy of the license along with Natro Macro. If not, p
 #Include "DurationFromSeconds.ahk"
 #Include "nowUnix.ahk"
 #include "ErrorHandling.ahk"
+#Include "%A_ScriptDir%\extensions\guidshots.ahk"
+#Include "%A_ScriptDir%\extensions\passives.ahk"
+#Include "%A_ScriptDir%\extensions\guidread.ahk"
 SetWorkingDir A_ScriptDir "\.."
 
 if (A_Args.Length = 0)
@@ -47,6 +50,9 @@ EmergencyBalloonPingCheck := A_Args[9]
 ConvertBalloon := A_Args[10]
 NightMemoryMatchCheck := A_Args[11]
 ;LastNightMemoryMatch := A_Args[12] not in use
+GuidDataShots := (A_Args.Length >= 13) ? A_Args[13] : 0
+;set by natro_macro when the fleet says this account is a guid - see ext_guidRead
+GuidRead := 0
 
 pToken := Gdip_Startup()
 bitmaps := Map(), bitmaps.CaseSense := 0
@@ -72,6 +78,8 @@ loop {
 	nm_CheckNight()
 	nm_backpackPercentFilter()
 	nm_guidingStarDetect()
+	ext_guidShots()
+	ext_guidRead()
 	nm_dailyReconnect()
 	nm_EmergencyBalloon()
 	sleep 1000
@@ -79,8 +87,8 @@ loop {
 
 nm_setGlobalNum(wParam, lParam, *){
 	Critical
-	global resetTime, StingerCheck, LastConvertBalloon, NightMemoryMatchCheck
-	static arr:=["resetTime", 0, 0, "StingerCheck", 0, "LastConvertBalloon", "NightMemoryMatchCheck", 0]
+	global resetTime, StingerCheck, LastConvertBalloon, NightMemoryMatchCheck, GuidRead
+	static arr:=["resetTime", 0, 0, "StingerCheck", 0, "LastConvertBalloon", "NightMemoryMatchCheck", "GuidRead"]
 
 	try var := arr[wParam], %var% := lParam
 	return 0
@@ -375,7 +383,7 @@ nm_backpackPercentFilter(){
 nm_guidingStarDetect(){
 	static LastGuidDetected:=0, fieldnames := ["PineTree", "Stump", "Bamboo", "BlueFlower", "MountainTop", "Cactus", "Coconut", "Pineapple", "Spider", "Pumpkin", "Dandelion", "Sunflower", "Clover", "Pepper", "Rose", "Strawberry", "Mushroom"]
 
-	if ((AnnounceGuidingStar=0) || (nowUnix()-LastGuidDetected<10))
+	if (((AnnounceGuidingStar=0) && (GuidDataShots=0) && (GuidRead=0)) || (nowUnix()-LastGuidDetected<10))
 		return
 
 	xi:=windowX+windowWidth//2
@@ -402,11 +410,22 @@ nm_guidingStarDetect(){
 			catch
 				return
 			if (result = 1) {
-				if WinExist("natro_macro ahk_class AutoHotkey") {
+				;the chat announcement only when it is the one asked for
+				if (AnnounceGuidingStar && WinExist("natro_macro ahk_class AutoHotkey")) {
 					Send_WM_COPYDATA(value, "natro_macro ahk_class AutoHotkey", 1)
 					LastGuidDetected := nowUnix()
-					break
 				}
+				if GuidDataShots {
+					ext_guidShots(value)
+					LastGuidDetected := nowUnix()
+				}
+				;a guid tells the fleet where its star landed, which decides whether
+				;it stays in the main server
+				if (GuidRead && WinExist("natro_macro ahk_class AutoHotkey")) {
+					Send_WM_COPYDATA(value, "natro_macro ahk_class AutoHotkey", 4)
+					LastGuidDetected := nowUnix()
+				}
+				break
 			}
 		}
 	}

@@ -1,4 +1,5 @@
-﻿pToken := Gdip_Startup()
+﻿#Include "%A_LineFile%\..\nm_OCR.ahk"
+pToken := Gdip_Startup()
 ; buff characters for stack detection
 buff_characters := Map()
 buff_characters[0] := Gdip_BitmapFromBase64("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAKCAAAAACsrEBcAAAAAnRSTlMAAHaTzTgAAAArSURBVHgBY2Rg+MzAwMALxCAaQoDBZyYYmwlMYmXAAFApWPVnBkYIi5cBAJNvCLCTFAy9AAAAAElFTkSuQmCC")
@@ -93,18 +94,9 @@ DetectMovespeed(&s, &f, hasteCap:=0)
 	; analyse haste stacks (haste: 0=none, 1=haste, 2=haste+coconut)
 	coconut_haste := (haste = 2) ? 1 : 0
 	if haste
-	{
-		Loop 9 ; look for each digit
-		{
-			if (Gdip_ImageSearch(pBMArea, buff_characters[10-A_Index], , x1+2*y1-44, Max(0, y1-18), x1+2*y1-14, y1-1) = 1)
-			{
-				haste := (A_Index = 9) ? 10 : 10 - A_Index ; haste now becomes stack number
-				break
-			}
-			if (A_Index = 9)
-				haste := 1 ; no multiplier, therefore 1x
-		}
-	}
+		haste := HasteStack(x1) ; haste now becomes stack number
+	else
+		HasteStack(0, 1) ; haste gone: read the number straight away next time it appears
 	
 	; find other movespeed affecting buffs (haste+, bear, oil, super smoothie)
 	haste_plus := (Gdip_ImageSearch(pBMArea, bitmaps["pBMHastePlus"], , , 25, , 27, , , 2) = 1) ; SearchDirection 2 is faster for on/off
@@ -135,4 +127,64 @@ DetectMovespeed(&s, &f, hasteCap:=0)
 		if (chdc)
 			DeleteDC(chdc)
 	}
+}
+
+; Haste stack number for DetectMovespeed. The digit images above were captured from the old Roblox font
+; and no longer match, so the number is read with OCR (nm_OCRReadStack). DetectMovespeed's own 30 px strip
+; starts below the top of the stack number, which cuts the digits off for OCR, so the read uses its own
+; screenshot of the full buff bar with the same area Stat Monitor uses (icon x+6 to x+44, y 15-50).
+; DetectMovespeed runs many times a second, so OCR runs at most once a second and the value is reused in
+; between; the time a read takes is counted by Walk(), so it doesn't throw off distances. A missed read keeps
+; the last value for up to 20 s while the icon is showing. Falls back to the old digit images if OCR is unavailable.
+HasteStack(hasteX, reset := 0)
+{
+	global buff_characters, offsetY
+	static lastStack := 1, lastTick := 0, lastGood := 0, lastX := -100, lastDump := 0
+	if reset
+	{
+		lastStack := 1, lastTick := 0, lastGood := 0, lastX := -100
+		return 1
+	}
+	; reuse a read from the last second while the haste icon is still in the same place
+	if (A_TickCount - lastTick < 1000) && (Abs(hasteX - lastX) <= 6)
+		return lastStack
+	lastTick := A_TickCount, lastX := hasteX
+	GetRobloxClientPos()
+	pBM := Gdip_BitmapFromScreen(windowX "|" windowY+offsetY+30 "|" windowWidth "|50")
+	if (nm_OCR_Language() = "")
+	{
+		n := ""
+		Loop 9
+			if (Gdip_ImageSearch(pBM, buff_characters[10-A_Index], , hasteX+6, 15, hasteX+44, 50) = 1)
+			{
+				n := (A_Index = 9) ? 10 : 10 - A_Index
+				break
+			}
+	}
+	else
+		n := nm_OCRReadStack(pBM, hasteX+6, 15, hasteX+44, 50, 10) ; digit pictures for 2-10 first, OCR as a fallback
+	; no number read: keep a snapshot (at most every 30 s) in tools\OCR_debug\haste_fail.png for diagnosis.
+	; Haste at x1 shows no number, so a snapshot alone doesn't mean something is wrong
+	if (n = "") && (A_TickCount - lastDump > 30000)
+	{
+		lastDump := A_TickCount
+		nm_OCR_SaveDebug(pBM, 0, "haste_fail")
+		try FileOpen(nm_OCR_RootDir() "\tools\OCR_debug\haste_fail.txt", "a").Write("Haste icon x: " hasteX ", number area x" hasteX+6 "-" hasteX+44 " y15-50`n")
+	}
+	Gdip_DisposeImage(pBM)
+	; one line per OCR read (at most once a second) in tools\OCR_debug\haste_log.txt, to check what walking sees
+	try {
+		logPath := nm_OCR_RootDir() "\tools\OCR_debug\haste_log.txt"
+		DirCreate nm_OCR_RootDir() "\tools\OCR_debug"
+		if (FileExist(logPath) && FileGetSize(logPath) > 50000)
+			FileDelete logPath
+		FileAppend FormatTime(, "HH:mm:ss") "  haste icon x" hasteX "  read: " ((n != "") ? "x" n : "no number") "`n", logPath
+	}
+	if (n != "")
+		lastStack := n, lastGood := A_TickCount
+	else if (A_TickCount - lastGood > 20000)
+		lastStack := 1 ; no number for 20 s (a full Haste duration): x1 (BSS shows no number at x1)
+	; a missed read while the Haste icon is still showing is far more likely than stacks silently dropping,
+	; and the stored value is cleared as soon as the icon disappears (HasteStack(0, 1))
+	return lastStack
 }

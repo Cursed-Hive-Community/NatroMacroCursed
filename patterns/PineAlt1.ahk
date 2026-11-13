@@ -1,0 +1,8 @@
+﻿nm_Walk(20, LeftKey)
+nm_Walk(1.5, RightKey)
+nm_Walk(4, BackKey)
+nm_Walk(18.5, RightKey)
+nm_Walk(32, FwdKey)
+nm_Walk(2.5, BackKey)
+nm_Walk(3.5, LeftKey)
+nm_Walk(22.25, BackKey)
