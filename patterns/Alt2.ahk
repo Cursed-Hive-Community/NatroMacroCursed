@@ -1,0 +1,6 @@
+﻿nm_Walk(22, FwdKey)
+nm_Walk(2, LeftKey)
+nm_Walk(16, BackKey)
+nm_Walk(16, LeftKey)
+nm_Walk(2, BackKey)
+nm_Walk(14, RightKey)
