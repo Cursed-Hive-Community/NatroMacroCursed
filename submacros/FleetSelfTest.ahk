@@ -15,7 +15,7 @@ OnError(SelfTestError)
 ;
 ;	.\submacros\AutoHotkey64.exe /script .\submacros\FleetSelfTest.ahk
 ;
-;Fifty-two things are checked, each because it is a way the design could be wrong
+;Fifty-six things are checked, each because it is a way the design could be wrong
 ;rather than merely broken:
 ;
 ;	1. both macros appear in the roster        the coordinator keeps a roster
@@ -70,6 +70,10 @@ OnError(SelfTestError)
 ;	50. durations become this machine's times  two clocks never meet
 ;	51. and the coordinator sends durations    the wire carries no clock
 ;	52. a new edit is handed up once more      an earlier hand-up does not mute it
+;	53. a refusal is read, ten times in ten    it was thrown away with a reset
+;	54. words for numbers raise no dialog      one line from a stranger did
+;	55. a quiet row is back when it speaks     it stayed written off for good
+;	56. another account gets its own row       a shared label merged two alts
 ;
 ;Twenty-one and twenty-two guard a path nobody would notice until it had
 ;happened. Point a real macro at the test bench and it replicates the bench's

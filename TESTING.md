@@ -22,9 +22,10 @@ They are not interchangeable, and most of this fork has only the first two.
 
 `sieve`, `loads`, `wire` and `layout` are all automated and all run from the
 Mac against the Windows VM. `game` and `fleet` cannot be: the VM has no Roblox
-and one network interface. **No macro feature in this fork has `game` or
-`fleet` yet** - one PowerShell tool is the only thing here that has met a real
-machine.
+and one network interface. No macro feature in this fork had `game` or
+`fleet` until 11 November 2026, when a main on one PC and two tads on another
+ran this branch for a day and their logs were read: see `AUDIT.md`. A line
+proven that way is tagged `fleet` and says "logs". Nobody watched it happen.
 
 ### Running the automated ones
 
@@ -68,7 +69,7 @@ person.
 
 ## Proven on the wire
 
-These fifty-two checks run the real coordinator process, the real socket
+These fifty-six checks run the real coordinator process, the real socket
 layer and the real protocol. They are the strongest evidence in the repository.
 
 - [x] both rows reach the main macro
@@ -137,9 +138,26 @@ layer and the real protocol. They are the strongest evidence in the repository.
       turned back into this machine's times, and the coordinator sends them
 - [x] a hand-up is remembered by both versions, so a new edit is offered even
       after an earlier offer against the same fleet version
+- [x] a refusal is read by a macro that went on talking: ten in a row, each
+      HELLO followed at once by a field and a server. It was read about half
+      the time before `87d377d`, and one time in ten on a real install
+- [x] frames whose numbers are words, from a connection that never said
+      HELLO, raise no error dialog on the coordinator
+- [x] a row written off for thirty seconds of silence is back online when it
+      speaks again, on a coordinator of its own
+- [x] another account with the same label on the same PC gets a row of its
+      own; a known username gets its row back from anywhere
 
 Plus the socket layer: a plain line, an accented line, a line longer than one
-read, and a UDP datagram with the sender's address.
+read, a UDP datagram with the sender's address, and a frame three times the
+size a frame may be, sent in one go and refused.
+
+And in `ExtensionSelfTest`, on the values a frame carries:
+
+- [x] a server code holding a quote or a space is not a code
+- [x] a link to any other site comes back as the Roblox link for its code,
+      and that is the only link a macro joins, runs or saves
+- [x] no value read off the wire carries a new line into a settings file
 
 And ten checks on the bench's own wiring, in `tools/bench-selfcheck.txt`,
 which the bench loads and runs because it takes a file of commands as an
@@ -362,9 +380,12 @@ to pretend otherwise.
 - [ ] a peer that stops reading is dropped once its send queue passes 1 MB
       `loads` — needs a peer that does not drain its socket, and this library's
       dispatcher always drains, so the harness cannot build one
-- [ ] a stream with no end of frame in 64 KB is dropped `loads` — testable only
-      by sending raw bytes with no newline, which would mean adding a raw send
-      to a library that is deliberately line-only, for the test's sake alone
+- [x] a frame over 64 KB is dropped, however fast it arrives `wire`
+      (SocketSelfTest: 201 600 characters in one go; before `3f28504` it was
+      delivered whole). A stream that never sends a newline at all is the
+      same path and is still not sent as such
+- [x] a coordinator nobody is connected to exits after 5 minutes `fleet`
+      (logs: "nothing has been connected for 300s - exiting")
 - [ ] closing the macro ends the coordinator it started (`OnExit`) `loads`
 - [ ] a coordinator whose macro was killed exits after 5 minutes alone `loads` —
       correct by reading, and a test would have to wait out the 5 minutes
@@ -666,15 +687,22 @@ which is the point, and it is not a fleet.
 
 ## Never run across machines
 
-This is the half that matters most and the half with no evidence at all. Two
-PCs, two macros, and a network you can unplug.
+This was the half with no evidence at all. It now has one day of logs: a
+main on one PC and two tads on another, 11 November 2026, read in `AUDIT.md`.
+What those logs settle is ticked below with `fleet` (logs). What they show
+failing is marked **FAILED** and left unticked.
 
 ### Binding and discovery
 
-- [ ] a second machine finds the fleet by beacon with **nothing typed**
+- [x] a second machine finds the fleet by beacon with **nothing typed**
+      `fleet` (logs: no address in either tad's settings)
 - [ ] the door opens for two minutes and shuts itself
 - [ ] clicking the button again shuts it early
-- [ ] a macro bound once rejoins by itself after a restart
+- [x] a macro bound once rejoins by itself after a restart `fleet` (logs)
+- [ ] **FAILED** a macro that has just joined waits for its coordinator: it
+      started one of its own five seconds in. Fixed in `5a1ed7d` `loads`
+- [ ] **FAILED** two alts on one PC, both left on the default name, get two
+      rows: they were bound to one. Fixed in `fe97446` `wire`
 - [ ] a beacon from a different fleet on the same network is ignored
 - [ ] a hand-typed address works where broadcasts are blocked - typed in the
       join window, and kept as the reconnect address only once the join
@@ -707,17 +735,19 @@ few seconds; unticking the box in the copy changed nothing until a restart.
 
 ### Following
 
-- [ ] a fuzzy or tad gathers the field the main is farming
-- [ ] it leaves its field **within a quarter of a second** of the main
-      choosing another, without walking home first `loads`
-- [ ] it never does planters, quests, bugs, collecting, boosts, Mondo or the
-      night hunt, and gathers with no time limit `loads`
+- [x] a fuzzy or tad gathers the field the main is farming `fleet` (logs:
+      gathering there three seconds after the main)
+- [x] it leaves its field in the same second as the order arrives, without
+      walking home first `fleet` (logs, to the second)
+- [x] it never does planters, quests, bugs, collecting, boosts, Mondo or the
+      night hunt, and gathers with no time limit `fleet` (logs: seven hours
+      of gather and convert statuses and nothing else)
 - [ ] a full bag converts the way its own Natro is set, then it goes straight
       back to the main's field `loads`
 - [ ] a main that reconnects - or meets a coordinator that just took over -
       says its field at once rather than at its next trip `loads`
-- [ ] a main that **restarts** says the last field it announced as soon as it
-      connects, before Mondo and the planters `loads`
+- [x] a main that **restarts** says the last field it announced as soon as it
+      connects, before Mondo and the planters `fleet` (logs)
 - [ ] a follower that missed the GOTO is put right by the roster within a
       beat `loads`
 - [ ] it farms that field exactly as one of its own - boost detection and
@@ -733,27 +763,42 @@ few seconds; unticking the box in the copy changed nothing until a restart.
 - [ ] every macro writes `settings\fleet_macro.log`: a follower shows `the main
       is farming X` when the order arrives and `gather trip: following` when it
       acts,
-      and the main shows each field it announced or kept to itself `loads`
+      and the main shows each field it announced or kept to itself `fleet`
+      (logs: it is what the audit was read from)
+- [ ] **FAILED** every follower follows for as long as the fleet runs: one
+      tad was out for 7 h 24, then both for 20 h, each time connected and
+      silent. The cause is the next section
 
 ### Failover - the dangerous one
 
-Everything here is reasoning and a self-test against a pretend macro. None of
-it has been watched happen.
+Everything here was reasoning and a self-test against a pretend macro. The
+logs of 11 November show it happening, and going wrong: `AUDIT.md`, "The
+fleet splits in two", E1 to E5. None of that is fixed.
 
-- [ ] the host's coordinator comes up at startup
+- [x] the host's coordinator comes up at startup `fleet` (logs)
+- [x] a host gone for longer than the grace period gets a replacement: a tad
+      took over after 49 s `fleet` (logs)
 - [ ] killing the coordinator's **process** gets a replacement within the grace
       period
 - [ ] killing the whole **machine** does too - this is the case the election
       escalation exists for, since one machine carries several rows
 - [ ] the replacement serves a **current** configuration, because it had a replica
-- [ ] the designated host takes the job back when it returns
+- [ ] **FAILED** the designated host takes the job back when it returns: it
+      could not for five minutes, while a coordinator it had started earlier
+      was still running, and when it did it connected to the stand-in's
+      coordinator instead of its own
+- [ ] **FAILED** the macro that starts a coordinator connects to it: it went
+      to the address of the last higher term it had heard
+- [ ] **FAILED** a restarted host is followed at once: it comes back at term
+      1, which the rest of the fleet has learnt to ignore
 - [ ] accounts do not bounce between servers while that happens
 - [ ] a macro that loses the fleet entirely **carries on farming alone** - the
       governing rule of the whole subsystem
 - [ ] two coordinators cannot both serve: the port is the lock on one machine,
       and across machines a macro follows the highest term it hears, on the
       beacon as on the heartbeat; the one left behind loses its macros and
-      exits when idle `loads`
+      exits when idle. **FAILED**: two served for 27 hours in all, the main
+      on one and the tads on the other
 
 ### Configuration, shared
 
@@ -835,6 +880,16 @@ runs two fleets at once. Checks 36 to 38 do now.
 ## Known holes, written down rather than forgotten
 
 Not bugs to find - bugs already known about, with no fix yet.
+
+- **The fleet splits in two, and a macro trusts any coordinator.** The two
+  findings of the audit that are not fixed, because each needs a decision:
+  `AUDIT.md`, E1 to E5 and S1 to S5. The macro's side of the fleet has no
+  test of any kind, which is why neither was caught.
+
+- **The bench failed again on 2026-11-13, once in ten runs**: two of its ten
+  timed checks, straight after the fleet self-test, which now ends by
+  closing three coordinators. The lines were not kept. Same suspicion as
+  below, still not proven.
 
 - **The bench failed once, on 2026-11-04, and not in four reruns.** Every
   connection was closed by the other end at the same second, then "row 2 is
